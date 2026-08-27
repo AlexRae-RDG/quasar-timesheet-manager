@@ -616,15 +616,137 @@ def apply_theme(root):
 # ---------------------------------------------------------------------------
 # Canvas drawing helpers
 # ---------------------------------------------------------------------------
+def _ring_points(cx, cy, rx, ry, rot_deg, start_deg=0, end_deg=360, steps=None):
+    """Sample points along a (possibly partial) ellipse centered at
+    (cx, cy) and rotated by rot_deg -- used to build every tilted ring/arc
+    in draw_logo_mark below. Tkinter's create_oval/create_arc only draw
+    axis-aligned shapes, so a tilted one has to be built as a plain point
+    list fed to create_line instead; like rounded_rect() above, this
+    samples real trigonometric points rather than using
+    create_line(..., smooth=True), which approximates a spline *near* its
+    control points rather than through them (see rounded_rect's docstring
+    for the visible artifacts that caused, on a Retina display in
+    particular).
+
+    Unlike rounded_rect's angle convention (0=east/90=north, with y
+    flipped to compensate for the canvas's y-down coordinate space), this
+    works entirely in plain screen/canvas coordinates with no flip, and
+    angles/rotation match SVG's rotate() transform directly. That's
+    because this mark's proportions were designed and approved as an SVG
+    mockup first -- porting those numbers verbatim was the lower-risk way
+    to reproduce the design exactly, rather than translating them into a
+    different convention by hand.
+
+    Returns a flat [x1, y1, x2, y2, ...] list, ready for
+    canvas.create_line(*points, ...)."""
+    if steps is None:
+        steps = max(8, round(abs(end_deg - start_deg) / 5))
+    rot = math.radians(rot_deg)
+    cos_r, sin_r = math.cos(rot), math.sin(rot)
+    points = []
+    for i in range(steps + 1):
+        theta = math.radians(start_deg + (end_deg - start_deg) * i / steps)
+        x0 = rx * math.cos(theta)
+        y0 = ry * math.sin(theta)
+        points.append(cx + x0 * cos_r - y0 * sin_r)
+        points.append(cy + x0 * sin_r + y0 * cos_r)
+    return points
+
+
 def draw_logo_mark(canvas, size=28, pad=1):
-    """Draw a small vector 'app icon' badge -- deliberately not an emoji or
-    symbol-font glyph, since those aren't reliably available on every
-    machine (headless/minimal Linux installs in particular)."""
+    """Draw the QUASAR mark: a clock-faced core sphere wrapped in a
+    tilted, Saturn-style ring system with a bright shooting-star taper on
+    its near edge, plus a scattering of small stars. Deliberately not an
+    emoji or symbol-font glyph, since those aren't reliably available on
+    every machine (headless/minimal Linux installs in particular).
+
+    Tkinter has no native support for rotated ellipses, real alpha
+    blending, or blur, so every tilted ring/arc here is a point-sampled
+    line (see _ring_points above) and every "opacity" from the original
+    design is faked with a solid color pre-blended toward whatever
+    actually sits behind that shape -- the canvas's own background for
+    anything drawn on empty space, or ACCENT for anything drawn over the
+    opaque sphere -- via the _mix() helper near the top of this module.
+    packaging/make_icons.py draws the same design again independently,
+    using Pillow's real compositing and rotation for the packaged app
+    icon; the two aren't shared code, so a future redesign needs both
+    updated.
+
+    Uses the module's live ACCENT (not a fixed color), so this header
+    mark re-themes along with everything else when the user picks a
+    different theme; make_icons.py's packaged icon stays a fixed brand
+    blue instead, since that one can't change after the app is built."""
     canvas.delete("all")
-    rounded_rect(canvas, pad, pad, pad + size, pad + size, radius=7, fill=ACCENT, outline="")
-    rounded_rect(canvas, pad + 5, pad + 5, pad + size - 5, pad + 10, radius=2, fill="white", outline="")
-    canvas.create_oval(pad + 5, pad + 14, pad + 12, pad + 21, fill="white", outline="")
-    canvas.create_oval(pad + size - 12, pad + 14, pad + size - 5, pad + 21, fill="white", outline="")
+    scale = (size - 2 * pad) / 120.0
+    bg = PANEL_BG  # this canvas's own background -- see main_window.py's construction
+
+    def X(x):
+        return pad + x * scale
+
+    def Y(y):
+        return pad + y * scale
+
+    def W(width):
+        return max(1.0, width * scale)
+
+    def line(points, **kwargs):
+        canvas.create_line(*(X(p) if i % 2 == 0 else Y(p) for i, p in enumerate(points)), **kwargs)
+
+    def polygon(points, **kwargs):
+        canvas.create_polygon(*(X(p) if i % 2 == 0 else Y(p) for i, p in enumerate(points)), **kwargs)
+
+    # ---- Saturn-style ring system (back pass, behind the sphere) -------
+    ring_cx, ring_cy, ring_rot = 60, 66, -20
+    line(_ring_points(ring_cx, ring_cy, 60, 11, ring_rot),
+         fill=_mix(bg, ACCENT, 0.28), width=W(2), dash=(2, 5))
+    line(_ring_points(ring_cx, ring_cy, 54, 9.5, ring_rot),
+         fill=_mix(bg, ACCENT, 0.42), width=W(2.5))
+    line(_ring_points(ring_cx, ring_cy, 48, 8, ring_rot),
+         fill=_mix(bg, ACCENT, 0.5), width=W(5), capstyle="round")
+
+    # ---- core sphere -----------------------------------------------------
+    sx, sy, r = 60, 50, 25
+    canvas.create_oval(X(sx - r), Y(sy - r), X(sx + r), Y(sy + r), fill=ACCENT, outline="")
+
+    # ---- watch-face bezel: semi-transparent white over the sphere -------
+    br = 19.5
+    canvas.create_oval(X(sx - br), Y(sy - br), X(sx + br), Y(sy + br),
+                        outline=_mix(ACCENT, "#FFFFFF", 0.3), width=W(1.5))
+
+    # ---- clock hands, fixed at 10:10 (the classic "friendly" clock
+    # position) -- the timesheet reference the halo design was missing.
+    canvas.create_line(X(sx), Y(sy), X(52.6), Y(44.8), fill="white", width=W(3.6), capstyle="round")
+    canvas.create_line(X(sx), Y(sy), X(72.1), Y(43), fill="white", width=W(3.6), capstyle="round")
+    cr = 2.4
+    canvas.create_oval(X(sx - cr), Y(sy - cr), X(sx + cr), Y(sy + cr), fill="white", outline="")
+
+    # ---- the ring's front/near edge, tapering from dim to a bright
+    # near-white point like a shooting star -- three nested partial arcs
+    # sharing the same start angle, each shorter and brighter than the
+    # last, each pre-blended against ACCENT (what they're actually drawn
+    # over) instead of the canvas background.
+    line(_ring_points(ring_cx, ring_cy, 48, 8, ring_rot, 20, 160),
+         fill=_mix(ACCENT, "#6EA0FF", 0.55), width=W(4), capstyle="round")
+    line(_ring_points(ring_cx, ring_cy, 48, 8, ring_rot, 20, 100),
+         fill=_mix(ACCENT, "#B7D0FF", 0.8), width=W(3.5), capstyle="round")
+    line(_ring_points(ring_cx, ring_cy, 48, 8, ring_rot, 20, 60),
+         fill="#F3F8FF", width=W(3), capstyle="round")
+
+    # ---- a scattered handful of stars for the "in space" feel -- each
+    # sits on empty background, so blended toward `bg` rather than ACCENT.
+    def sparkle(cx, cy, long_r, short_r, alpha):
+        k = short_r * 0.70710678  # short_r at 45 degrees
+        polygon([cx, cy - long_r, cx + k, cy - k, cx + long_r, cy,
+                 cx + k, cy + k, cx, cy + long_r, cx - k, cy + k,
+                 cx - long_r, cy, cx - k, cy - k],
+                fill=_mix(bg, "#FFFFFF", alpha), outline="")
+
+    sparkle(100, 18, 6, 2, 0.9)
+    sparkle(14, 24, 3, 1, 0.55)
+    sparkle(10, 100, 3.5, 1.2, 0.6)
+    dot_r = 1.8
+    canvas.create_oval(X(108 - dot_r), Y(102 - dot_r), X(108 + dot_r), Y(102 + dot_r),
+                        fill=_mix(bg, "#FFFFFF", 0.5), outline="")
 
 
 def draw_theme_swatch(canvas, theme_id: str, selected: bool, width=132, height=88):
