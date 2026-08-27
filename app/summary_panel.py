@@ -1,18 +1,22 @@
 """
 The "Summary" tab: total hours for a chosen week or month, shown as two
-pie-chart breakdowns side by side -- one by Project, one by QDM (this
-app's name for what's elsewhere still called an Activity, matching the
+breakdowns side by side -- one by Project, one by QDM (this app's name
+for what's elsewhere still called an Activity, matching the
 Activities-sidebar-turned-"QDM's" rename) -- using the tab's full width.
 This used to be a single list you toggled between Activity/Project
-grouping to see (and rendered as horizontal bars); both breakdowns are
-now always visible together, and each is a pie chart with its own legend
-and total underneath, since a "where did my time go" view reads faster as
-a chart than as bars once there's more than a handful of categories. Each
-slice is labeled with its own name and percentage directly on the chart
-(see _draw_pie) -- the scrolling legend below is now a secondary
-reference (exact hours, or a slice too thin to label) rather than the
-primary way to read the breakdown, so the chart itself gets most of the
-column's height instead of splitting it evenly with the legend.
+grouping to see; both breakdowns are now always visible together. By
+Project is a pie chart, each slice labeled with its own name and
+percentage directly on the chart (see _draw_pie) -- Projects are a small,
+fairly stable set (everything gets grouped into one), so a handful of
+wedges reads faster than a list once there's more than a couple. By QDM
+is a bar chart instead (see _build_bar_row): QDM's aren't grouped the
+same way, so there can easily be far more of them than Projects, and a
+pie's fixed 360 degrees split that many ways stops being readable long
+before a plain list of full-width bars does. Both breakdowns keep a
+scrolling area below (or, for the bar chart, AS) their rows -- for the
+pie, it's a secondary reference (exact hours, or a slice too thin to
+label) capped to a small height so the chart itself gets most of the
+column.
 
 A third permanent tab alongside "Timesheet" and "Template" (never hidden,
 same as Template -- see app/main_window.py's _build_body) rather than one
@@ -113,37 +117,34 @@ class SummaryPanel(tk.Frame):
         columns = tk.Frame(body, bg=theme.PANEL_BG)
         columns.pack(fill="both", expand=True, pady=(4, 0))
 
-        self._project = self._build_breakdown(columns, "By Project")
+        self._project = self._build_breakdown(columns, "By Project", chart="pie")
         self._project["frame"].pack(side="left", fill="both", expand=True, padx=(0, 10))
 
         divider = tk.Frame(columns, bg=theme.BORDER, width=1)
         divider.pack(side="left", fill="y")
 
-        self._qdm = self._build_breakdown(columns, "By QDM")
+        # By QDM is a bar chart, not a pie -- someone can easily have far
+        # more distinct QDM's than Projects (QDM's aren't grouped the way
+        # Projects group them), and a pie's 360 degrees split that many
+        # ways stops being readable long before a plain list of bars does,
+        # since every QDM still gets its own full-width row here instead
+        # of an ever-thinner wedge.
+        self._qdm = self._build_breakdown(columns, "By QDM", chart="bar")
         self._qdm["frame"].pack(side="left", fill="both", expand=True, padx=(10, 0))
 
-    def _build_breakdown(self, parent, heading: str) -> dict:
-        """Builds one column's heading, pie chart, scrolling legend, and
-        total line, returning the handful of widgets refresh() needs to
-        update as a dict -- kept local rather than as a pile of
-        self.project_x/self.qdm_x attributes, since the two columns are
-        otherwise identical and only ever refreshed together."""
+    def _build_breakdown(self, parent, heading: str, chart: str) -> dict:
+        """Builds one column's heading, chart, scrolling rows, and total
+        line, returning the handful of widgets refresh() needs to update
+        as a dict -- kept local rather than as a pile of self.project_x/
+        self.qdm_x attributes, since the two columns are otherwise built
+        the same way and only ever refreshed together. `chart` is "pie"
+        (By Project) or "bar" (By QDM) -- see _refresh_breakdown/
+        _draw_pie/_build_bar_row for where that actually branches."""
         frame = tk.Frame(parent, bg=theme.PANEL_BG)
 
         tk.Label(frame, text=heading, font=(self.family, 11, "bold"), bg=theme.PANEL_BG,
                  fg=theme.TEXT_PRIMARY).pack(anchor="w", pady=(0, 8))
 
-        # Packed from the bottom up first (pack computes every child's
-        # space before drawing any of them, so call order doesn't affect
-        # the final top-to-bottom layout): the total line, then a
-        # fixed-height legend, leaving the rest of the column for the pie
-        # canvas below. Each slice now carries its own name + percentage
-        # (see _draw_pie), so this scrolling legend is a secondary
-        # reference -- the exact hours, or a slice too thin to label --
-        # rather than the primary way to read the chart, which is why it
-        # gets a modest capped height instead of splitting the column
-        # evenly with the chart the way it used to; that's what lets the
-        # pie itself grow to fill most of the column.
         total_label = tk.Label(frame, text="", font=(self.family, 9, "bold"),
                                 bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY)
         total_label.pack(side="bottom", anchor="w", pady=(8, 0))
@@ -152,14 +153,35 @@ class SummaryPanel(tk.Frame):
         # draws the one border for the whole nav+columns box; without
         # this, ScrollArea's own (same-colored, so invisible) rounded
         # corners would still draw a second border right underneath it.
-        legend_area = ScrollArea(frame, bg=theme.PANEL_BG, outline=False, height=150)
-        legend_area.pack(side="bottom", fill="x")
-
-        pie_canvas = tk.Canvas(frame, bg=theme.PANEL_BG, highlightthickness=0)
-        pie_canvas.pack(fill="both", expand=True, pady=(0, 10))
+        pie_canvas = None
+        if chart == "pie":
+            # Packed from the bottom up first (pack computes every
+            # child's space before drawing any of them, so call order
+            # doesn't affect the final top-to-bottom layout): a
+            # fixed-height legend, leaving the rest of the column for the
+            # pie canvas below. Each slice already carries its own name +
+            # percentage (see _draw_pie), so this scrolling legend is a
+            # secondary reference -- the exact hours, or a slice too thin
+            # to label -- rather than the primary way to read the chart,
+            # which is why it gets a modest capped height instead of
+            # splitting the column evenly with the chart; that's what
+            # lets the pie itself grow to fill most of the column.
+            legend_area = ScrollArea(frame, bg=theme.PANEL_BG, outline=False, height=150)
+            legend_area.pack(side="bottom", fill="x")
+            pie_canvas = tk.Canvas(frame, bg=theme.PANEL_BG, highlightthickness=0)
+            pie_canvas.pack(fill="both", expand=True, pady=(0, 10))
+        else:
+            # Bar chart: the scrollable rows below ARE the chart (name,
+            # hours/percentage, and its own proportional bar all in one
+            # row -- see _build_bar_row), so there's no separate canvas
+            # and this area gets the full column height instead of a
+            # capped strip underneath one.
+            legend_area = ScrollArea(frame, bg=theme.PANEL_BG, outline=False)
+            legend_area.pack(fill="both", expand=True, pady=(0, 10))
 
         return {
             "frame": frame,
+            "chart": chart,
             "pie_canvas": pie_canvas,
             "legend_area": legend_area,
             "rows_frame": legend_area.content,
@@ -277,23 +299,29 @@ class SummaryPanel(tk.Frame):
             tk.Label(section["rows_frame"], text="No time logged in this period.",
                      font=(self.family, 9), fg=theme.TEXT_MUTED, bg=theme.PANEL_BG,
                      wraplength=160, justify="left").pack(anchor="w", pady=14)
+        elif section["chart"] == "bar":
+            max_minutes = max(r["minutes"] for r in rows)
+            for r in rows:
+                self._build_bar_row(section["rows_frame"], r, max_minutes, grand_total)
         else:
             for r in rows:
                 self._build_legend_row(section["rows_frame"], r, grand_total)
         section["legend_area"].refresh_scrollregion()
 
-        # The pie canvas is a persistent widget (unlike the legend rows
-        # above, fully rebuilt every refresh), so its own <Configure>
-        # binding needs re-pointing at the current rows/total on every
-        # refresh -- plain bind() (no add="+") replaces the previous
-        # callback rather than stacking another one alongside it. Also
-        # draw it once right now for the size it already has, since a
-        # Configure event won't fire again on its own if the canvas
-        # hasn't actually resized since the last refresh.
-        canvas = section["pie_canvas"]
-        canvas.bind("<Configure>", lambda event, c=canvas, rws=rows, gt=grand_total:
-                    self._draw_pie(c, rws, gt))
-        self._draw_pie(canvas, rows, grand_total)
+        if section["chart"] == "pie":
+            # The pie canvas is a persistent widget (unlike the legend/bar
+            # rows above, fully rebuilt every refresh), so its own
+            # <Configure> binding needs re-pointing at the current
+            # rows/total on every refresh -- plain bind() (no add="+")
+            # replaces the previous callback rather than stacking another
+            # one alongside it. Also draw it once right now for the size
+            # it already has, since a Configure event won't fire again on
+            # its own if the canvas hasn't actually resized since the
+            # last refresh.
+            canvas = section["pie_canvas"]
+            canvas.bind("<Configure>", lambda event, c=canvas, rws=rows, gt=grand_total:
+                        self._draw_pie(c, rws, gt))
+            self._draw_pie(canvas, rows, grand_total)
 
         total_hours = grand_total / 60
         noun_word = singular if len(rows) == 1 else plural
@@ -322,6 +350,43 @@ class SummaryPanel(tk.Frame):
         tk.Label(row, text=r["name"], font=(self.family, 9), bg=theme.PANEL_BG,
                  fg=theme.TEXT_PRIMARY, anchor="w", justify="left", wraplength=130).pack(
             side="left", fill="x", expand=True)
+
+    def _build_bar_row(self, parent, r: dict, max_minutes: int, grand_total: int):
+        """One row of the By QDM bar chart: name + hours/percentage on
+        top, a proportional bar underneath. grid (not pack) for the two
+        labels + the bar below them, so both labels stay DIRECT children
+        of `row` in a predictable left-to-right, then-below layout --
+        matters for tests that read a row's own text via
+        row.winfo_children(), same as _build_legend_row's rows.
+
+        The bar itself is a plain tk.Frame "track" with a colored tk.Frame
+        placed inside it at relwidth=(this row's share of the largest
+        row's minutes) -- place() recalculates that automatically on
+        resize, no <Configure> math needed the way _draw_pie needs for
+        the canvas-drawn pie. Every row gets its own full-width bar
+        (floored at a thin sliver so even a tiny share stays visible)
+        instead of a wedge that shrinks toward unreadable as more QDM's
+        share the same 360 degrees -- the reason this column is a bar
+        chart instead of a second pie in the first place.
+        """
+        row = tk.Frame(parent, bg=theme.PANEL_BG)
+        row.pack(fill="x", pady=6)
+        row.columnconfigure(0, weight=1)
+
+        tk.Label(row, text=r["name"], font=(self.family, 9), bg=theme.PANEL_BG,
+                 fg=theme.TEXT_PRIMARY, anchor="w", justify="left", wraplength=200).grid(
+            row=0, column=0, sticky="w")
+
+        hours = r["minutes"] / 60
+        pct = (r["minutes"] / grand_total * 100) if grand_total else 0
+        tk.Label(row, text=f"{hours:.1f}h ({pct:.0f}%)", font=(self.family, 9),
+                 bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY, anchor="e").grid(
+            row=0, column=1, sticky="e", padx=(6, 0))
+
+        track = tk.Frame(row, bg=theme.BORDER, height=14)
+        track.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        frac = (r["minutes"] / max_minutes) if max_minutes else 0
+        tk.Frame(track, bg=r["color"]).place(x=0, y=0, relwidth=max(0.02, frac), relheight=1)
 
     # Slices this thin (in degrees -- 14 degrees is a bit under 4% of the
     # full circle) can't fit a legible name + percentage without running

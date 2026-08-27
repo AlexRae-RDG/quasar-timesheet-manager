@@ -3,8 +3,8 @@ Headless smoke test for the Summary tab, driven under Xvfb.
 
 Seeds a handful of TimeEntry rows across the current week and the previous
 month, then drives the real SummaryPanel (via MainWindow, exactly as a user
-would reach it through the notebook) to check: the QDM and Project pie-chart
-breakdowns' totals/percentages for the week view (both always visible side
+would reach it through the notebook) to check: the QDM (bar chart) and
+Project (pie chart) breakdowns' totals/percentages for the week view (both always visible side
 by side now, rather than one you toggled between), switching to month view
 and back, Prev/Next/Today navigation, the empty-state message for a period
 with nothing logged, and that switching onto the Summary tab (via

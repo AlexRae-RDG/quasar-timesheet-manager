@@ -30,9 +30,9 @@ EntryLike = Union[TimeEntry, TemplateEntry]
 # below). Kept as one list here rather than scattered across whichever
 # file actually binds each one, so this stays the single place to update
 # if a shortcut is ever added, changed, or removed -- see
-# main_window.py._bind_global_shortcuts (undo/redo) and
-# calendar_view.py._build_widgets (everything else) for where they're
-# actually wired up.
+# main_window.py._bind_global_shortcuts (undo/redo), calendar_view.py's
+# _build_widgets (everything calendar-related), and ProjectPanel's own
+# Name field below (Enter to save) for where they're actually wired up.
 _SHORTCUTS = [
     ("Ctrl+Z  (or Cmd+Z on Mac)", "Undo the last calendar change"),
     ("Ctrl+Y or Ctrl+Shift+Z  (or Cmd+Shift+Z / Cmd+Y on Mac)", "Redo"),
@@ -43,6 +43,8 @@ _SHORTCUTS = [
     ("Esc", "Cancel a drag in progress, un-arm a queued activity, or deselect a block"),
     ("Ctrl+Click a block", "Instantly duplicate it into its own exact time slot "
                             "(drag the copy afterward to retime it)"),
+    ("Enter (in the Name field)", "Save the Add/Edit Project form without "
+                                   "needing to click Save"),
 ]
 
 
@@ -666,7 +668,7 @@ class SettingsPanel(tk.Frame):
                      justify="left", wraplength=360).grid(row=i, column=1, sticky="nw", pady=5)
 
         btns = ttk.Frame(outer)
-        btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(28, 0))
+        btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         RoundedButton(btns, text="Cancel", style="Secondary.TButton", command=self._cancel).pack(side="right")
         RoundedButton(btns, text="Save", style="Accent.TButton", command=self._save).pack(side="right", padx=6)
 

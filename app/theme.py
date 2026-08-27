@@ -512,6 +512,15 @@ def apply_theme(root):
 
     style.configure("TRadiobutton", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 10))
     style.configure("TCheckbutton", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 10))
+    # The "clam" base theme's own Checkbutton/Radiobutton style swaps in a
+    # bright default background the moment the mouse is over it (its
+    # built-in "active" state color, never overridden above) -- jarring
+    # against a themed, often-dark panel. Pinning "active" back to the
+    # same PANEL_BG as everything else removes that flash entirely rather
+    # than just picking a softer replacement color.
+    style.map("TCheckbutton", background=[("active", PANEL_BG)])
+    style.map("Big.TCheckbutton", background=[("active", PANEL_BG)])
+    style.map("TRadiobutton", background=[("active", PANEL_BG)])
 
     # Tab bar: ttk.Notebook's own native tab strip is square-cornered with
     # no way to round it short of per-theme 9-slice image assets (this app
