@@ -573,7 +573,7 @@ current Activity/Project naming scheme whatever it started from, and
 Database.backup_to/restore_from -- including restoring a legacy-named
 backup and rejecting an unrelated non-Free-Timesheet database file), the
 CSV export logic, and the timer's minute-rounding rule, all without needing
-a display. There are also seven headless UI smoke tests that need a
+a display. There are also eight headless UI smoke tests that need a
 virtual display (`Xvfb`) if you have one available:
 `tests/interactive_smoke_test.py` exercises the real drag-create/resize/
 move/quick-assign/export code paths end-to-end on both the Timesheet and
@@ -582,10 +582,11 @@ columns, Ctrl+click-to-duplicate, Apply Template to This Week (including
 its skip-if-already-applied behavior), and projects (create/rename/delete,
 collapse/expand, assigning an activity to one, and the two delete-project
 paths); `tests/theme_toggle_smoke_test.py` exercises the theme picker (all
-seven themes offered, a pending selection not applying until Save,
-persistence, legacy light/dark settings values mapping onto a sensible
-modern theme, state surviving the theme-change rebuild, and every widget
-actually repainting); `tests/ui_fixes_smoke_test.py` exercises every dialog
+twenty curated palettes plus Custom offered, a pending selection not
+applying until Save, persistence, legacy settings values -- including the
+old seven-palette ids and the light/dark toggle from before that --
+mapping onto a sensible modern theme, state surviving the theme-change
+rebuild, and every widget actually repainting); `tests/ui_fixes_smoke_test.py` exercises every dialog
 opening as its own tab instead of a pop-up window, the Template tab staying
 permanently visible while the others hide, the sidebar respecting its
 minimum width and actually growing when the window is widened (while the
@@ -616,4 +617,49 @@ verifying its contents, restoring from a separately-built database and
 confirming the whole window (sidebar, calendar, timer bar, Summary tab,
 theme, settings) reflects the restored data afterward, the confirmation
 prompt actually blocking a declined restore, the timer-running guard, and
-an invalid file being rejected with a warning instead of crashing.
+an invalid file being rejected with a warning instead of crashing;
+and `tests/double_click_edit_smoke_test.py` exercises double-clicking a
+time block jumping straight to its Edit tab (loaded with that exact
+block's own data, not a blank one), double-clicking empty calendar space
+still behaving exactly like a plain click always did, and that ordinary
+single-click selection is unaffected.
+
+## Making a change and shipping it
+
+The repeatable process for any future update, from a code change to
+colleagues being able to download it:
+
+1. **Make the change.** Edit the code under `app/` as needed.
+2. **Test it.** Run the non-GUI suite (`python3 -m unittest discover -s
+   tests -p "test_*.py"`) -- it needs no display and covers the data/logic
+   layer. If the change touches UI behavior, add or update one of the
+   headless `*_smoke_test.py` files too (see "Tests" above for what each
+   one covers) -- these need a real display (or `Xvfb`) to actually run,
+   so they're not part of the plain `unittest discover` command, but
+   they're what catches a UI regression the non-GUI tests can't see.
+3. **Commit.** `git add` the changed files and `git commit` with a message
+   explaining *why*, not just *what* -- same as any commit in this repo.
+4. **Push.** `git push` sends it to GitHub. At this point the change is
+   safely backed up and visible in the repo's history, but colleagues
+   running an already-downloaded build don't have it yet -- that needs a
+   release (next step).
+5. **Cut a release, if this is worth colleagues getting.** Not every
+   commit needs one -- batch up a few related changes if that makes more
+   sense than shipping each individually. When you're ready:
+   ```bash
+   git tag v1.1.0          # bump the version -- see the note in "Cutting
+   git push origin v1.1.0  # a release" above for what the numbers mean
+   ```
+   This is the same `.github/workflows/release.yml` pipeline described
+   under "Cutting a release" earlier -- pushing the tag alone triggers it,
+   nothing else to do. Check the **Actions** tab for the two build jobs,
+   then the **Releases** page has the new zips once they finish.
+6. **Let colleagues know.** There's no auto-update -- each person
+   downloads the new zip from Releases and replaces their old copy (see
+   "Getting the app" at the top) whenever they want the update. A quick
+   message pointing at the new release is the only "distribution" step.
+
+Steps 1-4 are worth doing for *every* change, however small, so the
+repo's history stays a real record of what happened and why. Step 5 is
+the only step that's actually optional per change -- it's what turns
+"committed" into "colleagues can download it."
