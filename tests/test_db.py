@@ -62,6 +62,32 @@ class TestDatabase(unittest.TestCase):
         self.assertEqual(set(projects),
                           {config.DEFAULT_JIRA_PROJECT, "Other Client Project", "Third Project"})
 
+    def test_add_project_with_default_color_picks_an_unused_color(self):
+        # Used by the Add QDM tab's inline "+ New Project..." flow (see
+        # ActivityPanel.create_project in app/panels.py), which only asks
+        # for a name -- a color is auto-picked so the user isn't stopped
+        # to choose one.
+        used = {p.color for p in self.db.list_projects()}
+        self.assertTrue(used, "seed data should already have used colors")
+
+        project = self.db.add_project_with_default_color("New Client")
+        self.assertIsNotNone(project.id)
+        self.assertEqual(project.name, "New Client")
+        self.assertNotIn(project.color, used)
+        self.assertIn(project.color, config.DEFAULT_PROJECT_COLORS)
+
+        stored = self.db.get_project(project.id)
+        self.assertEqual(stored.name, "New Client")
+        self.assertEqual(stored.color, project.color)
+
+    def test_add_project_with_default_color_falls_back_once_colors_run_out(self):
+        # Use up every color in the palette first.
+        for i, color in enumerate(config.DEFAULT_PROJECT_COLORS):
+            self.db.add_project(Project(None, f"Filler {i}", color))
+
+        project = self.db.add_project_with_default_color("Overflow Client")
+        self.assertEqual(project.color, config.DEFAULT_PROJECT_COLORS[0])
+
     def test_add_update_delete_project(self):
         pid = self.db.add_project(Project(None, "Design Team", "#123456"))
         proj = self.db.get_project(pid)

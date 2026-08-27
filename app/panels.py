@@ -177,13 +177,21 @@ class DuplicatePanel(tk.Frame):
 # ---------------------------------------------------------------------------
 # Activity add/edit panel (the loggable, draggable-onto-the-calendar leaf item)
 # ---------------------------------------------------------------------------
+# Shown at the end of the Activity tab's Project dropdown as a way to
+# create a project without leaving this tab (see ActivityPanel's
+# create_project param) rather than needing the separate Add Project tab.
+_NEW_PROJECT_OPTION = "+ New Project…"
+
+
 class ActivityPanel(tk.Frame):
     def __init__(self, master, family: str, on_close: Callable[[], None],
-                 get_projects: Callable[[], List[Project]]):
+                 get_projects: Callable[[], List[Project]],
+                 create_project: Callable[[str], Project]):
         super().__init__(master, bg=theme.PANEL_BG)
         self.family = family
         self.on_close = on_close
         self.get_projects = get_projects
+        self.create_project = create_project
         self.on_save: Optional[Callable[[dict], bool]] = None
         self.on_delete: Optional[Callable[[], None]] = None
         self.project_id_by_label: Dict[str, Optional[int]] = {}
@@ -192,7 +200,7 @@ class ActivityPanel(tk.Frame):
         outer = tk.Frame(body, bg=theme.PANEL_BG)
         outer.pack(fill="both", expand=True, padx=28, pady=24)
 
-        self.heading = tk.Label(outer, text="Add Activity", font=(self.family, 14, "bold"),
+        self.heading = tk.Label(outer, text="Add QDM", font=(self.family, 14, "bold"),
                                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY)
         self.heading.pack(anchor="w", pady=(0, 16))
 
@@ -200,7 +208,7 @@ class ActivityPanel(tk.Frame):
         frm.pack(anchor="w")
 
         row = 0
-        ttk.Label(frm, text="Name *").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="Name").grid(row=row, column=0, sticky="w", pady=4)
         self.name_var = tk.StringVar()
         ttk.Entry(frm, textvariable=self.name_var, width=32).grid(row=row, column=1, sticky="ew", pady=4)
         row += 1
@@ -218,11 +226,23 @@ class ActivityPanel(tk.Frame):
         ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10).pack(side="left")
         row += 1
 
-        ttk.Label(frm, text="Project *").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="Project").grid(row=row, column=0, sticky="w", pady=4)
         self.project_var = tk.StringVar()
         self.project_combo = ttk.Combobox(frm, textvariable=self.project_var,
                                            state="readonly", width=30)
         self.project_combo.grid(row=row, column=1, sticky="ew", pady=4)
+        self.project_combo.bind("<<ComboboxSelected>>", self._on_project_changed)
+        row += 1
+
+        # Hidden unless "+ New Project..." is selected above (see
+        # _on_project_changed) -- lets a user create a project without
+        # leaving this tab, via the create_project callback.
+        self.new_project_label = ttk.Label(frm, text="New Project Name")
+        self.new_project_label.grid(row=row, column=0, sticky="w", pady=4)
+        self.new_project_name_var = tk.StringVar()
+        self.new_project_entry = ttk.Entry(frm, textvariable=self.new_project_name_var, width=32)
+        self.new_project_entry.grid(row=row, column=1, sticky="ew", pady=4)
+        self._set_new_project_field_visible(False)
         row += 1
 
         # Every Activity belongs to exactly one Project -- there's no
@@ -259,17 +279,19 @@ class ActivityPanel(tk.Frame):
               on_delete: Optional[Callable[[], None]] = None):
         self.on_save = on_save
         self.on_delete = on_delete
-        self.heading.config(text="Edit Activity" if activity else "Add Activity")
+        self.heading.config(text="Edit QDM" if activity else "Add QDM")
 
         projects = self.get_projects()
         labels = [p.name for p in projects]
         self.project_id_by_label = {p.name: p.id for p in projects}
-        self.project_combo.config(values=labels)
+        self.project_combo.config(values=labels + [_NEW_PROJECT_OPTION])
         current_project_id = activity.project_id if activity else (projects[0].id if projects else None)
         current_label = next((p.name for p in projects if p.id == current_project_id),
                               (labels[0] if labels else ""))
         self.project_var.set(current_label)
         self.project_combo.set(current_label)
+        self.new_project_name_var.set("")
+        self._set_new_project_field_visible(False)
 
         self.name_var.set(activity.name if activity else "")
         self.jira_key_number_var.set(config.jira_key_number(activity.jira_key) if activity else "")
@@ -288,6 +310,17 @@ class ActivityPanel(tk.Frame):
                       command=self._save).pack(side="right", padx=6)
         _rebind_wheel(self.btns)
 
+    def _set_new_project_field_visible(self, visible: bool):
+        if visible:
+            self.new_project_label.grid()
+            self.new_project_entry.grid()
+        else:
+            self.new_project_label.grid_remove()
+            self.new_project_entry.grid_remove()
+
+    def _on_project_changed(self, _event=None):
+        self._set_new_project_field_visible(self.project_var.get() == _NEW_PROJECT_OPTION)
+
     def _save(self):
         name = self.name_var.get().strip()
         if not name:
@@ -304,10 +337,18 @@ class ActivityPanel(tk.Frame):
                 self.error_label.config(text="Default duration must be a positive whole number of minutes.")
                 return
 
-        project_id = self.project_id_by_label.get(self.project_var.get())
-        if project_id is None:
-            self.error_label.config(text="Choose a project.")
-            return
+        selected_project = self.project_var.get()
+        if selected_project == _NEW_PROJECT_OPTION:
+            new_project_name = self.new_project_name_var.get().strip()
+            if not new_project_name:
+                self.error_label.config(text="Enter a name for the new project.")
+                return
+            project_id = self.create_project(new_project_name).id
+        else:
+            project_id = self.project_id_by_label.get(selected_project)
+            if project_id is None:
+                self.error_label.config(text="Choose a project.")
+                return
 
         result = {
             "name": name,

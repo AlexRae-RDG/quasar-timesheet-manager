@@ -7,6 +7,7 @@ from . import config, theme
 from .calendar_view import CalendarGrid
 from .db import Database
 from .export_csv import export_entries
+from .models import Project
 from .panels import ActivityPanel, BackupPanel, DuplicatePanel, ExportPanel, ProjectPanel, SettingsPanel
 from .sidebar import Sidebar
 from .summary_panel import SummaryPanel
@@ -350,8 +351,9 @@ class MainWindow(tk.Tk):
         self.activity_panel = ActivityPanel(
             self.notebook, family=self.family,
             on_close=lambda: self._hide_panel(self.activity_panel),
-            get_projects=lambda: self.db.list_projects())
-        self._register_panel(self.activity_panel, "Activity")
+            get_projects=lambda: self.db.list_projects(),
+            create_project=self._create_project_inline)
+        self._register_panel(self.activity_panel, "Add QDM")
 
         self.project_panel = ProjectPanel(
             self.notebook, family=self.family,
@@ -381,6 +383,16 @@ class MainWindow(tk.Tk):
         self.sidebar.refresh()
         self.template_sidebar.refresh()
         self.timer_bar.refresh_activities()
+
+    def _create_project_inline(self, name: str) -> Project:
+        """Used by the Add QDM tab's "+ New Project..." option (see
+        ActivityPanel.create_project in app/panels.py) to create a Project
+        without leaving that tab -- unlike the dedicated Add Project tab,
+        this doesn't ask for a color; one is auto-picked (see
+        Database.add_project_with_default_color)."""
+        project = self.db.add_project_with_default_color(name)
+        self._on_sidebar_change()
+        return project
 
     # ------------------------------------------------------------------
     # Keyboard shortcuts: undo/redo (app-wide) + giving the calendar focus

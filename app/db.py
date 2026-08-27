@@ -456,6 +456,20 @@ class Database:
             assert lastrowid is not None
             return lastrowid
 
+    def add_project_with_default_color(self, name: str) -> Project:
+        """Create a Project without asking for a color -- used by the
+        inline "+ New Project..." flow on the Add QDM tab (see
+        ActivityPanel.create_project in app/panels.py), which only asks
+        for a name. Picks the first color in config.DEFAULT_PROJECT_COLORS
+        not already used by an existing Project, falling back to the first
+        color if they're all taken."""
+        used_colors = {p.color for p in self.list_projects()}
+        color = next((c for c in config.DEFAULT_PROJECT_COLORS if c not in used_colors),
+                     config.DEFAULT_PROJECT_COLORS[0])
+        project = Project(None, name, color)
+        project.id = self.add_project(project)
+        return project
+
     def update_project(self, p: Project):
         if p.id is None:
             raise ValueError("Project.id is required for update")

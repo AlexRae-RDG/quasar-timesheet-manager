@@ -347,15 +347,17 @@ tiny_lines = cal._entry_text_lines(noted_entry, 0, 0, 200, 20)
 check("A very short block still renders at least the activity name",
       len(tiny_lines) >= 1 and "Focus Block" in tiny_lines[0][0])
 
-print("\n--- Activity CRUD via panel ---")
-# Add/Edit Activity is now an embedded "Activity" tab, not a pop-up -- see
+print("\n--- Activity ('Add QDM' tab) CRUD via panel ---")
+# Add/Edit Activity is now an embedded "Add QDM" tab, not a pop-up -- see
 # app/panels.py.
 sb._add_activity()
 win.update()
-check("Activity tab becomes visible",
+check("Add QDM tab becomes visible",
       str(win.notebook.tab(win.activity_panel, "state")) == "normal")
 apanel = win.activity_panel
-check("Jira Project/Issue Type fields were removed from the Activity tab (they're always the "
+check("Add QDM heading reads \"Add QDM\" when creating a new activity",
+      apanel.heading.cget("text") == "Add QDM")
+check("Jira Project/Issue Type fields were removed from the Add QDM tab (they're always the "
       "same fixed values now -- see app/config.py)",
       not hasattr(apanel, "jira_project_var") and not hasattr(apanel, "issue_type_var"))
 apanel.name_var.set("Design Review")
@@ -365,7 +367,7 @@ apanel.jira_key_number_var.set("42")
 apanel.duration_var.set("45")
 apanel._save()
 win.update()
-check("Activity tab hides again after Save",
+check("Add QDM tab hides again after Save",
       str(win.notebook.tab(win.activity_panel, "state")) == "hidden")
 
 new_acts = db.list_activities()
@@ -394,11 +396,13 @@ check("New project was added", any(p.name == "Client A" for p in all_projects))
 client_a = next(p for p in all_projects if p.name == "Client A")
 check("New project starts expanded (not collapsed)", client_a.collapsed is False)
 
-print("\n--- Assigning an activity to a project via the Activity tab ---")
+print("\n--- Assigning an activity to a project via the Add QDM tab ---")
 sb._edit_activity(design_review)
 win.update()
 apanel2 = win.activity_panel
-check("Activity tab's Project dropdown defaults to the activity's current project",
+check("Add QDM heading reads \"Edit QDM\" when editing an existing activity",
+      apanel2.heading.cget("text") == "Edit QDM")
+check("Add QDM tab's Project dropdown defaults to the activity's current project",
       apanel2.project_var.get() == db.get_project(design_review.project_id).name)
 apanel2.project_var.set("Client A")
 apanel2.project_combo.set("Client A")
@@ -408,6 +412,31 @@ win.update()
 design_review_reloaded = db.get_activity(design_review.id)
 check("Activity is now grouped into the Client A project",
       design_review_reloaded.project_id == client_a.id)
+
+print("\n--- Creating a new project inline from the Add QDM tab ---")
+sb._add_activity()
+win.update()
+apanel3 = win.activity_panel
+check("New Project Name field starts hidden",
+      not apanel3.new_project_label.winfo_ismapped())
+apanel3.project_var.set(apanel3.project_combo["values"][-1])
+apanel3._on_project_changed()
+win.update()
+check("Choosing \"+ New Project...\" reveals the New Project Name field",
+      apanel3.new_project_label.winfo_ismapped())
+apanel3.name_var.set("Inline Activity")
+apanel3.jira_key_number_var.set("77")
+apanel3.new_project_name_var.set("Inline Client")
+apanel3._save()
+win.update()
+
+inline_project = next((p for p in db.list_projects() if p.name == "Inline Client"), None)
+check("Selecting \"+ New Project...\" and saving created the new project",
+      inline_project is not None)
+inline_activity = next((a for a in db.list_activities() if a.name == "Inline Activity"), None)
+check("The new activity was saved against the newly created project",
+      inline_activity is not None and inline_project is not None
+      and inline_activity.project_id == inline_project.id)
 
 
 def sidebar_row_texts():
