@@ -227,13 +227,13 @@ class ActivityPanel(tk.Frame):
         row += 1
 
         # Jira Project and Issue Type are deliberately NOT editable
-        # per-activity here -- for most people every activity exports under
-        # the same Jira project and issue type, so those two live in one
-        # place (Settings -> Jira Export Settings) instead of being
-        # repeated on every activity. Export still fills them in from there
-        # automatically (see app/export_csv.py's build_row) -- a time block
-        # can still override either one individually if it ever needs to
-        # differ, via its own Time Block tab.
+        # per-activity (or anywhere else in the UI) -- this app always
+        # exports into the same fixed Jira project and issue type (see
+        # app/config.py's DEFAULT_JIRA_PROJECT/DEFAULT_ISSUE_TYPE). Export
+        # still fills them in automatically (see app/export_csv.py's
+        # build_row) -- a time block can still override either one
+        # individually if it ever needs to differ, via its own Time Block
+        # tab.
 
         ttk.Label(frm, text="Default Duration (min)").grid(row=row, column=0, sticky="w", pady=4)
         self.duration_var = tk.StringVar()
@@ -307,8 +307,8 @@ class ActivityPanel(tk.Frame):
             "default_duration_minutes": duration,
             "project_id": project_id,
             # No longer editable per-activity (see the comment near the
-            # fields above) -- Jira Project/Issue Type come from Settings'
-            # Default Jira Project/Default Issue Type at export time instead.
+            # fields above) -- Jira Project/Issue Type come from
+            # app/config.py's fixed defaults at export time instead.
             "jira_project": None,
             "issue_type": None,
         }
@@ -459,14 +459,14 @@ class ProjectPanel(tk.Frame):
 
 
 # ---------------------------------------------------------------------------
-# Settings panel (Display Name + default Jira Project/Issue Type for exports)
+# Settings panel (Display Name, work hours, theme)
 # ---------------------------------------------------------------------------
 class SettingsPanel(tk.Frame):
     def __init__(self, master, family: str, on_close: Callable[[], None]):
         super().__init__(master, bg=theme.PANEL_BG)
         self.family = family
         self.on_close = on_close
-        self.on_save: Optional[Callable[[str, str, str, str, int, int, bool], None]] = None
+        self.on_save: Optional[Callable[[str, str, int, int, bool], None]] = None
         self.theme_var = tk.StringVar(value=theme.DEFAULT_THEME_ID)
         self.theme_swatch_canvases: Dict[str, tk.Canvas] = {}
 
@@ -503,41 +503,15 @@ class SettingsPanel(tk.Frame):
         ttk.Entry(frm, textvariable=self.display_name_var, width=36).grid(
             row=1, column=0, sticky="ew", pady=(0, 12))
 
-        ttk.Label(frm, text="Default Jira Project (used when a block/project doesn't set its own)").grid(
-            row=2, column=0, sticky="w", pady=(0, 4))
-        self.default_jira_project_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.default_jira_project_var, width=36).grid(
-            row=3, column=0, sticky="ew", pady=(0, 2))
-        # This is the Jira *project* the CSV export goes under (still
-        # written to the CSV's "Project" column, since that's the field
-        # name Jira's importer expects) -- a completely different thing
-        # from your Activities or the Projects that group them in the
-        # sidebar. Called out explicitly here since all three now share
-        # the word "Project" and it's genuinely easy to conflate them; in
-        # practice this is almost always one fixed value for your whole
-        # Jira workspace (e.g. "Quasar Delivery Management"), so you should
-        # rarely need to touch it after setting it once.
-        tk.Label(frm, text="This is the Jira project for CSV export (e.g. \"Quasar Delivery "
-                            "Management\") -- not an Activity or Project from your sidebar. "
-                            "Usually set once and left alone.",
-                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=360,
-                 font=(self.family, 8)).grid(row=4, column=0, sticky="w", pady=(0, 12))
-
-        ttk.Label(frm, text="Default Issue Type (used when a block/project doesn't set its own)").grid(
-            row=5, column=0, sticky="w", pady=(0, 4))
-        self.default_issue_type_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.default_issue_type_var, width=36).grid(
-            row=6, column=0, sticky="ew", pady=(0, 12))
-
         ttk.Label(frm, text="Work Hours", style="Heading.TLabel").grid(
-            row=7, column=0, columnspan=2, sticky="w", pady=(4, 2))
+            row=2, column=0, columnspan=2, sticky="w", pady=(4, 2))
         tk.Label(frm, text="Which hours the calendar grid shows, and whether it includes "
                             "Saturday/Sunday. Applies to the Timesheet and Template tabs alike.",
                  fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
-                 font=(self.family, 8)).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 8))
+                 font=(self.family, 8)).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
         hours_row = tk.Frame(frm, bg=theme.PANEL_BG)
-        hours_row.grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        hours_row.grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 10))
         # Index-based (not string-parsed) round trip: each Combobox's
         # `values` is a list of display labels ("9 AM", etc.); the actual
         # hour that label maps to is looked up by matching index in the
@@ -564,17 +538,17 @@ class SettingsPanel(tk.Frame):
         self.show_weekends_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(frm, text="Show weekends (Saturday & Sunday)",
                          variable=self.show_weekends_var).grid(
-            row=10, column=0, columnspan=2, sticky="w", pady=(0, 12))
+            row=5, column=0, columnspan=2, sticky="w", pady=(0, 12))
 
         ttk.Label(frm, text="Theme", style="Heading.TLabel").grid(
-            row=11, column=0, columnspan=2, sticky="w", pady=(4, 2))
+            row=6, column=0, columnspan=2, sticky="w", pady=(4, 2))
         self.theme_description_label = tk.Label(
             frm, text="", fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left",
             wraplength=520, font=(self.family, 8))
-        self.theme_description_label.grid(row=12, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self.theme_description_label.grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
         self.theme_grid = ttk.Frame(frm)
-        self.theme_grid.grid(row=13, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        self.theme_grid.grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 12))
         self._build_theme_grid()
 
         # Only visible while "Custom" is the selected card above (toggled
@@ -582,13 +556,13 @@ class SettingsPanel(tk.Frame):
         # remembers the row/col/sticky/pady for automatically -- no need
         # to repeat them at toggle time).
         self.custom_controls_frame = tk.Frame(frm, bg=theme.PANEL_BG)
-        self.custom_controls_frame.grid(row=14, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        self.custom_controls_frame.grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 16))
         self._build_custom_controls()
 
         ttk.Label(frm, text="Keyboard Shortcuts", style="Heading.TLabel").grid(
-            row=15, column=0, columnspan=2, sticky="w", pady=(4, 8))
+            row=10, column=0, columnspan=2, sticky="w", pady=(4, 8))
         shortcuts = tk.Frame(frm, bg=theme.PANEL_BG)
-        shortcuts.grid(row=16, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        shortcuts.grid(row=11, column=0, columnspan=2, sticky="w", pady=(0, 16))
         for i, (keys, description) in enumerate(_SHORTCUTS):
             tk.Label(shortcuts, text=keys, font=(self.family, 9, "bold"),
                      bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY, anchor="nw",
@@ -599,7 +573,7 @@ class SettingsPanel(tk.Frame):
                      justify="left", wraplength=320).grid(row=i, column=1, sticky="nw", pady=3)
 
         btns = ttk.Frame(frm)
-        btns.grid(row=17, column=0, columnspan=2, sticky="ew")
+        btns.grid(row=12, column=0, columnspan=2, sticky="ew")
         RoundedButton(btns, text="Cancel", style="Secondary.TButton", command=self._cancel).pack(side="right")
         RoundedButton(btns, text="Save", style="Accent.TButton", command=self._save).pack(side="right", padx=6)
 
@@ -702,13 +676,11 @@ class SettingsPanel(tk.Frame):
         "end of day wraps to midnight" convention a 24-hour clock uses)."""
         return datetime.strptime(str(hour_0_23 % 24), "%H").strftime("%I %p").lstrip("0")
 
-    def load(self, display_name: str, default_jira_project: str, default_issue_type: str,
-              current_theme_id: str, work_start_hour: int, work_end_hour: int, show_weekends: bool,
-              on_save: Callable[[str, str, str, str, int, int, bool], None]):
+    def load(self, display_name: str, current_theme_id: str, work_start_hour: int,
+              work_end_hour: int, show_weekends: bool,
+              on_save: Callable[[str, str, int, int, bool], None]):
         self.on_save = on_save
         self.display_name_var.set(display_name)
-        self.default_jira_project_var.set(default_jira_project)
-        self.default_issue_type_var.set(default_issue_type)
         self.theme_var.set(theme.resolve_theme_id(current_theme_id))
         self.custom_seeds = theme.get_custom_seeds()
         self._custom_seeds_on_load = dict(self.custom_seeds)
@@ -734,8 +706,6 @@ class SettingsPanel(tk.Frame):
             return
         self.on_save(
             self.display_name_var.get().strip(),
-            self.default_jira_project_var.get().strip(),
-            self.default_issue_type_var.get().strip(),
             self.theme_var.get(),
             work_start_hour,
             work_end_hour,

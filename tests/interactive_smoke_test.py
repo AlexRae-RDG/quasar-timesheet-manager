@@ -502,8 +502,6 @@ print("\n--- Jira CSV export end-to-end through the UI path ---")
 from app.export_csv import export_entries
 
 db.set_setting("jira_display_name", "Alex Rae")
-db.set_setting("default_project", "Quasar Delivery Management")
-db.set_setting("default_issue_type", "Sub-task")
 week_dates = [cal.day_date(i).isoformat() for i in range(5)]
 db.add_time_entry(TimeEntry(
     None, sprint_planning.id, sprint_planning.name, sprint_planning.jira_key or "PROJ-1",
@@ -512,9 +510,7 @@ db.add_time_entry(TimeEntry(
 entries_for_export = db.list_time_entries_between(week_dates[0], week_dates[-1])
 csv_path = os.path.join(tmp_home, "export_test.csv")
 written, skipped = export_entries(entries_for_export, csv_path,
-                                   db.get_setting("jira_display_name", ""),
-                                   db.get_setting("default_project", ""),
-                                   db.get_setting("default_issue_type", ""))
+                                   db.get_setting("jira_display_name", ""))
 check("CSV export wrote at least 1 row", written >= 1)
 check("Exported CSV file exists", os.path.isfile(csv_path))
 with open(csv_path) as f:
@@ -522,7 +518,7 @@ with open(csv_path) as f:
 check("CSV header correct",
       content.splitlines()[0] == "Project,Issue Type,Key,Date Started,Display Name,"
                                   "Time Spent (h),Work Description")
-check("CSV row uses the default Project/Issue Type from Settings",
+check("CSV row uses this app's fixed default Project/Issue Type",
       "Quasar Delivery Management,Sub-task," in content)
 print("  CSV content preview:\n" + "\n".join("    " + line for line in content.splitlines()))
 

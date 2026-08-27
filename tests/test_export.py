@@ -7,6 +7,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app import config
 from app.export_csv import export_entries, build_row, format_time_spent, CSV_HEADER
 from app.models import TimeEntry
 
@@ -28,34 +29,31 @@ class TestExport(unittest.TestCase):
         self.assertEqual(format_time_spent(20), "0h 20m")
         self.assertEqual(format_time_spent(150), "2h 30m")
 
-    def test_build_row_uses_entry_project_and_issue_type_when_set(self):
-        e = make_entry(jira_project="Quasar Delivery Management", issue_type="Sub-task",
+    def test_build_row_uses_entrys_own_project_and_issue_type_when_set(self):
+        # A block that overrides these still wins over this app's fixed
+        # defaults (config.DEFAULT_JIRA_PROJECT/DEFAULT_ISSUE_TYPE).
+        e = make_entry(jira_project="Some Other Project", issue_type="Task",
                         notes="Photocard test condition analysis")
-        row = build_row(e, "Alex Rae", default_jira_project="Fallback Project",
-                         default_issue_type="Task")
+        row = build_row(e, "Alex Rae")
         self.assertEqual(row, [
-            "Quasar Delivery Management", "Sub-task", "PROJ-1", "2026-08-24 00:00:00",
+            "Some Other Project", "Task", "PROJ-1", "2026-08-24 00:00:00",
             "Alex Rae", "1h 00m", "Photocard test condition analysis",
         ])
 
-    def test_build_row_falls_back_to_defaults_when_entry_has_none(self):
+    def test_build_row_falls_back_to_this_apps_fixed_defaults_when_entry_has_none(self):
+        # No Settings-configurable defaults any more (see app/config.py) --
+        # an entry with nothing of its own set always gets these two fixed
+        # values.
         e = make_entry(jira_project=None, issue_type=None, notes="")
-        row = build_row(e, "Alex Rae", default_jira_project="Quasar Delivery Management",
-                         default_issue_type="Sub-task")
-        self.assertEqual(row[0], "Quasar Delivery Management")
-        self.assertEqual(row[1], "Sub-task")
+        row = build_row(e, "Alex Rae")
+        self.assertEqual(row[0], config.DEFAULT_JIRA_PROJECT)
+        self.assertEqual(row[1], config.DEFAULT_ISSUE_TYPE)
         # No notes -> falls back to the activity name for Work Description.
         self.assertEqual(row[6], "Sprint Planning")
 
-    def test_build_row_issue_type_falls_back_to_task_when_nothing_set(self):
-        e = make_entry(jira_project=None, issue_type=None)
-        row = build_row(e, "Alex Rae", default_jira_project="", default_issue_type="")
-        self.assertEqual(row[0], "")
-        self.assertEqual(row[1], "Task")
-
     def test_newlines_in_notes_sanitized_in_work_description(self):
         e = make_entry(notes="Fixed bug\nwrote tests")
-        row = build_row(e, "Alex Rae", "", "")
+        row = build_row(e, "Alex Rae")
         self.assertEqual(row[6], "Fixed bug wrote tests")
 
     def test_skips_entries_without_jira_key(self):
@@ -69,7 +67,7 @@ class TestExport(unittest.TestCase):
             self.assertEqual(len(skipped), 2)
 
     def test_csv_header_and_row_shape(self):
-        e = make_entry(jira_project="Quasar Delivery Management", issue_type="Sub-task")
+        e = make_entry(jira_project=config.DEFAULT_JIRA_PROJECT, issue_type=config.DEFAULT_ISSUE_TYPE)
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "out.csv")
             export_entries([e], path, "Alex Rae")

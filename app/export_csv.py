@@ -13,15 +13,16 @@ The CSV's "Project" column is the Jira project this exports under (e.g.
 "project") so it doesn't collide with either of this app's own "Project"-ish
 concepts: an Activity (the loggable thing dragged onto the calendar) and a
 Project (the group an Activity belongs to, which sets its time blocks'
-color). It's usually the same for every row in a given workspace (as in the
-example this format was built from), so a block only needs to set it itself
-if it's logged against a different Jira project than usual:
+color). It's fixed for the scope of this app -- every row exports under the same
+Jira project and issue type (see app/config.py's DEFAULT_JIRA_PROJECT/
+DEFAULT_ISSUE_TYPE) -- so a block only needs to set its own if it's ever
+logged against something different than usual:
 
     block's own Jira Project/Issue Type
     -> else the activity's Jira Project/Issue Type (copied onto the block
        when it was created/duplicated from that activity)
-    -> else the Default Jira Project / Default Issue Type set in Settings
-    -> else (Issue Type only) "Task"
+    -> else this app's fixed defaults (config.DEFAULT_JIRA_PROJECT /
+       config.DEFAULT_ISSUE_TYPE)
 """
 import csv
 from typing import List, Tuple
@@ -39,10 +40,9 @@ def format_time_spent(minutes: int) -> str:
     return f"{hours}h {mins:02d}m"
 
 
-def build_row(entry: TimeEntry, display_name: str, default_jira_project: str,
-              default_issue_type: str) -> List[str]:
-    jira_project = (entry.jira_project or default_jira_project or "").strip()
-    issue_type = (entry.issue_type or default_issue_type or config.DEFAULT_ISSUE_TYPE).strip()
+def build_row(entry: TimeEntry, display_name: str) -> List[str]:
+    jira_project = (entry.jira_project or config.DEFAULT_JIRA_PROJECT).strip()
+    issue_type = (entry.issue_type or config.DEFAULT_ISSUE_TYPE).strip()
     key = (entry.jira_key or "").strip()
     date_started = f"{entry.date} 00:00:00"
     description = (entry.notes or entry.activity_name or "").replace("\n", " ").strip()
@@ -61,8 +61,6 @@ def export_entries(
     entries: List[TimeEntry],
     filepath: str,
     display_name: str,
-    default_jira_project: str = "",
-    default_issue_type: str = "",
 ) -> Tuple[int, List[TimeEntry]]:
     """
     Write `entries` to `filepath` as a timesheet CSV.
@@ -83,6 +81,6 @@ def export_entries(
         writer = csv.writer(f)
         writer.writerow(CSV_HEADER)
         for e in exportable:
-            writer.writerow(build_row(e, display_name, default_jira_project, default_issue_type))
+            writer.writerow(build_row(e, display_name))
 
     return len(exportable), skipped

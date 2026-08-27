@@ -602,19 +602,14 @@ class MainWindow(tk.Tk):
         and again from _open_settings_dialog below just to stay safe if
         anything reaches that path."""
         display_name = self.db.get_setting("jira_display_name", "") or ""
-        default_jira_project = self.db.get_setting("default_project", "") or ""
-        default_issue_type = (self.db.get_setting("default_issue_type", config.DEFAULT_ISSUE_TYPE)
-                               or config.DEFAULT_ISSUE_TYPE)
         current_theme_id = theme.get_theme_id()
         current_work_start_hour = config.START_HOUR
         current_work_end_hour = config.END_HOUR
         current_show_weekends = config.SHOW_WEEKENDS
 
-        def on_save(new_display_name, new_default_jira_project, new_default_issue_type, new_theme_id,
+        def on_save(new_display_name, new_theme_id,
                     new_work_start_hour, new_work_end_hour, new_show_weekends):
             self.db.set_setting("jira_display_name", new_display_name)
-            self.db.set_setting("default_project", new_default_jira_project)
-            self.db.set_setting("default_issue_type", new_default_issue_type)
             self.db.set_setting("work_start_hour", str(new_work_start_hour))
             self.db.set_setting("work_end_hour", str(new_work_end_hour))
             self.db.set_setting("show_weekends", "1" if new_show_weekends else "0")
@@ -650,9 +645,8 @@ class MainWindow(tk.Tk):
             if new_theme_id != current_theme_id or hours_changed:
                 self.after(0, lambda: self._select_theme(new_theme_id))
 
-        self.settings_panel.load(display_name, default_jira_project, default_issue_type,
-                                  current_theme_id, current_work_start_hour, current_work_end_hour,
-                                  current_show_weekends, on_save)
+        self.settings_panel.load(display_name, current_theme_id, current_work_start_hour,
+                                  current_work_end_hour, current_show_weekends, on_save)
 
     def _open_settings_dialog(self):
         # Settings is a permanent tab now (see _build_body) -- this just
@@ -725,9 +719,6 @@ class MainWindow(tk.Tk):
             return
 
         display_name = self.db.get_setting("jira_display_name", "") or ""
-        default_jira_project = self.db.get_setting("default_project", "") or ""
-        default_issue_type = (self.db.get_setting("default_issue_type", config.DEFAULT_ISSUE_TYPE)
-                               or config.DEFAULT_ISSUE_TYPE)
         if not display_name:
             proceed = messagebox.askyesno(
                 "No Display Name set",
@@ -737,8 +728,7 @@ class MainWindow(tk.Tk):
             if not proceed:
                 return
 
-        written, skipped = export_entries(entries, filepath, display_name,
-                                           default_jira_project, default_issue_type)
+        written, skipped = export_entries(entries, filepath, display_name)
 
         msg = f"Exported {written} worklog row(s) to:\n{filepath}"
         if skipped:

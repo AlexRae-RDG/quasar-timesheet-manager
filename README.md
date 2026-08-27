@@ -181,9 +181,10 @@ Three things could all reasonably be called "project," so to be explicit:
   "Sprint Planning").
 - **Project** — the color-owning group an Activity belongs to (e.g.
   "Client A"). Recoloring a Project recolors every Activity inside it.
-- **Jira Project** — the real Jira project your time exports *into* (e.g.
-  "Quasar Delivery Management"), unrelated to either of the above. Set a
-  default once in **Settings**; override per-block only when needed.
+- **Jira Project** — the real Jira project your time exports *into*,
+  unrelated to either of the above. Fixed at "Quasar Delivery Management"
+  (and "Sub-task" as the Issue Type) for this app — override per-block
+  only in the rare case one genuinely needs to differ.
 
 The exported CSV's column header always reads **"Project"**, matching
 what Jira's importer expects — "Jira Project" is purely this app's
@@ -209,9 +210,10 @@ Example row:
 Quasar Delivery Management,Sub-task,QDM-5455,2026-07-24 00:00:00,Alex Rae,1h 00m,Photocard test condition analysis
 ```
 
-- **Project**/**Issue Type** — from the block's own value, else the
-  activity's, else the defaults in **Settings → Jira Export Settings…**
-  ("Task" is the final Issue Type fallback).
+- **Project**/**Issue Type** — from the block's own value if it sets one,
+  else fixed at "Quasar Delivery Management" / "Sub-task" (the only values
+  this app ever needs — no longer Settings-configurable, so there's
+  nothing to mistype).
 - **Key** — the block's Jira Issue Key. **Date Started** — the block's
   date at midnight. **Display Name** — set in Settings. **Time Spent
   (h)** — formatted like `1h 30m`. **Work Description** — the block's

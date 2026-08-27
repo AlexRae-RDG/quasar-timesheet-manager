@@ -118,6 +118,13 @@ DEFAULT_PROJECT_COLORS = [
 # ---------------------------------------------------------------------------
 # The export matches this exact column structure (see app/export_csv.py):
 #   Project, Issue Type, Key, Date Started, Display Name, Time Spent (h), Work Description
-# Fallback used for a block's "Issue Type" column when neither the block nor
-# its project nor Settings' Default Issue Type specify one.
-DEFAULT_ISSUE_TYPE = "Task"
+# Fixed for the scope of this app -- every exported row always goes into the
+# same Jira project as the same issue type, so these are plain constants
+# rather than user-editable settings. (Settings used to have "Default Jira
+# Project"/"Default Issue Type" fields for this; removed since a value that
+# never actually changes is just a place a typo could sneak in.) A time
+# block can still override either one individually via its own Time Block
+# tab, for the rare case one genuinely needs to differ -- see
+# app/export_csv.py's build_row for the fallback order.
+DEFAULT_JIRA_PROJECT = "Quasar Delivery Management"
+DEFAULT_ISSUE_TYPE = "Sub-task"
