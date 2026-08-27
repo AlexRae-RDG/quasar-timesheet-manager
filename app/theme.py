@@ -460,7 +460,7 @@ def apply_theme(root):
 
     style.configure("TLabel", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 10))
     style.configure("Secondary.TLabel", background=PANEL_BG, foreground=TEXT_SECONDARY, font=(family, 9))
-    style.configure("Heading.TLabel", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 13, "bold"))
+    style.configure("Heading.TLabel", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 16, "bold"))
 
     # Primary (accent) button
     style.configure("Accent.TButton", background=ACCENT, foreground="white",
@@ -502,6 +502,17 @@ def apply_theme(root):
     style.map("TCombobox", fieldbackground=[("readonly", FIELD_BG)],
               selectbackground=[("readonly", FIELD_BG)], selectforeground=[("readonly", TEXT_PRIMARY)],
               foreground=[("readonly", TEXT_PRIMARY)])
+
+    style.configure("Big.TLabel", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 12))
+    style.configure("Big.TEntry", fieldbackground=FIELD_BG, foreground=TEXT_PRIMARY, padding=10,
+                     borderwidth=1, relief="flat", bordercolor=BORDER_STRONG,
+                     insertcolor=TEXT_PRIMARY, font=(family, 12))
+    style.configure("Big.TCombobox", fieldbackground=FIELD_BG, background=FIELD_BG, foreground=TEXT_PRIMARY,
+                     padding=10, borderwidth=1, relief="flat", arrowsize=16, font=(family, 12))
+    style.map("Big.TCombobox", fieldbackground=[("readonly", FIELD_BG)],
+              selectbackground=[("readonly", FIELD_BG)], selectforeground=[("readonly", TEXT_PRIMARY)],
+              foreground=[("readonly", TEXT_PRIMARY)])
+    style.configure("Big.TCheckbutton", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 12))
 
     style.configure("TRadiobutton", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 10))
     style.configure("TCheckbutton", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 10))

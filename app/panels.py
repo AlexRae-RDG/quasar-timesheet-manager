@@ -67,14 +67,18 @@ def _scroll_body(master, **kwargs) -> tk.Frame:
 
 
 def _configure_half_width_columns(outer: tk.Frame):
-    """Split `outer` into two equal-weight grid columns: real content
-    goes in column 0, column 1 is left empty as a spacer. Because the two
-    columns always share outer's width equally, whatever's gridded into
-    column 0 (sticky="new") grows to about half of the tab's width on a
-    wide window and shrinks back down toward its own natural minimum on a
-    narrow one -- rather than bunching up in the top-left corner with the
-    rest of the tab left bare, which is what a plain pack(anchor="w")
-    gives you regardless of how wide the window is."""
+    """Split `outer` into two equal-weight grid columns. Most callers only
+    use column 0 (real content) and leave column 1 as a spacer; Settings
+    puts its Keyboard Shortcuts section in column 1 instead (see
+    SettingsPanel.__init__) rather than leaving it empty. Either way,
+    because the two columns always share outer's width equally, whatever
+    sits in a column (gridded with sticky="new") grows with the window --
+    to about half its width when there's a spacer, less than half when
+    there's real content on both sides -- and shrinks back down toward
+    its own natural minimum on a narrow one, rather than bunching up in
+    the top-left corner with the rest of the tab left bare, which is what
+    a plain pack(anchor="w") gives you regardless of how wide the window
+    is."""
     outer.columnconfigure(0, weight=1)
     outer.columnconfigure(1, weight=1)
 
@@ -214,49 +218,52 @@ class ActivityPanel(tk.Frame):
         outer.pack(fill="both", expand=True, padx=28, pady=24)
         _configure_half_width_columns(outer)
 
-        self.heading = tk.Label(outer, text="Add QDM", font=(self.family, 14, "bold"),
+        self.heading = tk.Label(outer, text="Add QDM", font=(self.family, 20, "bold"),
                                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY)
-        self.heading.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        self.heading.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 24))
 
         frm = ttk.Frame(outer)
         frm.grid(row=1, column=0, sticky="new")
         frm.columnconfigure(1, weight=1)
 
         row = 0
-        ttk.Label(frm, text="Name").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="Name", style="Big.TLabel").grid(row=row, column=0, sticky="w", pady=10)
         self.name_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.name_var, width=32).grid(row=row, column=1, sticky="ew", pady=4)
+        ttk.Entry(frm, textvariable=self.name_var, width=32, style="Big.TEntry").grid(
+            row=row, column=1, sticky="ew", pady=10)
         row += 1
 
-        ttk.Label(frm, text="Jira Issue Key").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="Jira Issue Key", style="Big.TLabel").grid(row=row, column=0, sticky="w", pady=10)
         # Every key in this app starts with the same fixed "QDM-" prefix
         # (see app/config.py's JIRA_KEY_PREFIX), so this only asks for the
         # number after it -- the static "QDM-" label makes what's being
         # typed (and what the full key will be) obvious at a glance.
         key_row = tk.Frame(frm, bg=theme.PANEL_BG)
-        key_row.grid(row=row, column=1, sticky="w", pady=4)
-        tk.Label(key_row, text=config.JIRA_KEY_PREFIX, font=(self.family, 10, "bold"),
+        key_row.grid(row=row, column=1, sticky="w", pady=10)
+        tk.Label(key_row, text=config.JIRA_KEY_PREFIX, font=(self.family, 12, "bold"),
                  bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY).pack(side="left")
         self.jira_key_number_var = tk.StringVar()
-        ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10).pack(side="left")
+        ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10,
+                  style="Big.TEntry").pack(side="left")
         row += 1
 
-        ttk.Label(frm, text="Project").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="Project", style="Big.TLabel").grid(row=row, column=0, sticky="w", pady=10)
         self.project_var = tk.StringVar()
         self.project_combo = ttk.Combobox(frm, textvariable=self.project_var,
-                                           state="readonly", width=30)
-        self.project_combo.grid(row=row, column=1, sticky="ew", pady=4)
+                                           state="readonly", width=30, style="Big.TCombobox")
+        self.project_combo.grid(row=row, column=1, sticky="ew", pady=10)
         self.project_combo.bind("<<ComboboxSelected>>", self._on_project_changed)
         row += 1
 
         # Hidden unless "+ New Project..." is selected above (see
         # _on_project_changed) -- lets a user create a project without
         # leaving this tab, via the create_project callback.
-        self.new_project_label = ttk.Label(frm, text="New Project Name")
-        self.new_project_label.grid(row=row, column=0, sticky="w", pady=4)
+        self.new_project_label = ttk.Label(frm, text="New Project Name", style="Big.TLabel")
+        self.new_project_label.grid(row=row, column=0, sticky="w", pady=10)
         self.new_project_name_var = tk.StringVar()
-        self.new_project_entry = ttk.Entry(frm, textvariable=self.new_project_name_var, width=32)
-        self.new_project_entry.grid(row=row, column=1, sticky="ew", pady=4)
+        self.new_project_entry = ttk.Entry(frm, textvariable=self.new_project_name_var, width=32,
+                                            style="Big.TEntry")
+        self.new_project_entry.grid(row=row, column=1, sticky="ew", pady=10)
         self._set_new_project_field_visible(False)
         row += 1
 
@@ -265,8 +272,8 @@ class ActivityPanel(tk.Frame):
         # from its Activity's Project rather than being set here.
         tk.Label(frm, text="Color comes from the Project this activity belongs to -- set it "
                             "from the Project's own edit panel.",
-                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=340,
-                 font=(self.family, 8)).grid(row=row, column=0, columnspan=2, sticky="w", pady=(0, 8))
+                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
+                 font=(self.family, 9)).grid(row=row, column=0, columnspan=2, sticky="w", pady=(0, 14))
         row += 1
 
         # Jira Project and Issue Type are deliberately NOT editable
@@ -278,17 +285,19 @@ class ActivityPanel(tk.Frame):
         # individually if it ever needs to differ, via its own Time Block
         # tab.
 
-        ttk.Label(frm, text="Default Duration (min)").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="Default Duration (min)", style="Big.TLabel").grid(
+            row=row, column=0, sticky="w", pady=10)
         self.duration_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.duration_var, width=10).grid(row=row, column=1, sticky="w", pady=4)
+        ttk.Entry(frm, textvariable=self.duration_var, width=10, style="Big.TEntry").grid(
+            row=row, column=1, sticky="w", pady=10)
         row += 1
 
-        self.error_label = ttk.Label(frm, text="", foreground=theme.DANGER)
+        self.error_label = ttk.Label(frm, text="", foreground=theme.DANGER, style="Big.TLabel")
         self.error_label.grid(row=row, column=0, columnspan=2, sticky="w")
         row += 1
 
         self.btns = ttk.Frame(frm)
-        self.btns.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(16, 0))
+        self.btns.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(24, 0))
 
     def load(self, activity: Optional[Activity], on_save: Callable[[dict], bool],
               on_delete: Optional[Callable[[], None]] = None):
@@ -408,46 +417,46 @@ class ProjectPanel(tk.Frame):
         outer.pack(fill="both", expand=True, padx=28, pady=24)
         _configure_half_width_columns(outer)
 
-        self.heading = tk.Label(outer, text="Add Project", font=(self.family, 14, "bold"),
+        self.heading = tk.Label(outer, text="Add Project", font=(self.family, 20, "bold"),
                                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY)
-        self.heading.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        self.heading.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         self.subheading = tk.Label(
             outer, text="Projects group your activities in the sidebar and set the color "
                         "every one of their time blocks shows.",
-            font=(self.family, 9), justify="left", wraplength=340,
+            font=(self.family, 10), justify="left", wraplength=420,
             bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY)
-        self.subheading.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 14))
+        self.subheading.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 20))
 
         frm = ttk.Frame(outer)
         frm.grid(row=2, column=0, sticky="new")
         frm.columnconfigure(1, weight=1)
 
         row = 0
-        ttk.Label(frm, text="Name *").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="Name *", style="Big.TLabel").grid(row=row, column=0, sticky="w", pady=10)
         self.name_var = tk.StringVar()
-        entry = ttk.Entry(frm, textvariable=self.name_var, width=32)
-        entry.grid(row=row, column=1, sticky="ew", pady=4)
+        entry = ttk.Entry(frm, textvariable=self.name_var, width=32, style="Big.TEntry")
+        entry.grid(row=row, column=1, sticky="ew", pady=10)
         entry.bind("<Return>", lambda e: self._save())
         row += 1
 
-        ttk.Label(frm, text="Color").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="Color", style="Big.TLabel").grid(row=row, column=0, sticky="w", pady=10)
         color_frame = ttk.Frame(frm)
-        color_frame.grid(row=row, column=1, sticky="w", pady=4)
-        self.swatch = tk.Canvas(color_frame, width=26, height=26, highlightthickness=1,
+        color_frame.grid(row=row, column=1, sticky="w", pady=10)
+        self.swatch = tk.Canvas(color_frame, width=32, height=32, highlightthickness=1,
                                  highlightbackground=theme.BORDER_STRONG, bg=theme.PANEL_BG)
-        self.swatch.pack(side="left", padx=(0, 8))
+        self.swatch.pack(side="left", padx=(0, 10))
         self._draw_swatch()
         RoundedButton(color_frame, text="Choose…", style="Secondary.TButton",
                       command=self._pick_color).pack(side="left")
         row += 1
 
         palette = ttk.Frame(frm)
-        palette.grid(row=row, column=0, columnspan=2, sticky="w", pady=(2, 8))
+        palette.grid(row=row, column=0, columnspan=2, sticky="w", pady=(4, 12))
         for c in config.DEFAULT_PROJECT_COLORS:
-            sw = tk.Canvas(palette, width=20, height=20, bg=c, highlightthickness=1,
+            sw = tk.Canvas(palette, width=24, height=24, bg=c, highlightthickness=1,
                             highlightbackground=theme.BORDER_STRONG, cursor="hand2")
-            sw.pack(side="left", padx=2)
+            sw.pack(side="left", padx=3)
             sw.bind("<Button-1>", lambda e, col=c: self._set_color(col))
         row += 1
 
@@ -457,16 +466,16 @@ class ProjectPanel(tk.Frame):
         # Sidebar._edit_project -> db.update_project), rather than each
         # activity or block having its own color.
         tk.Label(frm, text="This color is used for every time block for every activity in this project.",
-                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=340,
-                 font=(self.family, 8)).grid(row=row, column=0, columnspan=2, sticky="w", pady=(0, 8))
+                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
+                 font=(self.family, 9)).grid(row=row, column=0, columnspan=2, sticky="w", pady=(0, 14))
         row += 1
 
-        self.error_label = ttk.Label(frm, text="", foreground=theme.DANGER)
+        self.error_label = ttk.Label(frm, text="", foreground=theme.DANGER, style="Big.TLabel")
         self.error_label.grid(row=row, column=0, columnspan=2, sticky="w")
         row += 1
 
         self.btns = ttk.Frame(frm)
-        self.btns.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(16, 0))
+        self.btns.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(24, 0))
 
     def load(self, project: Optional[Project], on_save: Callable[[dict], bool],
               on_delete: Optional[Callable[[], None]] = None):
@@ -558,33 +567,39 @@ class SettingsPanel(tk.Frame):
         outer.pack(fill="both", expand=True, padx=28, pady=24)
         _configure_half_width_columns(outer)
 
-        tk.Label(outer, text="Settings", font=(self.family, 14, "bold"),
+        tk.Label(outer, text="Settings", font=(self.family, 20, "bold"),
                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 24))
 
-        frm = ttk.Frame(outer)
-        frm.grid(row=1, column=0, sticky="new")
-        # Unlike Activity/Project's label|field two-column layout, most of
-        # Settings' own fields (Display Name, the theme grid, etc.) sit in
-        # frm's column 0 by themselves (or span both), so column 0 is what
-        # needs to stretch here.
-        frm.columnconfigure(0, weight=1)
+        # Left column: Display Name, Work Hours, Theme -- the settings
+        # someone actually edits. Right column: Keyboard Shortcuts --
+        # reference material glanced at rather than changed, so it doesn't
+        # need to sit above the fold underneath everything else; putting
+        # it beside the settings instead uses the space
+        # _configure_half_width_columns opened up on the right rather than
+        # leaving it empty.
+        left = ttk.Frame(outer)
+        left.grid(row=1, column=0, sticky="new", padx=(0, 36))
+        left.columnconfigure(0, weight=1)
 
-        ttk.Label(frm, text="Display Name (appears in every exported row)").grid(
-            row=0, column=0, sticky="w", pady=(0, 4))
+        right = ttk.Frame(outer)
+        right.grid(row=1, column=1, sticky="new")
+
+        ttk.Label(left, text="Display Name (appears in every exported row)",
+                  style="Big.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.display_name_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.display_name_var, width=36).grid(
-            row=1, column=0, sticky="ew", pady=(0, 12))
+        ttk.Entry(left, textvariable=self.display_name_var, width=36, style="Big.TEntry").grid(
+            row=1, column=0, sticky="ew", pady=(0, 28))
 
-        ttk.Label(frm, text="Work Hours", style="Heading.TLabel").grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(4, 2))
-        tk.Label(frm, text="Which hours the calendar grid shows, and whether it includes "
+        ttk.Label(left, text="Work Hours", style="Heading.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        tk.Label(left, text="Which hours the calendar grid shows, and whether it includes "
                             "Saturday/Sunday. Applies to the Timesheet and Template tabs alike.",
                  fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
-                 font=(self.family, 8)).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 8))
+                 font=(self.family, 9)).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-        hours_row = tk.Frame(frm, bg=theme.PANEL_BG)
-        hours_row.grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        hours_row = tk.Frame(left, bg=theme.PANEL_BG)
+        hours_row.grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 14))
         # Index-based (not string-parsed) round trip: each Combobox's
         # `values` is a list of display labels ("9 AM", etc.); the actual
         # hour that label maps to is looked up by matching index in the
@@ -596,31 +611,33 @@ class SettingsPanel(tk.Frame):
         start_labels = [self._format_hour(h) for h in self._start_hour_values]
         end_labels = [self._format_hour(h) for h in self._end_hour_values]
 
-        ttk.Label(hours_row, text="From").pack(side="left")
+        ttk.Label(hours_row, text="From", style="Big.TLabel").pack(side="left")
         self.work_start_var = tk.StringVar()
         self.work_start_combo = ttk.Combobox(hours_row, textvariable=self.work_start_var,
-                                              values=start_labels, state="readonly", width=8)
-        self.work_start_combo.pack(side="left", padx=(6, 16))
+                                              values=start_labels, state="readonly", width=8,
+                                              style="Big.TCombobox")
+        self.work_start_combo.pack(side="left", padx=(8, 20))
 
-        ttk.Label(hours_row, text="To").pack(side="left")
+        ttk.Label(hours_row, text="To", style="Big.TLabel").pack(side="left")
         self.work_end_var = tk.StringVar()
         self.work_end_combo = ttk.Combobox(hours_row, textvariable=self.work_end_var,
-                                            values=end_labels, state="readonly", width=8)
-        self.work_end_combo.pack(side="left", padx=(6, 0))
+                                            values=end_labels, state="readonly", width=8,
+                                            style="Big.TCombobox")
+        self.work_end_combo.pack(side="left", padx=(8, 0))
 
         self.show_weekends_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frm, text="Show weekends (Saturday & Sunday)",
-                         variable=self.show_weekends_var).grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        ttk.Checkbutton(left, text="Show weekends (Saturday & Sunday)",
+                         variable=self.show_weekends_var, style="Big.TCheckbutton").grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(0, 28))
 
-        ttk.Label(frm, text="Theme", style="Heading.TLabel").grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=(4, 2))
+        ttk.Label(left, text="Theme", style="Heading.TLabel").grid(
+            row=6, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self.theme_description_label = tk.Label(
-            frm, text="", fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left",
-            wraplength=520, font=(self.family, 8))
-        self.theme_description_label.grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 8))
+            left, text="", fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left",
+            wraplength=480, font=(self.family, 9))
+        self.theme_description_label.grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-        self.theme_grid = ttk.Frame(frm)
+        self.theme_grid = ttk.Frame(left)
         self.theme_grid.grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 12))
         self._build_theme_grid()
 
@@ -628,25 +645,25 @@ class SettingsPanel(tk.Frame):
         # in _refresh_theme_selection via grid()/grid_remove(), which Tk
         # remembers the row/col/sticky/pady for automatically -- no need
         # to repeat them at toggle time).
-        self.custom_controls_frame = tk.Frame(frm, bg=theme.PANEL_BG)
+        self.custom_controls_frame = tk.Frame(left, bg=theme.PANEL_BG)
         self.custom_controls_frame.grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 16))
         self._build_custom_controls()
 
-        ttk.Label(frm, text="Keyboard Shortcuts", style="Heading.TLabel").grid(
-            row=10, column=0, columnspan=2, sticky="w", pady=(4, 8))
-        shortcuts = tk.Frame(frm, bg=theme.PANEL_BG)
-        shortcuts.grid(row=11, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        ttk.Label(right, text="Keyboard Shortcuts", style="Heading.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 10))
+        shortcuts = tk.Frame(right, bg=theme.PANEL_BG)
+        shortcuts.grid(row=1, column=0, sticky="new")
         for i, (keys, description) in enumerate(_SHORTCUTS):
-            tk.Label(shortcuts, text=keys, font=(self.family, 9, "bold"),
+            tk.Label(shortcuts, text=keys, font=(self.family, 10, "bold"),
                      bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY, anchor="nw",
-                     justify="left", wraplength=230).grid(
-                row=i, column=0, sticky="nw", padx=(0, 16), pady=3)
-            tk.Label(shortcuts, text=description, font=(self.family, 9),
+                     justify="left", wraplength=260).grid(
+                row=i, column=0, sticky="nw", padx=(0, 16), pady=5)
+            tk.Label(shortcuts, text=description, font=(self.family, 10),
                      bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY, anchor="nw",
-                     justify="left", wraplength=320).grid(row=i, column=1, sticky="nw", pady=3)
+                     justify="left", wraplength=360).grid(row=i, column=1, sticky="nw", pady=5)
 
-        btns = ttk.Frame(frm)
-        btns.grid(row=12, column=0, columnspan=2, sticky="ew")
+        btns = ttk.Frame(outer)
+        btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(28, 0))
         RoundedButton(btns, text="Cancel", style="Secondary.TButton", command=self._cancel).pack(side="right")
         RoundedButton(btns, text="Save", style="Accent.TButton", command=self._save).pack(side="right", padx=6)
 
