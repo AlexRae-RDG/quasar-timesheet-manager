@@ -181,10 +181,6 @@ _PRESETS = [
      dict(app_bg="#0F0714", panel_bg="#180D22", text_primary="#F5EAFB", accent="#C93BE0",
           danger="#FF4D6D", now_line="#FFB454")),
 
-    ("warm_stone", "Warm Stone", "Neutral",
-     "Taupe and warm beige with a soft brown accent -- understated, timeless.",
-     dict(app_bg="#F6F3EE", panel_bg="#FFFFFF", text_primary="#2B2620", accent="#8A6F52",
-          danger="#C0392B", now_line="#D97706")),
     ("slate_graphite", "Slate Graphite", "Neutral",
      "Cool graphite gray with a muted steel accent -- quiet and professional.",
      dict(app_bg="#0E0F11", panel_bg="#16181B", text_primary="#EDEEF0", accent="#6E7681",
@@ -460,7 +456,7 @@ def apply_theme(root):
 
     style.configure("TLabel", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 10))
     style.configure("Secondary.TLabel", background=PANEL_BG, foreground=TEXT_SECONDARY, font=(family, 9))
-    style.configure("Heading.TLabel", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 16, "bold"))
+    style.configure("Heading.TLabel", background=PANEL_BG, foreground=TEXT_PRIMARY, font=(family, 18, "bold"))
 
     # Primary (accent) button
     style.configure("Accent.TButton", background=ACCENT, foreground="white",

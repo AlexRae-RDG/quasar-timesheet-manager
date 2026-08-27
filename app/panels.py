@@ -585,21 +585,24 @@ class SettingsPanel(tk.Frame):
         right = ttk.Frame(outer)
         right.grid(row=1, column=1, sticky="new")
 
-        ttk.Label(left, text="Display Name (appears in every exported row)",
-                  style="Big.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        ttk.Label(left, text="Display Name", style="Heading.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        tk.Label(left, text="Appears in every exported row.",
+                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
+                 font=(self.family, 9)).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
         self.display_name_var = tk.StringVar()
         ttk.Entry(left, textvariable=self.display_name_var, width=36, style="Big.TEntry").grid(
-            row=1, column=0, sticky="ew", pady=(0, 28))
+            row=2, column=0, sticky="ew", pady=(0, 28))
 
         ttk.Label(left, text="Work Hours", style="Heading.TLabel").grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(0, 6))
+            row=3, column=0, columnspan=2, sticky="w", pady=(0, 6))
         tk.Label(left, text="Which hours the calendar grid shows, and whether it includes "
                             "Saturday/Sunday. Applies to the Timesheet and Template tabs alike.",
                  fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
-                 font=(self.family, 9)).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 10))
+                 font=(self.family, 9)).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         hours_row = tk.Frame(left, bg=theme.PANEL_BG)
-        hours_row.grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 14))
+        hours_row.grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 14))
         # Index-based (not string-parsed) round trip: each Combobox's
         # `values` is a list of display labels ("9 AM", etc.); the actual
         # hour that label maps to is looked up by matching index in the
@@ -628,17 +631,17 @@ class SettingsPanel(tk.Frame):
         self.show_weekends_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(left, text="Show weekends (Saturday & Sunday)",
                          variable=self.show_weekends_var, style="Big.TCheckbutton").grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(0, 28))
+            row=6, column=0, columnspan=2, sticky="w", pady=(0, 28))
 
         ttk.Label(left, text="Theme", style="Heading.TLabel").grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=(0, 6))
+            row=7, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self.theme_description_label = tk.Label(
             left, text="", fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left",
             wraplength=480, font=(self.family, 9))
-        self.theme_description_label.grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        self.theme_description_label.grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         self.theme_grid = ttk.Frame(left)
-        self.theme_grid.grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        self.theme_grid.grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 12))
         self._build_theme_grid()
 
         # Only visible while "Custom" is the selected card above (toggled
@@ -646,7 +649,7 @@ class SettingsPanel(tk.Frame):
         # remembers the row/col/sticky/pady for automatically -- no need
         # to repeat them at toggle time).
         self.custom_controls_frame = tk.Frame(left, bg=theme.PANEL_BG)
-        self.custom_controls_frame.grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        self.custom_controls_frame.grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 16))
         self._build_custom_controls()
 
         ttk.Label(right, text="Keyboard Shortcuts", style="Heading.TLabel").grid(

@@ -7,7 +7,12 @@ This used to be a single list you toggled between Activity/Project
 grouping to see (and rendered as horizontal bars); both breakdowns are
 now always visible together, and each is a pie chart with its own legend
 and total underneath, since a "where did my time go" view reads faster as
-a chart than as bars once there's more than a handful of categories.
+a chart than as bars once there's more than a handful of categories. Each
+slice is labeled with its own name and percentage directly on the chart
+(see _draw_pie) -- the scrolling legend below is now a secondary
+reference (exact hours, or a slice too thin to label) rather than the
+primary way to read the breakdown, so the chart itself gets most of the
+column's height instead of splitting it evenly with the legend.
 
 A third permanent tab alongside "Timesheet" and "Template" (never hidden,
 same as Template -- see app/main_window.py's _build_body) rather than one
@@ -29,6 +34,7 @@ back to its own preserved activity_name/color, the same as the
 per-Activity/QDM fallback (there's no way to know which Project it used
 to belong to once the activity itself is gone).
 """
+import math
 import tkinter as tk
 from datetime import date, timedelta
 
@@ -127,26 +133,30 @@ class SummaryPanel(tk.Frame):
         tk.Label(frame, text=heading, font=(self.family, 11, "bold"), bg=theme.PANEL_BG,
                  fg=theme.TEXT_PRIMARY).pack(anchor="w", pady=(0, 8))
 
-        # expand=True on BOTH this and the legend area below (rather
-        # than a fixed height here) -- Tk's pack divides leftover space
-        # roughly evenly between however many packed children request
-        # expansion, so the chart ends up taking about half this column's
-        # height, with the scrolling legend taking the other half, and
-        # both adapt if the window is resized instead of the chart
-        # staying pinned to one fixed pixel size.
-        pie_canvas = tk.Canvas(frame, bg=theme.PANEL_BG, highlightthickness=0)
-        pie_canvas.pack(fill="both", expand=True, pady=(0, 10))
+        # Packed from the bottom up first (pack computes every child's
+        # space before drawing any of them, so call order doesn't affect
+        # the final top-to-bottom layout): the total line, then a
+        # fixed-height legend, leaving the rest of the column for the pie
+        # canvas below. Each slice now carries its own name + percentage
+        # (see _draw_pie), so this scrolling legend is a secondary
+        # reference -- the exact hours, or a slice too thin to label --
+        # rather than the primary way to read the chart, which is why it
+        # gets a modest capped height instead of splitting the column
+        # evenly with the chart the way it used to; that's what lets the
+        # pie itself grow to fill most of the column.
+        total_label = tk.Label(frame, text="", font=(self.family, 9, "bold"),
+                                bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY)
+        total_label.pack(side="bottom", anchor="w", pady=(8, 0))
 
         # outline=False -- the outer `card` in _build_widgets already
         # draws the one border for the whole nav+columns box; without
         # this, ScrollArea's own (same-colored, so invisible) rounded
         # corners would still draw a second border right underneath it.
-        legend_area = ScrollArea(frame, bg=theme.PANEL_BG, outline=False)
-        legend_area.pack(fill="both", expand=True)
+        legend_area = ScrollArea(frame, bg=theme.PANEL_BG, outline=False, height=150)
+        legend_area.pack(side="bottom", fill="x")
 
-        total_label = tk.Label(frame, text="", font=(self.family, 9, "bold"),
-                                bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY)
-        total_label.pack(anchor="w", pady=(8, 0))
+        pie_canvas = tk.Canvas(frame, bg=theme.PANEL_BG, highlightthickness=0)
+        pie_canvas.pack(fill="both", expand=True, pady=(0, 10))
 
         return {
             "frame": frame,
@@ -313,8 +323,13 @@ class SummaryPanel(tk.Frame):
                  fg=theme.TEXT_PRIMARY, anchor="w", justify="left", wraplength=130).pack(
             side="left", fill="x", expand=True)
 
-    @staticmethod
-    def _draw_pie(canvas: tk.Canvas, rows: list, grand_total: int):
+    # Slices this thin (in degrees -- 14 degrees is a bit under 4% of the
+    # full circle) can't fit a legible name + percentage without running
+    # into their neighbors, so they keep just their color on the ring and
+    # stay nameable via the legend below instead.
+    _MIN_LABEL_SWEEP_DEGREES = 14.0
+
+    def _draw_pie(self, canvas: tk.Canvas, rows: list, grand_total: int):
         canvas.delete("all")
         w, h = canvas.winfo_width(), canvas.winfo_height()
         if w <= 1 or h <= 1:
@@ -325,11 +340,33 @@ class SummaryPanel(tk.Frame):
         x0 = (w - size) / 2
         y0 = (h - size) / 2
         x1, y1 = x0 + size, y0 + size
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        radius = size / 2
+        label_font = (self.family, 11, "bold")
+        # Where inside the slice the label sits -- close enough to the
+        # center that even a fairly narrow slice's arc is wide enough at
+        # that radius to hold two short lines of text, but not so close
+        # that every label bunches up on top of each other in the middle.
+        label_radius = radius * 0.62
+        label_width = max(60, int(radius * 0.9))
 
         if not rows or grand_total <= 0:
             # Empty state -- a plain muted ring rather than a blank canvas.
             canvas.create_oval(x0, y0, x1, y1, outline=theme.BORDER, width=2)
             return
+
+        def label_color(slice_color: str) -> str:
+            # Picked from the slice's own fill, not the active app theme --
+            # slice colors are whatever Projects were assigned, independent
+            # of light/dark theme, so contrast has to be judged per-slice.
+            return "#FFFFFF" if theme._is_dark(slice_color) else "#1A1A1A"
+
+        def draw_label(mid_angle_deg: float, name: str, pct: float, color: str):
+            rad = math.radians(mid_angle_deg)
+            lx = cx + label_radius * math.cos(rad)
+            ly = cy - label_radius * math.sin(rad)
+            canvas.create_text(lx, ly, text=f"{name}\n{pct:.0f}%", fill=label_color(color),
+                                font=label_font, justify="center", width=label_width)
 
         # Standard math convention (0=east, 90=north, same as
         # theme.rounded_rect uses) -- 90 is 12 o'clock, the usual pie
@@ -348,7 +385,12 @@ class SummaryPanel(tk.Frame):
                 # instead for this (fairly common, e.g. a period with
                 # just one project) case.
                 canvas.create_oval(x0, y0, x1, y1, fill=r["color"], outline=theme.PANEL_BG, width=2)
+                canvas.create_text(cx, cy, text=f'{r["name"]}\n100%', fill=label_color(r["color"]),
+                                    font=label_font, justify="center", width=label_width)
                 break
             canvas.create_arc(x0, y0, x1, y1, start=angle, extent=-sweep,
                                fill=r["color"], outline=theme.PANEL_BG, width=2, style="pieslice")
+            if sweep >= self._MIN_LABEL_SWEEP_DEGREES:
+                pct = r["minutes"] / grand_total * 100
+                draw_label(angle - sweep / 2, r["name"], pct, r["color"])
             angle -= sweep
