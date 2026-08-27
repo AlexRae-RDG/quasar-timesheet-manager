@@ -66,6 +66,19 @@ def _scroll_body(master, **kwargs) -> tk.Frame:
     return area.content
 
 
+def _configure_half_width_columns(outer: tk.Frame):
+    """Split `outer` into two equal-weight grid columns: real content
+    goes in column 0, column 1 is left empty as a spacer. Because the two
+    columns always share outer's width equally, whatever's gridded into
+    column 0 (sticky="new") grows to about half of the tab's width on a
+    wide window and shrinks back down toward its own natural minimum on a
+    narrow one -- rather than bunching up in the top-left corner with the
+    rest of the tab left bare, which is what a plain pack(anchor="w")
+    gives you regardless of how wide the window is."""
+    outer.columnconfigure(0, weight=1)
+    outer.columnconfigure(1, weight=1)
+
+
 def _rebind_wheel(widget):
     """Call after destroying and recreating a widget's children inside a
     panel built on _scroll_body (a Save/Cancel/Delete button row, a
@@ -199,13 +212,15 @@ class ActivityPanel(tk.Frame):
         body = _scroll_body(self)
         outer = tk.Frame(body, bg=theme.PANEL_BG)
         outer.pack(fill="both", expand=True, padx=28, pady=24)
+        _configure_half_width_columns(outer)
 
         self.heading = tk.Label(outer, text="Add QDM", font=(self.family, 14, "bold"),
                                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY)
-        self.heading.pack(anchor="w", pady=(0, 16))
+        self.heading.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
 
         frm = ttk.Frame(outer)
-        frm.pack(anchor="w")
+        frm.grid(row=1, column=0, sticky="new")
+        frm.columnconfigure(1, weight=1)
 
         row = 0
         ttk.Label(frm, text="Name").grid(row=row, column=0, sticky="w", pady=4)
@@ -391,20 +406,22 @@ class ProjectPanel(tk.Frame):
         body = _scroll_body(self)
         outer = tk.Frame(body, bg=theme.PANEL_BG)
         outer.pack(fill="both", expand=True, padx=28, pady=24)
+        _configure_half_width_columns(outer)
 
         self.heading = tk.Label(outer, text="Add Project", font=(self.family, 14, "bold"),
                                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY)
-        self.heading.pack(anchor="w", pady=(0, 16))
+        self.heading.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
 
         self.subheading = tk.Label(
             outer, text="Projects group your activities in the sidebar and set the color "
                         "every one of their time blocks shows.",
             font=(self.family, 9), justify="left", wraplength=340,
             bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY)
-        self.subheading.pack(anchor="w", pady=(0, 14))
+        self.subheading.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 14))
 
         frm = ttk.Frame(outer)
-        frm.pack(anchor="w")
+        frm.grid(row=2, column=0, sticky="new")
+        frm.columnconfigure(1, weight=1)
 
         row = 0
         ttk.Label(frm, text="Name *").grid(row=row, column=0, sticky="w", pady=4)
@@ -539,12 +556,19 @@ class SettingsPanel(tk.Frame):
         body = _scroll_body(self)
         outer = tk.Frame(body, bg=theme.PANEL_BG)
         outer.pack(fill="both", expand=True, padx=28, pady=24)
+        _configure_half_width_columns(outer)
 
         tk.Label(outer, text="Settings", font=(self.family, 14, "bold"),
-                 bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).pack(anchor="w", pady=(0, 16))
+                 bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
 
         frm = ttk.Frame(outer)
-        frm.pack(anchor="w")
+        frm.grid(row=1, column=0, sticky="new")
+        # Unlike Activity/Project's label|field two-column layout, most of
+        # Settings' own fields (Display Name, the theme grid, etc.) sit in
+        # frm's column 0 by themselves (or span both), so column 0 is what
+        # needs to stretch here.
+        frm.columnconfigure(0, weight=1)
 
         ttk.Label(frm, text="Display Name (appears in every exported row)").grid(
             row=0, column=0, sticky="w", pady=(0, 4))
