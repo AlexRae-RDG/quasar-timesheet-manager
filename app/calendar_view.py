@@ -240,6 +240,7 @@ class CalendarGrid(tk.Frame):
             self.total_labels.append(lbl)
 
         self.canvas.bind("<Button-1>", self._on_button1)
+        self.canvas.bind("<Double-Button-1>", self._on_double_click)
         self.canvas.bind("<B1-Motion>", self._on_motion_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
         self.canvas.bind("<Motion>", self._on_hover)
@@ -959,6 +960,34 @@ class CalendarGrid(tk.Frame):
             "preview_rect": None,
             "moved": False,
         }
+
+    def _on_double_click(self, event):
+        """Double-clicking a time block jumps straight to its Edit tab --
+        the same place right-click -> "Edit..." goes, just one motion
+        instead of two. Empty-area double-clicks do nothing extra: the
+        first of the two clicks that make up a double-click already ran
+        _on_button1/_on_release as an ordinary click (Tk fires the
+        single-click bindings for every press/release; <Double-Button-1>
+        additionally fires on top of that for the second press only --
+        see CONTROL_STATE_MASK's comment above for the same
+        "most-specific-pattern-wins" rule), so on empty space that first
+        click already started a create-drag/quick-assign same as always;
+        there's nothing more to do here for that case.
+
+        entry_id is looked up fresh here rather than reusing anything
+        from _drag_state, since _on_button1 already ran once for this same
+        double-click's first press and may have started a drag/duplicate
+        of its own -- that's discarded below in favor of just opening the
+        edit dialog, which is the one unambiguous thing a double-click on
+        a block should do.
+        """
+        entry_id = self._entry_id_at(event.x, event.y)
+        if entry_id is None:
+            return
+        self._drag_state = None
+        entry = self.entries_by_id[entry_id]
+        self.selected_entry_id = entry_id
+        self._edit_entry(entry)
 
     def _on_motion_drag(self, event):
         if not self._drag_state:
