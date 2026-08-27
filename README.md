@@ -104,7 +104,10 @@ sudo pacman -S tk                # Arch
   `app/config.py` for finer granularity). The grid resizes with the
   window.
 - **Drag** across empty slots to create a time block — opens a "Time
-  Block" tab to pick the activity, adjust day/time, and add notes.
+  Block" tab to pick the QDM, adjust day/time, and add notes. Jira Project
+  is a pick-from-list (with an option to add a new one) rather than free
+  text, and Jira Issue Key only asks for the number — the "QDM-" prefix
+  is added automatically.
 - **Drag an edge** to resize a block, **drag the middle** to move it
   (including to a different day). **Double-click** a block to jump
   straight to its Edit tab. **Right-click** to edit, duplicate, or delete.
@@ -158,7 +161,8 @@ focus)
 
 **Activities (left sidebar)**
 - **+ Add** creates an activity (name + Project required, optional Jira
-  Issue Key and default duration). **Click** an activity to arm it, then
+  Issue Key — just the number, "QDM-" is added automatically — and
+  default duration). **Click** an activity to arm it, then
   click an empty slot to drop in a block instantly. **Double-click**/
   right-click **Edit** to change it; existing blocks update to match.
   **Right-click Delete** asks whether to keep or remove its time blocks.

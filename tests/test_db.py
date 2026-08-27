@@ -6,6 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app import config
 from app.db import Database
 from app.models import Activity, Project, TemplateEntry, TimeEntry
 
@@ -35,6 +36,31 @@ class TestDatabase(unittest.TestCase):
         for a in activities:
             self.assertIsNotNone(a.project_id)
             self.assertIsNotNone(a.color)
+
+    def test_list_known_jira_projects_always_includes_the_fixed_default(self):
+        # A fresh database has no time blocks yet, but the fixed default
+        # is still what every export uses implicitly (see
+        # app/config.py's DEFAULT_JIRA_PROJECT) -- so it's always offered
+        # even before anything has explicitly used it.
+        self.assertEqual(self.db.list_known_jira_projects(), [config.DEFAULT_JIRA_PROJECT])
+
+    def test_list_known_jira_projects_includes_projects_actually_used(self):
+        act = self.db.list_activities()[0]
+        self.db.add_time_entry(TimeEntry(
+            None, act.id, act.name, act.jira_key, act.color,
+            "2026-08-24", "09:00", "10:00", "", jira_project="Other Client Project"))
+        self.db.add_template_entry(TemplateEntry(
+            None, act.id, act.name, act.jira_key, act.color,
+            0, "09:00", "10:00", "", jira_project="Third Project"))
+        # A blank/whitespace-only value shouldn't pollute the list.
+        self.db.add_time_entry(TimeEntry(
+            None, act.id, act.name, act.jira_key, act.color,
+            "2026-08-25", "09:00", "10:00", "", jira_project="   "))
+
+        projects = self.db.list_known_jira_projects()
+        self.assertEqual(projects[0], config.DEFAULT_JIRA_PROJECT)
+        self.assertEqual(set(projects),
+                          {config.DEFAULT_JIRA_PROJECT, "Other Client Project", "Third Project"})
 
     def test_add_update_delete_project(self):
         pid = self.db.add_project(Project(None, "Design Team", "#123456"))

@@ -6,6 +6,7 @@ SLOT_MINUTES to 15 for finer-grained time blocking, or widen the visible
 hours).
 """
 import os
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Calendar grid
@@ -128,3 +129,38 @@ DEFAULT_PROJECT_COLORS = [
 # app/export_csv.py's build_row for the fallback order.
 DEFAULT_JIRA_PROJECT = "Quasar Delivery Management"
 DEFAULT_ISSUE_TYPE = "Sub-task"
+
+# Every Jira Issue Key in this app starts with the same fixed prefix, so
+# every place a human types one (app/panels.py's Activity tab, app/
+# timeblock_panel.py's Time Block tab) only asks for the number after
+# it -- jira_key_number/jira_key_from_number below are the shared
+# round-trip between that number-only field and the real stored key.
+JIRA_KEY_PREFIX = "QDM-"
+
+
+def jira_key_number(full_key: Optional[str]) -> str:
+    """Strip JIRA_KEY_PREFIX for display in a number-only entry field.
+    Case/whitespace-tolerant, and falls back to showing the value as-is
+    if it doesn't start with the prefix (older data from before this,
+    or a stray paste) -- nothing already stored is ever silently
+    dropped from view."""
+    if not full_key:
+        return ""
+    full_key = full_key.strip()
+    if full_key.upper().startswith(JIRA_KEY_PREFIX.upper()):
+        return full_key[len(JIRA_KEY_PREFIX):].strip()
+    return full_key
+
+
+def jira_key_from_number(number: Optional[str]) -> Optional[str]:
+    """The inverse of jira_key_number(): reconstructs the full key from
+    whatever was typed into the number-only field. Tolerates someone
+    pasting (or typing) the prefix themselves rather than doubling it
+    up into "QDM-QDM-1234". Returns None for a blank entry, same as an
+    unset Jira Issue Key has always meant in this app."""
+    number = (number or "").strip()
+    if not number:
+        return None
+    if number.upper().startswith(JIRA_KEY_PREFIX.upper()):
+        return number
+    return f"{JIRA_KEY_PREFIX}{number}"

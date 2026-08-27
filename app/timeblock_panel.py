@@ -11,12 +11,18 @@ second tab ("Time Block") that appears next to the "Timesheet" tab only
 while a block is being added or edited, and disappears again afterwards.
 """
 import tkinter as tk
-from tkinter import ttk
+from tkinter import simpledialog, ttk
 from typing import Callable, List, Optional
 
-from . import theme
+from . import config, theme
 from .models import Activity
 from .widgets import RoundedButton, ScrollArea
+
+# Shown at the end of the Jira Project dropdown as a way to add a value
+# that isn't in the known-projects list yet (see TimeBlockPanel.load's
+# known_jira_projects param) rather than allowing free text that's easy
+# to typo.
+_NEW_JIRA_PROJECT_OPTION = "+ New Project…"
 
 
 class TimeBlockPanel(tk.Frame):
@@ -32,6 +38,8 @@ class TimeBlockPanel(tk.Frame):
         self.day_key_by_label = {}
         self.day_label_by_key = {}
         self.time_options: List[str] = []
+        self.known_jira_projects: List[str] = []
+        self._previous_jira_project = ""
 
         # Wrapped in a borderless ScrollArea (see panels._scroll_body's
         # docstring for the same rationale) so this panel's Save/Cancel/
@@ -49,7 +57,7 @@ class TimeBlockPanel(tk.Frame):
         frm.pack(anchor="w")
 
         row = 0
-        ttk.Label(frm, text="Activity").grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Label(frm, text="QDM").grid(row=row, column=0, sticky="w", pady=4)
         self.activity_var = tk.StringVar()
         self.activity_combo = ttk.Combobox(frm, textvariable=self.activity_var,
                                             state="readonly", width=30)
@@ -58,27 +66,38 @@ class TimeBlockPanel(tk.Frame):
         row += 1
 
         ttk.Label(frm, text="Jira Issue Key").grid(row=row, column=0, sticky="w", pady=4)
-        self.jira_key_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.jira_key_var, width=32).grid(
-            row=row, column=1, columnspan=2, sticky="ew", pady=4)
+        # Every key in this app starts with the same fixed "QDM-" prefix
+        # (see app/config.py's JIRA_KEY_PREFIX), so this only asks for the
+        # number after it -- the static "QDM-" label makes what's being
+        # typed (and what the full key will be) obvious at a glance.
+        key_row = tk.Frame(frm, bg=theme.PANEL_BG)
+        key_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=4)
+        tk.Label(key_row, text=config.JIRA_KEY_PREFIX, font=(self.family, 10, "bold"),
+                 bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY).pack(side="left")
+        self.jira_key_number_var = tk.StringVar()
+        ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10).pack(side="left")
         row += 1
 
-        # Labeled "Jira Project" (not "Project" or "Activity") so it isn't
-        # confused with the Activity chosen above -- this is specifically
-        # the Jira project this block's CSV export row goes under (e.g.
-        # "Quasar Delivery Management"), almost always the same for
-        # everything.
+        # Labeled "Jira Project" (not "Project" or "QDM") so it isn't
+        # confused with the QDM chosen above -- this is specifically the
+        # Jira project this block's CSV export row goes under. A readonly
+        # dropdown of Jira projects actually used somewhere in this
+        # database (see Database.list_known_jira_projects), plus an
+        # explicit way to add a new one -- not free text, since this is
+        # almost always the same one value ("Quasar Delivery Management")
+        # and a typo here would silently break that row's export.
         ttk.Label(frm, text="Jira Project").grid(row=row, column=0, sticky="w", pady=4)
         self.jira_project_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.jira_project_var, width=32).grid(
-            row=row, column=1, columnspan=2, sticky="ew", pady=4)
+        self.jira_project_combo = ttk.Combobox(frm, textvariable=self.jira_project_var,
+                                                state="readonly", width=30)
+        self.jira_project_combo.grid(row=row, column=1, columnspan=2, sticky="ew", pady=4)
+        self.jira_project_combo.bind("<<ComboboxSelected>>", self._on_jira_project_changed)
         row += 1
 
-        ttk.Label(frm, text="Issue Type").grid(row=row, column=0, sticky="w", pady=4)
-        self.issue_type_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.issue_type_var, width=32).grid(
-            row=row, column=1, columnspan=2, sticky="ew", pady=4)
-        row += 1
+        # No "Issue Type" field here any more -- it's always
+        # config.DEFAULT_ISSUE_TYPE ("Sub-task") for this app, applied
+        # automatically at export time (see app/export_csv.py), the same
+        # reasoning that removed it from Settings.
 
         ttk.Label(frm, text="Day").grid(row=row, column=0, sticky="w", pady=4)
         self.day_var = tk.StringVar()
@@ -121,12 +140,15 @@ class TimeBlockPanel(tk.Frame):
 
     # ------------------------------------------------------------------
     def _on_activity_changed(self, _event=None):
+        # Only the Jira Issue Key comes from the chosen QDM -- Jira
+        # Project/Issue Type no longer live on a QDM at all (they're
+        # this app's fixed defaults, or this block's own choice below),
+        # so switching QDMs leaves whatever was already picked for those
+        # alone instead of blanking it out.
         name = self.activity_var.get()
         for a in self.activities:
             if a.name == name:
-                self.jira_key_var.set(a.jira_key or "")
-                self.jira_project_var.set(a.jira_project or "")
-                self.issue_type_var.set(a.issue_type or "")
+                self.jira_key_number_var.set(config.jira_key_number(a.jira_key))
                 break
 
     def _selected_activity(self) -> Optional[Activity]:
@@ -136,14 +158,38 @@ class TimeBlockPanel(tk.Frame):
                 return a
         return None
 
+    def _refresh_jira_project_values(self):
+        self.jira_project_combo.config(values=self.known_jira_projects + [_NEW_JIRA_PROJECT_OPTION])
+
+    def _on_jira_project_changed(self, _event=None):
+        if self.jira_project_var.get() != _NEW_JIRA_PROJECT_OPTION:
+            self._previous_jira_project = self.jira_project_var.get()
+            return
+        name = simpledialog.askstring(
+            "New Jira Project",
+            "Jira project name (e.g. \"Quasar Delivery Management\"):",
+            parent=self,
+        )
+        name = (name or "").strip()
+        if not name:
+            # Cancelled, or left blank -- revert rather than leaving the
+            # "+ New Project…" placeholder sitting there as if selected.
+            self.jira_project_var.set(self._previous_jira_project)
+            return
+        if name.lower() not in {p.lower() for p in self.known_jira_projects}:
+            self.known_jira_projects.append(name)
+            self._refresh_jira_project_values()
+        self.jira_project_var.set(name)
+        self._previous_jira_project = name
+
     # ------------------------------------------------------------------
     def load(self, activities: List[Activity], day_options,
               initial_day_idx: Optional[int], initial_start: Optional[str],
               initial_end: Optional[str], initial_activity_id: Optional[int],
               initial_notes: str, on_save: Callable[[dict], bool],
               on_delete: Optional[Callable[[], None]], start_hour: int, end_hour: int,
-              slot_minutes: int, initial_jira_project: str = "", initial_issue_type: str = "",
-              is_new: bool = True):
+              slot_minutes: int, known_jira_projects: List[str],
+              initial_jira_project: str = "", is_new: bool = True):
         self.activities = activities
         self.activities_by_id = {a.id: a for a in activities}
         self.on_save = on_save
@@ -156,7 +202,7 @@ class TimeBlockPanel(tk.Frame):
         self.day_label_by_key = {key: label for label, key in day_options}
         self.day_combo.config(values=self.day_labels)
 
-        activity_names = [a.name for a in activities] or ["(no activities yet)"]
+        activity_names = [a.name for a in activities] or ["(no QDM's yet)"]
         self.activity_combo.config(values=activity_names)
 
         self.time_options = []
@@ -173,15 +219,24 @@ class TimeBlockPanel(tk.Frame):
 
         self.activity_var.set("")
         self.activity_combo.set("")
-        self.jira_key_var.set("")
+        self.jira_key_number_var.set("")
         if initial_activity_id is not None and initial_activity_id in self.activities_by_id:
             act = self.activities_by_id[initial_activity_id]
             self.activity_var.set(act.name)
             self.activity_combo.set(act.name)
-            self.jira_key_var.set(act.jira_key or "")
+            self.jira_key_number_var.set(config.jira_key_number(act.jira_key))
 
-        self.jira_project_var.set(initial_jira_project or "")
-        self.issue_type_var.set(initial_issue_type or "")
+        self.known_jira_projects = list(known_jira_projects) or [config.DEFAULT_JIRA_PROJECT]
+        effective_jira_project = (initial_jira_project or "").strip() or config.DEFAULT_JIRA_PROJECT
+        if effective_jira_project.lower() not in {p.lower() for p in self.known_jira_projects}:
+            # A stored override that isn't in the known-projects list for
+            # whatever reason (e.g. old data) -- show it anyway rather
+            # than silently swapping in something this block doesn't
+            # actually use.
+            self.known_jira_projects.append(effective_jira_project)
+        self._refresh_jira_project_values()
+        self.jira_project_var.set(effective_jira_project)
+        self._previous_jira_project = effective_jira_project
 
         default_day = self.day_labels[0] if self.day_labels else ""
         day_label = self.day_label_by_key.get(initial_day_idx, default_day)
@@ -216,7 +271,7 @@ class TimeBlockPanel(tk.Frame):
     def _save(self):
         act = self._selected_activity()
         if act is None:
-            self.error_label.config(text="Please choose an activity.")
+            self.error_label.config(text="Please choose a QDM.")
             return
         start = self.start_var.get()
         end = self.end_var.get()
@@ -224,17 +279,24 @@ class TimeBlockPanel(tk.Frame):
             self.error_label.config(text="End time must be after start time.")
             return
 
+        jira_project = self.jira_project_var.get().strip()
+        if not jira_project or jira_project == _NEW_JIRA_PROJECT_OPTION:
+            jira_project = config.DEFAULT_JIRA_PROJECT
+
         result = {
             "activity_id": act.id,
             "activity_name": act.name,
-            "jira_key": (self.jira_key_var.get() or "").strip() or None,
+            "jira_key": config.jira_key_from_number(self.jira_key_number_var.get()),
             "color": act.color,
             "day_idx": self.day_key_by_label[self.day_var.get()],
             "start_time": start,
             "end_time": end,
             "notes": self.notes_text.get("1.0", "end").strip(),
-            "jira_project": (self.jira_project_var.get() or "").strip() or None,
-            "issue_type": (self.issue_type_var.get() or "").strip() or None,
+            "jira_project": jira_project,
+            # No longer editable here (see the comment near the fields
+            # above) -- Jira Issue Type comes from app/config.py's fixed
+            # default at export time instead.
+            "issue_type": None,
         }
         assert self.on_save is not None
         ok = self.on_save(result)

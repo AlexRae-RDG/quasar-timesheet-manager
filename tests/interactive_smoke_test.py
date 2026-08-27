@@ -356,10 +356,12 @@ check("Activity tab becomes visible",
       str(win.notebook.tab(win.activity_panel, "state")) == "normal")
 apanel = win.activity_panel
 check("Jira Project/Issue Type fields were removed from the Activity tab (they're always the "
-      "same, so they live in Settings instead)",
+      "same fixed values now -- see app/config.py)",
       not hasattr(apanel, "jira_project_var") and not hasattr(apanel, "issue_type_var"))
 apanel.name_var.set("Design Review")
-apanel.jira_var.set("PROJ-42")
+# Jira Issue Key is a number-only field now -- "QDM-" is prepended
+# automatically (see app/config.py's jira_key_from_number).
+apanel.jira_key_number_var.set("42")
 apanel.duration_var.set("45")
 apanel._save()
 win.update()
@@ -367,8 +369,9 @@ check("Activity tab hides again after Save",
       str(win.notebook.tab(win.activity_panel, "state")) == "hidden")
 
 new_acts = db.list_activities()
-check("New activity was added", any(a.name == "Design Review" and a.jira_key == "PROJ-42" for a in new_acts))
-check("New activity has no per-activity Jira Project/Issue Type (falls back to Settings defaults)",
+check("New activity was added, with the QDM- prefix filled in automatically",
+      any(a.name == "Design Review" and a.jira_key == "QDM-42" for a in new_acts))
+check("New activity has no per-activity Jira Project/Issue Type (falls back to this app's fixed defaults)",
       any(a.name == "Design Review" and a.jira_project is None and a.issue_type is None for a in new_acts))
 design_review = next(a for a in new_acts if a.name == "Design Review")
 

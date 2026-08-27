@@ -539,6 +539,7 @@ class MainWindow(tk.Tk):
         self.notebook.select(0)
 
     def _open_time_block_panel(self, **kwargs):
+        kwargs["known_jira_projects"] = self.db.list_known_jira_projects()
         self.timeblock_panel.load(**kwargs)
         self._show_panel(self.timeblock_panel)
 

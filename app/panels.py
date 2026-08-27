@@ -206,8 +206,16 @@ class ActivityPanel(tk.Frame):
         row += 1
 
         ttk.Label(frm, text="Jira Issue Key").grid(row=row, column=0, sticky="w", pady=4)
-        self.jira_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.jira_var, width=32).grid(row=row, column=1, sticky="ew", pady=4)
+        # Every key in this app starts with the same fixed "QDM-" prefix
+        # (see app/config.py's JIRA_KEY_PREFIX), so this only asks for the
+        # number after it -- the static "QDM-" label makes what's being
+        # typed (and what the full key will be) obvious at a glance.
+        key_row = tk.Frame(frm, bg=theme.PANEL_BG)
+        key_row.grid(row=row, column=1, sticky="w", pady=4)
+        tk.Label(key_row, text=config.JIRA_KEY_PREFIX, font=(self.family, 10, "bold"),
+                 bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY).pack(side="left")
+        self.jira_key_number_var = tk.StringVar()
+        ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10).pack(side="left")
         row += 1
 
         ttk.Label(frm, text="Project *").grid(row=row, column=0, sticky="w", pady=4)
@@ -264,7 +272,7 @@ class ActivityPanel(tk.Frame):
         self.project_combo.set(current_label)
 
         self.name_var.set(activity.name if activity else "")
-        self.jira_var.set((activity.jira_key or "") if activity else "")
+        self.jira_key_number_var.set(config.jira_key_number(activity.jira_key) if activity else "")
         self.duration_var.set(
             str(activity.default_duration_minutes) if activity and activity.default_duration_minutes else "")
         self.error_label.config(text="")
@@ -303,7 +311,7 @@ class ActivityPanel(tk.Frame):
 
         result = {
             "name": name,
-            "jira_key": self.jira_var.get().strip() or None,
+            "jira_key": config.jira_key_from_number(self.jira_key_number_var.get()),
             "default_duration_minutes": duration,
             "project_id": project_id,
             # No longer editable per-activity (see the comment near the

@@ -1374,7 +1374,6 @@ class CalendarGrid(tk.Frame):
             initial_notes=(existing.notes if existing else ""),
             initial_jira_project=((armed.jira_project if armed else
                                     (existing.jira_project if existing else None)) or ""),
-            initial_issue_type=((armed.issue_type if armed else (existing.issue_type if existing else None)) or ""),
             on_save=on_save,
             on_delete=on_delete if existing else None,
             start_hour=config.START_HOUR, end_hour=config.END_HOUR,

@@ -730,6 +730,28 @@ class Database:
             rows = cur.fetchall()
         return [self._row_to_entry(r) for r in rows]
 
+    def list_known_jira_projects(self) -> List[str]:
+        """Distinct Jira Project values actually used somewhere in this
+        database (time blocks and template blocks), for offering as a
+        controlled pick-list on the Time Block tab instead of free text
+        that's easy to typo. Always includes config.DEFAULT_JIRA_PROJECT
+        first, even if nothing has explicitly used it yet, since that's
+        what a block uses implicitly whenever it doesn't set its own
+        (see app/export_csv.py) -- so it's always the sensible default
+        to show pre-selected."""
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT jira_project FROM time_entries "
+                "WHERE jira_project IS NOT NULL AND TRIM(jira_project) != '' "
+                "UNION "
+                "SELECT DISTINCT jira_project FROM template_entries "
+                "WHERE jira_project IS NOT NULL AND TRIM(jira_project) != ''"
+            )
+            used = sorted({str(r[0]).strip() for r in cur.fetchall()})
+        projects = [config.DEFAULT_JIRA_PROJECT]
+        projects.extend(p for p in used if p != config.DEFAULT_JIRA_PROJECT)
+        return projects
+
     def entries_overlap(self, date: str, start_time: str, end_time: str,
                          exclude_id: Optional[int] = None) -> bool:
         """True if [start_time, end_time) on `date` overlaps an existing entry."""
