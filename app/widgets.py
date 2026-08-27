@@ -416,14 +416,35 @@ class ScrollArea(RoundedCard):
         self.bind_all("<MouseWheel>", self._on_wheel_anywhere, add="+")
         self.bind_all("<Button-4>", self._on_wheel_anywhere, add="+")
         self.bind_all("<Button-5>", self._on_wheel_anywhere, add="+")
-        # <TouchpadScroll> is a Tk 9+ event (TIP 684) -- harmless to bind
-        # unconditionally on an older Tk that's never heard of it (Tk just
-        # never fires a pattern it doesn't generate; binding to an unknown
-        # sequence name isn't an error), so there's no version check here.
-        self.bind_all("<TouchpadScroll>", self._on_touchpad_anywhere, add="+")
+        # <TouchpadScroll> is a Tk 9+ event (TIP 684). An older/other Tk
+        # build that's never heard of it usually just never fires it if
+        # you bind to it -- but Tk on Windows instead raises TclError
+        # ("bad event type or keysym") the moment you try, which crashed
+        # the app on startup there. So this is probed once, here, instead
+        # of assumed: _bind_touchpad_scroll reports whether it actually
+        # took, and every later touchpad bind (bind_wheel_recursive below)
+        # trusts that same result instead of trying again.
+        self._touchpad_supported = self._bind_touchpad_scroll(
+            self, self._on_touchpad_anywhere, bind_all=True)
         self.bind_wheel_recursive(self.canvas)
         self.bind_wheel_recursive(self.scrollbar)
         self.bind_wheel_recursive(self.content)
+
+    def _bind_touchpad_scroll(self, widget, handler, bind_all: bool = False) -> bool:
+        """Best-effort <TouchpadScroll> bind (Tk 9+, TIP 684). Confirmed on
+        Windows that some Tk builds raise TclError for this event name at
+        bind time ("bad event type or keysym") rather than silently never
+        firing it, so every attempt is guarded -- a failure here just means
+        touchpad scrolling falls back to the other three scrolling paths
+        (mouse wheel, scrollbar drag, and the scrollbar's arrow buttons)."""
+        try:
+            if bind_all:
+                widget.bind_all("<TouchpadScroll>", handler, add="+")
+            else:
+                widget.bind("<TouchpadScroll>", handler, add="+")
+            return True
+        except tk.TclError:
+            return False
 
     def refresh_scrollregion(self):
         """Call after replacing `.content`'s children in bulk (destroying
@@ -453,9 +474,11 @@ class ScrollArea(RoundedCard):
             widget.bind("<MouseWheel>", self._on_wheel_direct, add="+")
             widget.bind("<Button-4>", self._on_wheel_direct, add="+")
             widget.bind("<Button-5>", self._on_wheel_direct, add="+")
-            # Tk 9+ TouchpadScroll (TIP 684) -- see class docstring. Binding
-            # this on an older Tk that never generates the event is harmless.
-            widget.bind("<TouchpadScroll>", self._on_touchpad_direct, add="+")
+            # Tk 9+ TouchpadScroll (TIP 684) -- see class docstring and
+            # _bind_touchpad_scroll. Only attempted when the __init__ probe
+            # already confirmed this Tk build actually supports it.
+            if self._touchpad_supported:
+                self._bind_touchpad_scroll(widget, self._on_touchpad_direct)
             self._wheel_bound.add(widget)
         for child in widget.winfo_children():
             self.bind_wheel_recursive(child)
