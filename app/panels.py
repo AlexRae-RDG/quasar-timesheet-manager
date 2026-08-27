@@ -22,7 +22,7 @@ from typing import Callable, Dict, List, Optional, Union
 
 from . import config, theme
 from .models import Activity, Project, TemplateEntry, TimeEntry
-from .widgets import RoundedButton, ScrollArea
+from .widgets import RoundedButton, ScrollArea, show_saved_toast
 
 EntryLike = Union[TimeEntry, TemplateEntry]
 
@@ -43,8 +43,8 @@ _SHORTCUTS = [
     ("Esc", "Cancel a drag in progress, un-arm a queued activity, or deselect a block"),
     ("Ctrl+Click a block", "Instantly duplicate it into its own exact time slot "
                             "(drag the copy afterward to retime it)"),
-    ("Enter (in the Name field)", "Save the Add/Edit Project form without "
-                                   "needing to click Save"),
+    ("Enter (in a form field)", "Save the current Add/Edit Project, QDM, or "
+                                 "Time Block form without needing to click Save"),
 ]
 
 
@@ -231,8 +231,9 @@ class ActivityPanel(tk.Frame):
         row = 0
         ttk.Label(frm, text="Name", style="Big.TLabel").grid(row=row, column=0, sticky="w", pady=10)
         self.name_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.name_var, width=32, style="Big.TEntry").grid(
-            row=row, column=1, sticky="ew", pady=10)
+        name_entry = ttk.Entry(frm, textvariable=self.name_var, width=32, style="Big.TEntry")
+        name_entry.grid(row=row, column=1, sticky="ew", pady=10)
+        name_entry.bind("<Return>", lambda e: self._save())
         row += 1
 
         ttk.Label(frm, text="Jira Issue Key", style="Big.TLabel").grid(row=row, column=0, sticky="w", pady=10)
@@ -245,8 +246,10 @@ class ActivityPanel(tk.Frame):
         tk.Label(key_row, text=config.JIRA_KEY_PREFIX, font=(self.family, 12, "bold"),
                  bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY).pack(side="left")
         self.jira_key_number_var = tk.StringVar()
-        ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10,
-                  style="Big.TEntry").pack(side="left")
+        jira_key_entry = ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10,
+                                    style="Big.TEntry")
+        jira_key_entry.pack(side="left")
+        jira_key_entry.bind("<Return>", lambda e: self._save())
         row += 1
 
         ttk.Label(frm, text="Project", style="Big.TLabel").grid(row=row, column=0, sticky="w", pady=10)
@@ -255,6 +258,7 @@ class ActivityPanel(tk.Frame):
                                            state="readonly", width=30, style="Big.TCombobox")
         self.project_combo.grid(row=row, column=1, sticky="ew", pady=10)
         self.project_combo.bind("<<ComboboxSelected>>", self._on_project_changed)
+        self.project_combo.bind("<Return>", lambda e: self._save())
         row += 1
 
         # Hidden unless "+ New Project..." is selected above (see
@@ -266,6 +270,7 @@ class ActivityPanel(tk.Frame):
         self.new_project_entry = ttk.Entry(frm, textvariable=self.new_project_name_var, width=32,
                                             style="Big.TEntry")
         self.new_project_entry.grid(row=row, column=1, sticky="ew", pady=10)
+        self.new_project_entry.bind("<Return>", lambda e: self._save())
         self._set_new_project_field_visible(False)
         row += 1
 
@@ -290,8 +295,9 @@ class ActivityPanel(tk.Frame):
         ttk.Label(frm, text="Default Duration (min)", style="Big.TLabel").grid(
             row=row, column=0, sticky="w", pady=10)
         self.duration_var = tk.StringVar()
-        ttk.Entry(frm, textvariable=self.duration_var, width=10, style="Big.TEntry").grid(
-            row=row, column=1, sticky="w", pady=10)
+        duration_entry = ttk.Entry(frm, textvariable=self.duration_var, width=10, style="Big.TEntry")
+        duration_entry.grid(row=row, column=1, sticky="w", pady=10)
+        duration_entry.bind("<Return>", lambda e: self._save())
         row += 1
 
         self.error_label = ttk.Label(frm, text="", foreground=theme.DANGER, style="Big.TLabel")
@@ -390,6 +396,7 @@ class ActivityPanel(tk.Frame):
         assert self.on_save is not None
         ok = self.on_save(result)
         if ok is not False:
+            show_saved_toast(self)
             self.on_close()
 
     def _cancel(self):
@@ -523,6 +530,7 @@ class ProjectPanel(tk.Frame):
         assert self.on_save is not None
         ok = self.on_save({"name": name, "color": self.selected_color.get()})
         if ok is not False:
+            show_saved_toast(self)
             self.on_close()
 
     def _cancel(self):
@@ -673,11 +681,12 @@ class SettingsPanel(tk.Frame):
         RoundedButton(btns, text="Save", style="Accent.TButton", command=self._save).pack(side="right", padx=6)
 
     def _build_theme_grid(self):
-        # A fixed 4-columns-wide grid of theme preview cards -- the twenty
-        # curated palettes plus a 21st "Custom" card at the end, wrapping
-        # to a tidy 4-per-row layout. Built once (not rebuilt on every
-        # load()); only the selection ring and description text change
-        # after that, via _refresh_theme_selection().
+        # A fixed 4-columns-wide grid of theme preview cards -- "System"
+        # first, then the eighteen curated palettes, then a "Custom" card
+        # at the end, wrapping to a tidy 4-per-row layout. Built once (not
+        # rebuilt on every load()); only the selection ring and
+        # description text change after that, via
+        # _refresh_theme_selection().
         cols = 4
         ids = list(theme.THEME_ORDER) + [theme.CUSTOM_THEME_ID]
         for i, theme_id in enumerate(ids):
@@ -806,6 +815,7 @@ class SettingsPanel(tk.Frame):
             work_end_hour,
             self.show_weekends_var.get(),
         )
+        show_saved_toast(self)
         self.on_close()
 
     def _cancel(self):

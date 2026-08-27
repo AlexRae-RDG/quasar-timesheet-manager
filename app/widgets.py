@@ -810,3 +810,92 @@ class VectorScrollbar(tk.Canvas):
         arrow = self._which_arrow(_event.y) if _event is not None else None
         self._arrow_hover = arrow
         self._redraw()
+
+
+def show_saved_toast(widget, text: str = "Saved"):
+    """Brief, self-dismissing confirmation toast anchored to the
+    bottom-right corner of `widget`'s window -- the only feedback after
+    clicking Save used to be the panel/tab closing, which is easy to miss
+    if you weren't watching for it. Call this right when a save succeeds,
+    before the panel closes.
+
+    Deliberately not a Toplevel the user can interact with: it doesn't
+    grab focus, isn't modal, and never raises on failure -- confirmation
+    is a nice-to-have, so on any platform quirk (no window manager
+    support for override-redirect positioning, no -alpha support, a
+    window that's mid-teardown) this just quietly does nothing rather
+    than risking the save itself.
+
+    Calling this again before a previous toast has faded replaces it
+    (tracked on the root window as _saved_toast) instead of stacking
+    multiple toasts on top of each other.
+    """
+    try:
+        root = widget.winfo_toplevel()
+        existing = getattr(root, "_saved_toast", None)
+        if existing is not None:
+            try:
+                existing.destroy()
+            except tk.TclError:
+                pass
+            root._saved_toast = None
+
+        toast = tk.Toplevel(root)
+        root._saved_toast = toast
+        toast.withdraw()
+        toast.overrideredirect(True)
+        try:
+            toast.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+
+        bg = theme.ACCENT
+        card = RoundedCard(toast, bg=bg, radius=10, outline=False, pad=12)
+        card.pack()
+        family = theme.resolve_font_family()
+        tk.Label(card.body, text=f"✓  {text}", font=(family, 11, "bold"),
+                 bg=bg, fg="#FFFFFF").pack(padx=6, pady=4)
+
+        toast.update_idletasks()
+        w, h = toast.winfo_reqwidth(), toast.winfo_reqheight()
+        x = root.winfo_rootx() + root.winfo_width() - w - 28
+        y = root.winfo_rooty() + root.winfo_height() - h - 28
+        toast.geometry(f"{w}x{h}+{x}+{y}")
+
+        supports_alpha = True
+        try:
+            toast.attributes("-alpha", 0.0)
+        except tk.TclError:
+            supports_alpha = False
+        toast.deiconify()
+
+        def destroy_toast():
+            if getattr(root, "_saved_toast", None) is toast:
+                root._saved_toast = None
+            try:
+                toast.destroy()
+            except tk.TclError:
+                pass
+
+        if not supports_alpha:
+            root.after(1400, destroy_toast)
+            return
+
+        def fade(step, total, start, end, then):
+            try:
+                frac = step / total
+                toast.attributes("-alpha", start + (end - start) * frac)
+            except tk.TclError:
+                then()
+                return
+            if step >= total:
+                then()
+            else:
+                root.after(15, lambda: fade(step + 1, total, start, end, then))
+
+        def fade_out():
+            fade(0, 8, 1.0, 0.0, destroy_toast)
+
+        fade(0, 6, 0.0, 1.0, lambda: root.after(1200, fade_out))
+    except tk.TclError:
+        pass

@@ -141,10 +141,11 @@ focus)
   only, and refreshes automatically.
 
 **Theme**
-- **Settings → Jira Export Settings…** (or **View → Theme…**) has 20
-  curated color themes plus a **Custom** option with its own color
-  pickers. Pick one, then **Save** to apply it across the app — your
-  choice is remembered next time you open it.
+- **Settings → Jira Export Settings…** (or **View → Theme…**) has a
+  **System** option that follows your OS's light/dark appearance
+  (default), 18 curated color themes, and a **Custom** option with its
+  own color pickers. Pick one, then **Save** to apply it across the app
+  — your choice is remembered next time you open it.
 
 **Backup & Restore**
 - **File → Backup & Restore…** backs up everything (activities, projects,
@@ -242,7 +243,7 @@ Free Timesheet.desktop     alternative Linux launcher
 Update and Reinstall App.command   macOS only -- rebuilds and reinstalls over /Applications
 packaging/                 PyInstaller build scripts -- see "Packaging as a native app" below
 app/config.py               grid size bounds, default issue type, project color palette
-app/theme.py                 20 curated palettes + custom picker, fonts, ttk styling
+app/theme.py                 18 curated palettes + system/custom dynamic themes, fonts, ttk styling
 app/widgets.py                shared building blocks: RoundedButton, RoundedCard, ScrollArea, VectorScrollbar
 app/models.py                Activity / Project / TimeEntry / TemplateEntry data classes
 app/db.py                     SQLite layer (auto-migrates older DBs; backup_to/restore_from)

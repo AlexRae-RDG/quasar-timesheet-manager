@@ -16,7 +16,7 @@ from typing import Callable, List, Optional
 
 from . import config, theme
 from .models import Activity
-from .widgets import RoundedButton, ScrollArea
+from .widgets import RoundedButton, ScrollArea, show_saved_toast
 
 # Shown at the end of the Jira Project dropdown as a way to add a value
 # that isn't in the known-projects list yet (see TimeBlockPanel.load's
@@ -63,6 +63,7 @@ class TimeBlockPanel(tk.Frame):
                                             state="readonly", width=30)
         self.activity_combo.grid(row=row, column=1, columnspan=2, sticky="ew", pady=4)
         self.activity_combo.bind("<<ComboboxSelected>>", self._on_activity_changed)
+        self.activity_combo.bind("<Return>", lambda e: self._save())
         row += 1
 
         ttk.Label(frm, text="Jira Issue Key").grid(row=row, column=0, sticky="w", pady=4)
@@ -75,7 +76,9 @@ class TimeBlockPanel(tk.Frame):
         tk.Label(key_row, text=config.JIRA_KEY_PREFIX, font=(self.family, 10, "bold"),
                  bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY).pack(side="left")
         self.jira_key_number_var = tk.StringVar()
-        ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10).pack(side="left")
+        jira_key_entry = ttk.Entry(key_row, textvariable=self.jira_key_number_var, width=10)
+        jira_key_entry.pack(side="left")
+        jira_key_entry.bind("<Return>", lambda e: self._save())
         row += 1
 
         # Labeled "Jira Project" (not "Project" or "QDM") so it isn't
@@ -92,6 +95,7 @@ class TimeBlockPanel(tk.Frame):
                                                 state="readonly", width=30)
         self.jira_project_combo.grid(row=row, column=1, columnspan=2, sticky="ew", pady=4)
         self.jira_project_combo.bind("<<ComboboxSelected>>", self._on_jira_project_changed)
+        self.jira_project_combo.bind("<Return>", lambda e: self._save())
         row += 1
 
         # No "Issue Type" field here any more -- it's always
@@ -103,6 +107,7 @@ class TimeBlockPanel(tk.Frame):
         self.day_var = tk.StringVar()
         self.day_combo = ttk.Combobox(frm, textvariable=self.day_var, state="readonly", width=30)
         self.day_combo.grid(row=row, column=1, columnspan=2, sticky="ew", pady=4)
+        self.day_combo.bind("<Return>", lambda e: self._save())
         row += 1
 
         ttk.Label(frm, text="Start / End").grid(row=row, column=0, sticky="w", pady=4)
@@ -112,11 +117,13 @@ class TimeBlockPanel(tk.Frame):
         self.start_combo = ttk.Combobox(time_row, textvariable=self.start_var,
                                          state="readonly", width=9)
         self.start_combo.pack(side="left")
+        self.start_combo.bind("<Return>", lambda e: self._save())
         ttk.Label(time_row, text="  to  ").pack(side="left")
         self.end_var = tk.StringVar()
         self.end_combo = ttk.Combobox(time_row, textvariable=self.end_var,
                                        state="readonly", width=9)
         self.end_combo.pack(side="left")
+        self.end_combo.bind("<Return>", lambda e: self._save())
         row += 1
 
         ttk.Label(frm, text="Notes").grid(row=row, column=0, sticky="nw", pady=4)
@@ -301,6 +308,7 @@ class TimeBlockPanel(tk.Frame):
         assert self.on_save is not None
         ok = self.on_save(result)
         if ok is not False:
+            show_saved_toast(self)
             self.on_close()
 
     def _cancel(self):
