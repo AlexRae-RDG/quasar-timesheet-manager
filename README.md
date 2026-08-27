@@ -313,14 +313,14 @@ timer rounding — no display needed. Eight more are headless UI smoke
 tests that need a virtual display (`Xvfb`): `interactive_smoke_test.py`
 (drag-create/resize/move/quick-assign/export, overlapping blocks,
 Ctrl+click-duplicate, templates, projects), `theme_toggle_smoke_test.py`
-(all 20 palettes + Custom, persistence, legacy settings migration),
-`ui_fixes_smoke_test.py` (tabs-not-popups, sidebar sizing/scrolling),
-`timer_smoke_test.py` (Start/Stop, rounding, overlaps, theme-change
-survival), `keyboard_undo_smoke_test.py` (selection, shortcuts, per-tab
-undo/redo), `summary_smoke_test.py` (totals, grouping, navigation),
-`backup_restore_smoke_test.py` (backup/restore round-trip, guards), and
-`double_click_edit_smoke_test.py` (double-click jumps to Edit with the
-right data).
+(System + all 18 curated palettes + Custom, persistence, legacy settings
+migration), `ui_fixes_smoke_test.py` (tabs-not-popups, sidebar
+sizing/scrolling), `timer_smoke_test.py` (Start/Stop, rounding, overlaps,
+theme-change survival), `keyboard_undo_smoke_test.py` (selection,
+shortcuts, per-tab undo/redo), `summary_smoke_test.py` (totals, grouping,
+navigation), `backup_restore_smoke_test.py` (backup/restore round-trip,
+guards), and `double_click_edit_smoke_test.py` (double-click jumps to
+Edit with the right data).
 
 ### Making a change and shipping it
 
