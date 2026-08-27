@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Free Timesheet
+Comment=Weekly time blocking with Jira CSV export
+Exec=bash -c 'cd "$(dirname "%k")" && bash "./Start Free Timesheet.sh"'
+Icon=x-office-calendar
+Terminal=false
+Categories=Office;

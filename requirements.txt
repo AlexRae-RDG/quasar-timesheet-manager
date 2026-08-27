@@ -1,0 +1,12 @@
+# No third-party packages required -- everything used (tkinter, sqlite3,
+# csv, dataclasses) is part of the Python standard library.
+#
+# On Windows and macOS, Tkinter ships with the standard python.org
+# installer, so there is nothing to install.
+#
+# On Linux, Tkinter is usually a separate OS package. If `python3 app.py`
+# fails with "ModuleNotFoundError: No module named 'tkinter'", install it
+# with your distro's package manager, e.g.:
+#   Debian/Ubuntu:  sudo apt install python3-tk
+#   Fedora:         sudo dnf install python3-tkinter
+#   Arch:           sudo pacman -S tk

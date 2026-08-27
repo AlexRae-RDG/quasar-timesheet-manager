@@ -1,0 +1,90 @@
+# Builds the native macOS and Windows apps and attaches them to a GitHub
+# Release, so colleagues can just download a ready-to-run copy instead of
+# installing Python or building anything themselves.
+#
+# Fires automatically whenever a tag like "v1.0.0" is pushed (see the
+# "Cutting a release" section in the README for the exact commands), or
+# can be run by hand from the Actions tab ("Run workflow") for testing --
+# a manual run still builds both platforms, it just won't have a tag to
+# attach a Release to unless one already exists for the ref you run it on.
+#
+# This wraps the exact same packaging/build_macos.sh / build_windows.bat
+# scripts described in the README, run on GitHub's own macOS/Windows
+# runners -- PyInstaller has to build on the OS it's targeting, which is
+# exactly why two separate jobs (one per OS) exist below.
+name: Build and release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # needed to create/update the Release and upload assets
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build QUASAR Timesheet Manager.app
+        run: bash packaging/build_macos.sh
+
+      - name: Zip the .app for release
+        run: |
+          cd dist
+          ditto -c -k --keepParent "QUASAR Timesheet Manager.app" \
+            "../QUASAR-Timesheet-Manager-macOS.zip"
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: QUASAR-Timesheet-Manager-macOS.zip
+          generate_release_notes: true
+
+      - name: Upload build (manual/test runs without a tag)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: QUASAR-Timesheet-Manager-macOS
+          path: QUASAR-Timesheet-Manager-macOS.zip
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build QUASAR Timesheet Manager.exe
+        shell: cmd
+        run: packaging\build_windows.bat
+
+      - name: Zip the app folder for release
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\QUASAR Timesheet Manager" `
+            -DestinationPath "QUASAR-Timesheet-Manager-Windows.zip"
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: QUASAR-Timesheet-Manager-Windows.zip
+          generate_release_notes: true
+
+      - name: Upload build (manual/test runs without a tag)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: QUASAR-Timesheet-Manager-Windows
+          path: QUASAR-Timesheet-Manager-Windows.zip

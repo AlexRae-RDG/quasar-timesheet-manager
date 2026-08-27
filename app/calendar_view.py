@@ -1,0 +1,1354 @@
+"""
+The weekly Mon-Fri calendar grid: a Tkinter Canvas that supports
+click-drag creation of time blocks, drag-to-resize, drag-to-move
+(including across days), right-click edit/duplicate/delete, and per-day
+totals.
+
+This same class also powers the permanent "Template" tab (template_mode=
+True) -- a recurring Mon-Fri week of blocks that never expires and can be
+copied onto any real week. Both modes share all the drawing/drag/resize/
+duplicate machinery below; the only difference is what a "day" and an
+"entry" are backed by:
+  - normal mode:   a day is a real date; entries are TimeEntry rows keyed
+                    by that date, read/written via db.*_time_entry*.
+  - template mode: a day is just a weekday (0=Monday..4=Friday, same as
+                    the day index used for columns either way); entries
+                    are TemplateEntry rows keyed by day_of_week, read/
+                    written via db.*_template_entry*.
+A handful of small helper methods (_entry_day_idx, _make_entry, _db_*,
+_day_options) are the only places that branch on template_mode -- every
+other method (drawing, dragging, hit-testing) works the same in both modes.
+"""
+import tkinter as tk
+from datetime import date, datetime, timedelta
+from tkinter import messagebox
+from typing import Callable, Dict, List, Optional, Tuple, Union
+
+from . import config, theme
+from .db import Database
+from .models import Activity, TemplateEntry, TimeEntry
+from .widgets import CARD_RADIUS, RoundedButton, RoundedCard
+
+def _minutes_total() -> int:
+    """(END_HOUR - START_HOUR) * 60, computed fresh on every call instead
+    of once at import time. Settings' Work Hours section (see
+    app/panels.py's SettingsPanel and app/main_window.py's
+    _load_settings_panel) can change START_HOUR/END_HOUR at runtime -- a
+    plain module-level constant computed once here would go stale after
+    that until the app was restarted, silently breaking the grid's slot
+    count, canvas height, and every drag/resize boundary that depends on
+    it below."""
+    return (config.END_HOUR - config.START_HOUR) * 60
+
+
+EntryLike = Union[TimeEntry, TemplateEntry]
+
+# Tk's event.state bitmask for the Control key. This bit is consistent
+# across X11/Windows/macOS Tk builds (unlike, say, the Alt/Option bit,
+# which varies), so it's safe to check directly rather than binding a
+# separate <Control-Button-1> sequence -- Tk only fires the *most specific*
+# matching binding for a given click, so a plain <Button-1> binding is what
+# actually needs to see the Control state to tell the two cases apart.
+CONTROL_STATE_MASK = 0x4
+
+
+def _minute_to_hhmm(minute_of_day: int) -> str:
+    total = config.START_HOUR * 60 + minute_of_day
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _hhmm_to_minute(hhmm: str) -> int:
+    h, m = (int(x) for x in hhmm.split(":"))
+    return h * 60 + m - config.START_HOUR * 60
+
+
+class CalendarGrid(tk.Frame):
+    # Cap on how many undo/redo steps are kept per grid instance -- enough
+    # for any real editing session without the two stacks (each entry is a
+    # small dict of plain strings/numbers) growing unbounded over a long
+    # one.
+    UNDO_LIMIT = 50
+
+    def __init__(self, master, db: Database, get_armed_activity: Callable[[], Optional[Activity]],
+                 clear_armed_activity: Callable[[], None],
+                 open_time_block: Optional[Callable[..., None]] = None,
+                 open_duplicate: Optional[Callable[..., None]] = None,
+                 initial_week_start: Optional[date] = None,
+                 template_mode: bool = False,
+                 **kwargs):
+        kwargs.setdefault("bg", theme.APP_BG)
+        kwargs.setdefault("highlightthickness", 0)
+        super().__init__(master, **kwargs)
+        self.db = db
+        self.get_armed_activity = get_armed_activity
+        self.clear_armed_activity = clear_armed_activity
+        self.open_time_block = open_time_block
+        self.open_duplicate = open_duplicate
+        self.template_mode = template_mode
+        self.family = theme.resolve_font_family()
+
+        if initial_week_start is not None:
+            self.week_start = initial_week_start - timedelta(days=initial_week_start.weekday())
+        else:
+            today = date.today()
+            self.week_start = today - timedelta(days=today.weekday())  # Monday
+
+        # Dynamic grid dimensions -- recomputed on every canvas resize so
+        # the grid stretches to fill its window. These starting values are
+        # also the lower bound (MIN_*) the grid won't shrink past.
+        self.gutter_width = config.GUTTER_WIDTH_PX
+        self.header_height = config.HEADER_HEIGHT_PX
+        self.day_width = config.DAY_WIDTH_PX
+        self.slot_height = config.SLOT_HEIGHT_PX
+        self.px_per_min = self.slot_height / config.SLOT_MINUTES
+        self._last_canvas_size = None
+
+        # Which block (by id), if any, is currently keyboard-selected -- set
+        # by clicking a block without dragging it, or by dragging one to a
+        # new spot (see _finish_entry_drag). Drives the highlighted outline
+        # in _draw_entry, the Delete-key shortcut, and arrow-key nudging
+        # (see _on_left_key/_on_right_key/_on_up_key/_on_down_key in
+        # main_window.py). Cleared whenever the selected block no longer
+        # exists (see refresh()) or on Escape (see _cancel_drag).
+        self.selected_entry_id: Optional[int] = None
+
+        # Undo/redo history for this grid only -- the Timesheet and
+        # Template tabs each have their own CalendarGrid instance and their
+        # own independent history, since they operate on entirely different
+        # rows (TimeEntry vs TemplateEntry). See _push_undo/undo/redo/
+        # _apply_command below for how a single command dict (add/remove/
+        # update) can represent every kind of edit this grid makes --
+        # create, move, resize, delete, and duplicate all reduce to one of
+        # those three.
+        self._undo_stack: List[dict] = []
+        self._redo_stack: List[dict] = []
+
+        self._build_widgets()
+        self._drag_state = None
+        self.refresh()
+
+    # ------------------------------------------------------------------
+    # Layout / widgets
+    # ------------------------------------------------------------------
+    def _build_widgets(self):
+        inner = tk.Frame(self, bg=theme.PANEL_BG)
+        inner.pack(fill="both", expand=True, padx=16, pady=(16, 20))
+
+        # One single RoundedCard now holds the nav row (date range /
+        # Today / Apply Template), the calendar grid, AND the totals row
+        # together, so the whole thing reads as one cohesive rounded box
+        # -- nav on top, grid in the middle, totals on the bottom -- with
+        # nothing square-cornered floating outside it. This used to be
+        # three separate siblings of `inner` (nav / canvas_wrap+card /
+        # totals_frame), with only the grid itself rounded; that read as
+        # a rounded box sandwiched between two plain rows rather than one
+        # element.
+        #
+        # RoundedCard blends its own rounded corners into whatever color
+        # its immediate parent shows. GRID_BG is deliberately defined as
+        # an alias of PANEL_BG (see theme.py) so the grid, nav, and totals
+        # rows all match with no seam between them -- but that also means
+        # `inner` (also PANEL_BG) gives the card's corners nothing to
+        # contrast against. The same thin APP_BG wrapper used before (and
+        # by the Activities sidebar / Timer bar) fixes that.
+        # RoundedCard's default inset (max(6, radius // 2), ~7px at the
+        # radius every other card in the app uses) reads fine for a card
+        # whose rounded corners sit in the middle of a large area, but was
+        # too thin a margin here -- with nav/totals now living right up
+        # against the very top/bottom of this box, a 7px sliver of
+        # contrast color and a small radius left the curve too subtle to
+        # read as "this is one box" against real content (button labels,
+        # totals text) sitting right next to it. A wider explicit pad and
+        # a slightly larger radius give the corners real room to curve and
+        # make the APP_BG gutter around the whole shape unmistakable.
+        card_wrap = tk.Frame(inner, bg=theme.APP_BG)
+        card_wrap.pack(fill="both", expand=True)
+        card = RoundedCard(card_wrap, bg=theme.PANEL_BG, radius=18, pad=16)
+        card.pack(fill="both", expand=True)
+        body = card.body
+        # body's own 16px pad (set above) already provides the box's
+        # left/right/top/bottom margin, so nav/grid/totals need no padx of
+        # their own -- just the vertical gaps between the three rows.
+
+        nav = tk.Frame(body, bg=theme.PANEL_BG)
+        nav.pack(fill="x", pady=(0, 10))
+
+        if not self.template_mode:
+            # shadow=True on these four only -- the ones the user pointed
+            # at as looking "a little bit strange" flat against the card.
+            RoundedButton(nav, text="‹", width=3, style="Nav.TButton", shadow=True,
+                          command=self._prev_week).pack(side="left")
+            RoundedButton(nav, text="Today", style="Nav.TButton", shadow=True,
+                          command=self._go_today).pack(side="left", padx=6)
+            RoundedButton(nav, text="›", width=3, style="Nav.TButton", shadow=True,
+                          command=self._next_week).pack(side="left")
+
+        self.week_label = tk.Label(nav, text="", font=(self.family, 12, "bold"),
+                                    bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY)
+        self.week_label.pack(side="left", padx=16)
+
+        if not self.template_mode:
+            # Copies every block from the Template tab onto whatever week
+            # this grid currently has open -- the fast way to fill in a
+            # recurring week instead of re-creating the same meetings by
+            # hand every time.
+            RoundedButton(nav, text="Apply Template to This Week", style="Nav.TButton", shadow=True,
+                          command=self._apply_template).pack(side="left", padx=(4, 0))
+
+        self.hint_label = tk.Label(nav, text="", font=(self.family, 9), bd=0)
+        self.hint_label.pack(side="right")
+
+        canvas_width = self.gutter_width + len(config.DAY_NAMES) * self.day_width
+        canvas_height = self.header_height + _minutes_total() * self.px_per_min
+
+        # width/height here are just the initial preferred size (used to
+        # size the window on first launch). fill="both", expand=True below
+        # is what actually lets the canvas stretch with its window --
+        # _on_canvas_resize() reacts to that and recomputes the grid.
+        # highlightthickness=0 -- the outer card now draws the one border
+        # for the whole nav+grid+totals box, so the grid itself needs none.
+        canvas_holder = tk.Frame(body, bg=theme.GRID_BG)
+        canvas_holder.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(
+            canvas_holder, width=canvas_width, height=canvas_height + config.CANVAS_BOTTOM_PAD_PX,
+            bg=theme.GRID_BG, highlightthickness=0,
+        )
+        self.canvas.pack(fill="both", expand=True, padx=0, pady=0)
+
+        totals_frame = tk.Frame(body, bg=theme.PANEL_BG)
+        totals_frame.pack(fill="x", pady=(10, 0))
+        # Explicit height + pack_propagate(False): these frames need a fixed
+        # width to line up with the grid columns above, but pack_propagate
+        # off with no height set collapses them to almost nothing -- which
+        # was clipping the totals text ("8.5h" etc.) at the bottom of the
+        # calendar. Giving them a real height fixes that.
+        self.total_gutter_frame = tk.Frame(totals_frame, width=self.gutter_width,
+                                            height=config.TOTALS_ROW_HEIGHT_PX, bg=theme.PANEL_BG)
+        self.total_gutter_frame.pack(side="left")
+        self.total_gutter_frame.pack_propagate(False)
+        self.total_col_frames = []
+        self.total_labels = []
+        for _ in config.DAY_NAMES:
+            col = tk.Frame(totals_frame, width=self.day_width,
+                            height=config.TOTALS_ROW_HEIGHT_PX, bg=theme.PANEL_BG)
+            col.pack(side="left")
+            col.pack_propagate(False)
+            lbl = tk.Label(col, text="0.0h", font=(self.family, 9, "bold"),
+                            bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY)
+            lbl.pack()
+            self.total_col_frames.append(col)
+            self.total_labels.append(lbl)
+
+        self.canvas.bind("<Button-1>", self._on_button1)
+        self.canvas.bind("<B1-Motion>", self._on_motion_drag)
+        self.canvas.bind("<ButtonRelease-1>", self._on_release)
+        self.canvas.bind("<Motion>", self._on_hover)
+        self.canvas.bind("<Button-3>", self._on_right_click)
+        self.canvas.bind("<Escape>", lambda e: self._cancel_drag())
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
+
+        # Keyboard shortcuts, bound directly on the canvas (rather than
+        # app-wide) so they only ever fire while the calendar itself has
+        # focus -- which _on_button1 grabs on every click, and which
+        # MainWindow also grabs whenever this tab becomes the visible one
+        # (see MainWindow._on_tab_changed). Binding here instead of
+        # globally means these never fight with a Notebook tab strip's own
+        # Left/Right-arrow tab-switching, or with normal text editing in an
+        # Entry/Combobox/Text field elsewhere in the app.
+        #
+        # Left/Right: move to the previous/next week (Timesheet tab only --
+        # the Template tab isn't tied to any real week) when nothing is
+        # selected, or shift the *selected* block a day earlier/later when
+        # one is. Up/Down: shift the selected block's time earlier/later by
+        # one slot. Delete/Backspace: remove the selected block (same
+        # confirmation dialog as the right-click menu's Delete). All of
+        # this composes with undo/redo (Ctrl/Cmd+Z, bound app-wide in
+        # MainWindow since it doesn't have the same conflict potential).
+        # (The "no selection -> change week" fallback inside these two
+        # handlers is itself skipped in Template mode, since there's no
+        # week to change there -- but nudging a *selected* block between
+        # weekday columns still works in both modes.)
+        self.canvas.bind("<Left>", self._on_left_key)
+        self.canvas.bind("<Right>", self._on_right_key)
+        self.canvas.bind("<Up>", self._on_up_key)
+        self.canvas.bind("<Down>", self._on_down_key)
+        self.canvas.bind("<Delete>", self._delete_selected_entry)
+        self.canvas.bind("<BackSpace>", self._delete_selected_entry)
+
+    def _on_canvas_resize(self, event):
+        """Recompute day-column width and slot height so the grid stretches
+        to fill the canvas's current size, then redraw."""
+        size = (event.width, event.height)
+        if size == self._last_canvas_size:
+            return
+        self._last_canvas_size = size
+
+        num_days = len(config.DAY_NAMES)
+        num_slots = _minutes_total() / config.SLOT_MINUTES
+
+        available_w = max(0, event.width - self.gutter_width)
+        new_day_width = available_w / num_days if num_days else config.DAY_WIDTH_PX
+        new_day_width = max(config.MIN_DAY_WIDTH_PX, min(config.MAX_DAY_WIDTH_PX, new_day_width))
+
+        available_h = max(0, event.height - self.header_height - config.CANVAS_BOTTOM_PAD_PX)
+        new_slot_height = available_h / num_slots if num_slots else config.SLOT_HEIGHT_PX
+        new_slot_height = max(config.MIN_SLOT_HEIGHT_PX, min(config.MAX_SLOT_HEIGHT_PX, new_slot_height))
+
+        self.day_width = new_day_width
+        self.slot_height = new_slot_height
+        self.px_per_min = self.slot_height / config.SLOT_MINUTES
+
+        for col in getattr(self, "total_col_frames", []):
+            col.config(width=self.day_width)
+
+        self.refresh()
+
+    # ------------------------------------------------------------------
+    # Week navigation (normal mode only)
+    # ------------------------------------------------------------------
+    def _prev_week(self):
+        self.week_start -= timedelta(days=7)
+        self.refresh()
+
+    def _next_week(self):
+        self.week_start += timedelta(days=7)
+        self.refresh()
+
+    def _go_today(self):
+        today = date.today()
+        self.week_start = today - timedelta(days=today.weekday())
+        self.refresh()
+
+    def day_date(self, day_idx: int) -> date:
+        return self.week_start + timedelta(days=day_idx)
+
+    # ------------------------------------------------------------------
+    # Arrow-key shortcuts (bound on the canvas in _build_widgets)
+    #
+    # With nothing selected, Left/Right move a week at a time -- the
+    # keyboard equivalent of the ‹/› nav buttons (Timesheet only; Template
+    # isn't tied to a real week). With a block selected, Left/Right instead
+    # nudge *that block* to the previous/next day, and Up/Down nudge its
+    # time a slot earlier/later -- keyboard-driven rescheduling, each step
+    # undoable like any other edit.
+    # ------------------------------------------------------------------
+    def _on_left_key(self, event=None):
+        if self.selected_entry_id is not None:
+            self._nudge_selected_entry(day_delta=-1)
+        elif not self.template_mode:
+            self._prev_week()
+        return "break"
+
+    def _on_right_key(self, event=None):
+        if self.selected_entry_id is not None:
+            self._nudge_selected_entry(day_delta=1)
+        elif not self.template_mode:
+            self._next_week()
+        return "break"
+
+    def _on_up_key(self, event=None):
+        if self.selected_entry_id is not None:
+            self._nudge_selected_entry(minute_delta=-config.SLOT_MINUTES)
+        return "break"
+
+    def _on_down_key(self, event=None):
+        if self.selected_entry_id is not None:
+            self._nudge_selected_entry(minute_delta=config.SLOT_MINUTES)
+        return "break"
+
+    def _nudge_selected_entry(self, day_delta: int = 0, minute_delta: int = 0):
+        entry = self.entries_by_id.get(self.selected_entry_id)
+        if entry is None:
+            return
+        day_idx = self._entry_day_idx(entry)
+        start = _hhmm_to_minute(entry.start_time)
+        end = _hhmm_to_minute(entry.end_time)
+        duration = end - start
+
+        new_day_idx = max(0, min(len(config.DAY_NAMES) - 1, day_idx + day_delta))
+        new_start = max(0, min(_minutes_total() - duration, start + minute_delta))
+        if new_day_idx == day_idx and new_start == start:
+            return  # already at an edge (day 0/4, or the top/bottom of the grid)
+
+        before = self._snapshot(entry, day_idx)
+        entry_id = entry.id
+        if self.template_mode:
+            assert isinstance(entry, TemplateEntry)
+            entry.day_of_week = new_day_idx
+        else:
+            assert isinstance(entry, TimeEntry)
+            entry.date = self.day_date(new_day_idx).isoformat()
+        entry.start_time = _minute_to_hhmm(new_start)
+        entry.end_time = _minute_to_hhmm(new_start + duration)
+        self._db_update_entry(entry)
+        after = self._snapshot(entry, new_day_idx)
+        self._push_undo({"kind": "update", "id": entry_id, "before": before, "after": after})
+        self.selected_entry_id = entry_id
+        self.refresh()
+
+    # ------------------------------------------------------------------
+    # Template <-> real-week bridging (see module docstring)
+    # ------------------------------------------------------------------
+    def _entry_day_idx(self, entry: EntryLike) -> int:
+        """Which day column (0-4) an entry belongs in."""
+        if self.template_mode:
+            assert isinstance(entry, TemplateEntry)
+            return entry.day_of_week
+        assert isinstance(entry, TimeEntry)
+        return (datetime.strptime(entry.date, "%Y-%m-%d").date() - self.week_start).days
+
+    def _entry_day_label(self, entry: EntryLike) -> str:
+        """Human-readable day for messages (delete confirmation, etc.)."""
+        if self.template_mode:
+            return config.DAY_NAMES[self._entry_day_idx(entry)]
+        assert isinstance(entry, TimeEntry)
+        return entry.date
+
+    def _make_entry(self, entry_id, activity_id, activity_name, jira_key, color, day_idx,
+                     start_time, end_time, notes, jira_project, issue_type) -> EntryLike:
+        if self.template_mode:
+            return TemplateEntry(
+                entry_id, activity_id, activity_name, jira_key, color, day_idx,
+                start_time, end_time, notes, jira_project=jira_project, issue_type=issue_type,
+            )
+        return TimeEntry(
+            entry_id, activity_id, activity_name, jira_key, color,
+            self.day_date(day_idx).isoformat(), start_time, end_time, notes,
+            jira_project=jira_project, issue_type=issue_type,
+        )
+
+    def _db_list_entries(self) -> List[EntryLike]:
+        if self.template_mode:
+            return list(self.db.list_template_entries())
+        week_dates = [self.day_date(i).isoformat() for i in range(len(config.DAY_NAMES))]
+        return list(self.db.list_time_entries_for_week(week_dates))
+
+    def _db_add_entry(self, entry: EntryLike) -> int:
+        if self.template_mode:
+            assert isinstance(entry, TemplateEntry)
+            return self.db.add_template_entry(entry)
+        assert isinstance(entry, TimeEntry)
+        return self.db.add_time_entry(entry)
+
+    def _db_update_entry(self, entry: EntryLike):
+        if self.template_mode:
+            assert isinstance(entry, TemplateEntry)
+            self.db.update_template_entry(entry)
+        else:
+            assert isinstance(entry, TimeEntry)
+            self.db.update_time_entry(entry)
+
+    def _db_delete_entry(self, entry_id: int):
+        if self.template_mode:
+            self.db.delete_template_entry(entry_id)
+        else:
+            self.db.delete_time_entry(entry_id)
+
+    # ------------------------------------------------------------------
+    # Undo / redo
+    #
+    # Every kind of edit this grid makes -- create (drag, quick-assign, or
+    # the dialog's Save), move, resize, edit-via-dialog, delete, and
+    # duplicate (single or multi-day) -- reduces to one of three plain-dict
+    # commands:
+    #   {"kind": "add",    "items": [{"id": ..., "fields": {...}}, ...]}
+    #   {"kind": "remove", "items": [{"id": ..., "fields": {...}}, ...]}
+    #   {"kind": "update", "id": ..., "before": {...}, "after": {...}}
+    # "fields"/"before"/"after" are plain-value snapshots from _snapshot()
+    # below -- everything _make_entry() needs to reconstruct a row, plus
+    # day_idx in place of a real date/day_of_week so it means the same
+    # thing in both Timesheet and Template mode.
+    #
+    # Undoing/redoing an add or remove re-inserts rows rather than trying
+    # to resurrect their exact old database id (SQLite just hands out a new
+    # one) -- item["id"] is mutated in place after each such re-insert so
+    # the *next* undo/redo of that same command targets the right row. That
+    # only matters within a single command; nothing else ever depends on a
+    # specific numeric id surviving across an undo/redo boundary. An
+    # "update" never deletes/re-inserts its row, so its id is stable and
+    # never needs to change.
+    # ------------------------------------------------------------------
+    def _snapshot(self, entry: EntryLike, day_idx: int) -> dict:
+        return {
+            "activity_id": entry.activity_id, "activity_name": entry.activity_name,
+            "jira_key": entry.jira_key, "color": entry.color, "day_idx": day_idx,
+            "start_time": entry.start_time, "end_time": entry.end_time,
+            "notes": entry.notes, "jira_project": entry.jira_project,
+            "issue_type": entry.issue_type,
+        }
+
+    def _entry_from_fields(self, fields: dict) -> EntryLike:
+        return self._make_entry(
+            None, fields["activity_id"], fields["activity_name"], fields["jira_key"],
+            fields["color"], fields["day_idx"], fields["start_time"], fields["end_time"],
+            fields["notes"], fields["jira_project"], fields["issue_type"],
+        )
+
+    def _apply_fields_to_entry(self, entry: EntryLike, fields: dict):
+        entry.activity_id = fields["activity_id"]
+        entry.activity_name = fields["activity_name"]
+        entry.jira_key = fields["jira_key"]
+        entry.color = fields["color"]
+        if self.template_mode:
+            assert isinstance(entry, TemplateEntry)
+            entry.day_of_week = fields["day_idx"]
+        else:
+            assert isinstance(entry, TimeEntry)
+            entry.date = self.day_date(fields["day_idx"]).isoformat()
+        entry.start_time = fields["start_time"]
+        entry.end_time = fields["end_time"]
+        entry.notes = fields["notes"]
+        entry.jira_project = fields["jira_project"]
+        entry.issue_type = fields["issue_type"]
+
+    def _push_undo(self, command: dict):
+        self._undo_stack.append(command)
+        if len(self._undo_stack) > self.UNDO_LIMIT:
+            self._undo_stack.pop(0)
+        # A fresh action invalidates whatever could previously be redone --
+        # same convention as every other undo/redo implementation (a
+        # branching history isn't worth the complexity here).
+        self._redo_stack.clear()
+
+    def can_undo(self) -> bool:
+        return bool(self._undo_stack)
+
+    def can_redo(self) -> bool:
+        return bool(self._redo_stack)
+
+    def undo(self):
+        if not self._undo_stack:
+            return
+        command = self._undo_stack.pop()
+        self._apply_command(command, forward=False)
+        self._redo_stack.append(command)
+
+    def redo(self):
+        if not self._redo_stack:
+            return
+        command = self._redo_stack.pop()
+        self._apply_command(command, forward=True)
+        self._undo_stack.append(command)
+
+    def _apply_command(self, command: dict, forward: bool):
+        kind = command["kind"]
+        if kind == "add":
+            if forward:  # redo an add -> re-insert every item
+                for item in command["items"]:
+                    item["id"] = self._db_add_entry(self._entry_from_fields(item["fields"]))
+                self.selected_entry_id = command["items"][-1]["id"] if command["items"] else None
+            else:  # undo an add -> remove every item
+                for item in command["items"]:
+                    if item["id"] is not None:
+                        self._db_delete_entry(item["id"])
+                        item["id"] = None
+                self.selected_entry_id = None
+        elif kind == "remove":
+            if forward:  # redo a remove -> delete every item again
+                for item in command["items"]:
+                    if item["id"] is not None:
+                        self._db_delete_entry(item["id"])
+                        item["id"] = None
+                self.selected_entry_id = None
+            else:  # undo a remove -> re-insert every item
+                for item in command["items"]:
+                    item["id"] = self._db_add_entry(self._entry_from_fields(item["fields"]))
+                self.selected_entry_id = command["items"][-1]["id"] if command["items"] else None
+        elif kind == "update":
+            entry = self.entries_by_id.get(command["id"])
+            if entry is not None:
+                self._apply_fields_to_entry(entry, command["after"] if forward else command["before"])
+                self._db_update_entry(entry)
+            self.selected_entry_id = command["id"]
+        self.refresh()
+
+    def _day_options(self):
+        """[(label, day_idx), ...] for the Day dropdown in the time-block
+        panel -- plain weekday names in template mode, "Weekday Mon DD" in
+        normal mode."""
+        if self.template_mode:
+            return [(name, i) for i, name in enumerate(config.DAY_NAMES)]
+        return [(f"{config.DAY_NAMES[i]} {self.day_date(i).strftime('%b %d')}", i)
+                for i in range(len(config.DAY_NAMES))]
+
+    def _apply_template(self):
+        """Copy every block from the Template tab onto this grid's current
+        week as real time entries. Slots that already have a block are left
+        alone (never overwritten) and reported back."""
+        week_dates = [self.day_date(i).isoformat() for i in range(len(config.DAY_NAMES))]
+        created, skipped = self.db.apply_template_to_week(week_dates)
+        if created == 0 and not skipped:
+            messagebox.showinfo(
+                "Apply Template",
+                "The Template tab is empty -- add your recurring meetings there first, "
+                "then apply it to a week.",
+            )
+            return
+        self.refresh()
+        msg = f"Added {created} block(s) from the template to this week."
+        if skipped:
+            nice = ", ".join(
+                f"{config.DAY_NAMES[t.day_of_week]} {t.start_time}–{t.end_time}" for t in skipped
+            )
+            msg += f"\n\n{len(skipped)} skipped because that slot is already taken: {nice}"
+        messagebox.showinfo("Apply Template", msg)
+
+    # ------------------------------------------------------------------
+    # Drawing
+    # ------------------------------------------------------------------
+    def refresh(self):
+        """Redraw the whole grid + entries from the database."""
+        c = self.canvas
+        c.delete("all")
+
+        if self.template_mode:
+            self.week_label.config(text="Recurring Weekly Template")
+        else:
+            end_date = self.day_date(len(config.DAY_NAMES) - 1)
+            self.week_label.config(
+                text=f"{self.week_start.strftime('%b %d')} – {end_date.strftime('%b %d, %Y')}"
+            )
+        self._update_hint()
+
+        canvas_width = self.gutter_width + len(config.DAY_NAMES) * self.day_width
+        grid_top = self.header_height
+        grid_bottom = grid_top + _minutes_total() * self.px_per_min
+
+        # Header background + day column backgrounds (tint today). Starts
+        # at gutter_width, not 0 -- HEADER_BG is a deliberately different
+        # shade from the grid's own GRID_BG/PANEL_BG background, and this
+        # rectangle used to span the full canvas width including the
+        # gutter column. The gutter has no day-header content of its own
+        # (hour labels start further down, at each hour's own gridline),
+        # so that left-most sliver of HEADER_BG just sat there as a
+        # visibly different-colored box with nothing in it -- butting
+        # right up against the first hour label ("9 AM"), which sits
+        # exactly on the header/grid boundary line, reading as if the box
+        # were cutting into it.
+        c.create_rectangle(self.gutter_width, 0, canvas_width, grid_top, fill=theme.HEADER_BG, outline="")
+        today = date.today()
+        for i, name in enumerate(config.DAY_NAMES):
+            x0 = self.gutter_width + i * self.day_width
+            x1 = x0 + self.day_width
+            is_today = (not self.template_mode) and self.day_date(i) == today
+            if is_today:
+                c.create_rectangle(x0, grid_top, x1, grid_bottom, fill=theme.TODAY_TINT, outline="")
+            name_color = theme.ACCENT if is_today else theme.TEXT_PRIMARY
+            name_y = grid_top / 2 if self.template_mode else grid_top / 2 - 6
+            c.create_text((x0 + x1) / 2, name_y, text=name, font=(self.family, 9, "bold"),
+                           fill=name_color, justify="center")
+            if not self.template_mode:
+                c.create_text((x0 + x1) / 2, grid_top / 2 + 10, text=self.day_date(i).strftime("%b %d"),
+                               font=(self.family, 8), fill=theme.TEXT_SECONDARY, justify="center")
+
+        # Horizontal slot lines + hour labels
+        minute = 0
+        while minute <= _minutes_total():
+            y = grid_top + minute * self.px_per_min
+            is_hour = (minute % 60 == 0)
+            c.create_line(self.gutter_width, y, canvas_width, y,
+                           fill=theme.GRID_LINE_HOUR if is_hour else theme.GRID_LINE)
+            if is_hour:
+                hour = config.START_HOUR + minute // 60
+                label = datetime.strptime(str(hour), "%H").strftime("%I %p").lstrip("0")
+                c.create_text(self.gutter_width - 8, y, text=label, anchor="e",
+                               font=(self.family, 8), fill=theme.TEXT_MUTED)
+            minute += config.SLOT_MINUTES
+
+        # Vertical column separators
+        for i in range(len(config.DAY_NAMES) + 1):
+            x = self.gutter_width + i * self.day_width
+            c.create_line(x, 0, x, grid_bottom, fill=theme.GRID_LINE_HOUR)
+
+        # "Now" indicator on today's column (normal mode only -- the
+        # template isn't tied to any real date)
+        if not self.template_mode:
+            self._draw_now_line(today, grid_top)
+
+        # Entries. Overlapping blocks are allowed (see _layout_day_entries)
+        # rather than rejected, so group them by day first to work out how
+        # many side-by-side columns each day actually needs before drawing
+        # anything.
+        self.entries_by_id = {}
+        entries = self._db_list_entries()
+        totals = [0] * 5
+        entries_by_day: List[List[EntryLike]] = [[] for _ in range(5)]
+        for e in entries:
+            self.entries_by_id[e.id] = e
+            day_idx = self._entry_day_idx(e)
+            totals[day_idx] += e.duration_minutes()
+            entries_by_day[day_idx].append(e)
+
+        # A selection whose entry no longer exists (deleted via undo,
+        # another path, etc.) is stale -- drop it rather than leaving a
+        # dangling id that _draw_entry/_delete_selected_entry would have to
+        # separately guard against.
+        if self.selected_entry_id is not None and self.selected_entry_id not in self.entries_by_id:
+            self.selected_entry_id = None
+
+        for day_idx, day_entries in enumerate(entries_by_day):
+            layout = self._layout_day_entries(day_entries)
+            for e in day_entries:
+                assert e.id is not None
+                col_idx, col_count = layout[e.id]
+                self._draw_entry(e, day_idx, col_idx, col_count,
+                                  is_selected=(e.id == self.selected_entry_id))
+
+        for i, mins in enumerate(totals):
+            self.total_labels[i].config(text=f"{mins / 60:.1f}h")
+
+        c.config(scrollregion=c.bbox("all"))
+
+    def _draw_now_line(self, today: date, grid_top: float):
+        for i in range(5):
+            if self.day_date(i) != today:
+                continue
+            now = datetime.now()
+            minute_of_day = now.hour * 60 + now.minute - config.START_HOUR * 60
+            if not (0 <= minute_of_day <= _minutes_total()):
+                return
+            x0 = self.gutter_width + i * self.day_width
+            x1 = x0 + self.day_width
+            y = grid_top + minute_of_day * self.px_per_min
+            self.canvas.create_oval(x0 - 3, y - 3, x0 + 3, y + 3, fill=theme.NOW_LINE, outline="")
+            self.canvas.create_line(x0, y, x1, y, fill=theme.NOW_LINE, width=1.5)
+            return
+
+    def _update_hint(self):
+        armed = self.get_armed_activity()
+        if armed:
+            self.hint_label.config(
+                text=f"  Placing “{armed.name}” — click a slot (Esc to cancel)  ",
+                bg=theme.ACCENT_SOFT, fg=theme.ACCENT,
+            )
+        else:
+            self.hint_label.config(text="Drag on the grid to add a time block",
+                                    bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY)
+
+    def _layout_day_entries(self, day_entries: List[EntryLike]) -> Dict[int, Tuple[int, int]]:
+        """Overlapping blocks aren't rejected (see the removed overlap
+        checks in _finish_create/_finish_entry_drag/_open_entry_dialog/
+        _open_duplicate_dialog) -- instead, like Toggl/Google Calendar, each
+        one gets squeezed into a narrower side-by-side column so every
+        overlapping block stays visible and clickable instead of one
+        hiding behind another.
+
+        Returns {entry_id: (col_index, col_count)}. Entries are grouped
+        into clusters of entries that transitively overlap in time (so an
+        unrelated block elsewhere in the same day still gets the full day
+        width -- it isn't squeezed just because *something else* that day
+        happens to overlap). Within a cluster, entries are greedily packed
+        into as few columns as needed (an entry reuses the first column
+        whose previous occupant has already ended by the time it starts).
+        """
+        result: Dict[int, Tuple[int, int]] = {}
+        items = sorted(day_entries,
+                        key=lambda e: (_hhmm_to_minute(e.start_time), _hhmm_to_minute(e.end_time)))
+
+        def flush(cluster_items):
+            if not cluster_items:
+                return
+            column_end_minutes: List[int] = []  # end-minute of each column's last occupant so far
+            col_of_id: Dict[int, int] = {}
+            for e in cluster_items:
+                assert e.id is not None
+                start = _hhmm_to_minute(e.start_time)
+                end = _hhmm_to_minute(e.end_time)
+                placed = False
+                for ci, last_end in enumerate(column_end_minutes):
+                    if start >= last_end:
+                        column_end_minutes[ci] = end
+                        col_of_id[e.id] = ci
+                        placed = True
+                        break
+                if not placed:
+                    column_end_minutes.append(end)
+                    col_of_id[e.id] = len(column_end_minutes) - 1
+            col_count = len(column_end_minutes)
+            for e in cluster_items:
+                assert e.id is not None
+                result[e.id] = (col_of_id[e.id], col_count)
+
+        cluster: List[EntryLike] = []
+        cluster_end = -1
+        for e in items:
+            start = _hhmm_to_minute(e.start_time)
+            end = _hhmm_to_minute(e.end_time)
+            if cluster and start >= cluster_end:
+                flush(cluster)
+                cluster = []
+                cluster_end = -1
+            cluster.append(e)
+            cluster_end = max(cluster_end, end)
+        flush(cluster)
+
+        return result
+
+    def _entry_geometry(self, entry: EntryLike, day_idx: int, col_index: int = 0, col_count: int = 1):
+        day_x0 = self.gutter_width + day_idx * self.day_width + 3
+        day_x1 = day_x0 + self.day_width - 6
+        col_width = (day_x1 - day_x0) / max(1, col_count)
+        x0 = day_x0 + col_index * col_width
+        x1 = x0 + col_width
+        if col_count > 1:
+            # A hairline gap between side-by-side blocks so they read as
+            # distinct blocks rather than one solid strip.
+            gap = 2
+            if col_index > 0:
+                x0 += gap / 2
+            if col_index < col_count - 1:
+                x1 -= gap / 2
+        y0 = self.header_height + _hhmm_to_minute(entry.start_time) * self.px_per_min
+        y1 = self.header_height + _hhmm_to_minute(entry.end_time) * self.px_per_min
+        return x0, y0, x1, y1
+
+    def _entry_text_lines(self, entry: EntryLike, x0, y0, x1, y1):
+        """Pick which lines (name / notes / time) fit inside the block's
+        pixel height, prioritizing notes over the time range so the user
+        can tell activities apart at a glance."""
+        avail_w = max(10, x1 - x0 - 14)
+        avail_h = max(8, y1 - y0 - 8)
+        chars_per_line = max(6, int(avail_w / 5.6))
+        line_pitch = 13
+        max_lines = max(1, int(avail_h // line_pitch))
+
+        def truncate(s, n):
+            s = s.strip()
+            if len(s) <= n:
+                return s
+            return s[: max(1, n - 1)].rstrip() + "…"
+
+        name_line = entry.activity_name
+        if entry.jira_key:
+            name_line += f"  ·  {entry.jira_key}"
+        lines = [(truncate(name_line, chars_per_line), True)]
+
+        notes_oneline = " ".join(entry.notes.split()) if entry.notes else ""
+        time_line = f"{entry.start_time}–{entry.end_time}"
+        candidates = []
+        if notes_oneline:
+            candidates.append(truncate(notes_oneline, chars_per_line))
+        candidates.append(time_line)
+        for cand in candidates:
+            if len(lines) >= max_lines:
+                break
+            lines.append((cand, False))
+
+        result = []
+        ty = y0 + 4
+        for text, bold in lines:
+            result.append((text, bold, ty))
+            ty += line_pitch
+        return result
+
+    def _draw_entry(self, entry: EntryLike, day_idx: int, col_index: int = 0, col_count: int = 1,
+                     is_selected: bool = False):
+        x0, y0, x1, y1 = self._entry_geometry(entry, day_idx, col_index, col_count)
+        tag = f"entry_{entry.id}"
+        # A selected block (see self.selected_entry_id) gets a thicker,
+        # high-contrast outline instead of the normal thin one -- the same
+        # SELECTION_OUTLINE color every theme defines but nothing drew with
+        # until this keyboard-selection feature existed.
+        outline_color = theme.SELECTION_OUTLINE if is_selected else theme.BLOCK_BORDER
+        outline_width = 3 if is_selected else 2
+        rect = theme.rounded_rect(
+            self.canvas, x0, y0, x1, y1, radius=config.BLOCK_CORNER_RADIUS,
+            fill=entry.color, outline=outline_color, width=outline_width, tags=("entry", tag),
+        )
+        for text, is_bold, ty in self._entry_text_lines(entry, x0, y0, x1, y1):
+            item = self.canvas.create_text(
+                x0 + 7, ty, text=text, anchor="nw",
+                font=(self.family, 8, "bold" if is_bold else "normal"),
+                fill="#FFFFFF", tags=("entry_text", tag),
+            )
+            self.canvas.tag_raise(item, rect)
+
+    # ------------------------------------------------------------------
+    # Hit testing helpers
+    # ------------------------------------------------------------------
+    def _day_idx_for_x(self, x: float) -> Optional[int]:
+        if x < self.gutter_width:
+            return None
+        idx = int((x - self.gutter_width) // self.day_width)
+        if 0 <= idx < len(config.DAY_NAMES):
+            return idx
+        return None
+
+    def _snapped_minute_for_y(self, y: float) -> int:
+        raw = (y - self.header_height) / self.px_per_min
+        snapped = round(raw / config.SLOT_MINUTES) * config.SLOT_MINUTES
+        return max(0, min(_minutes_total(), snapped))
+
+    def _entry_id_at(self, x: float, y: float) -> Optional[int]:
+        for item in self.canvas.find_overlapping(x, y, x, y):
+            for t in self.canvas.gettags(item):
+                if t.startswith("entry_"):
+                    return int(t.split("_", 1)[1])
+        return None
+
+    def _hit_region(self, entry_id: int, y: float) -> str:
+        entry = self.entries_by_id[entry_id]
+        day_idx = self._entry_day_idx(entry)
+        _, y0, _, y1 = self._entry_geometry(entry, day_idx)
+        if abs(y - y0) <= config.RESIZE_GRIP_PX:
+            return "resize-top"
+        if abs(y - y1) <= config.RESIZE_GRIP_PX:
+            return "resize-bottom"
+        return "move"
+
+    # ------------------------------------------------------------------
+    # Mouse handlers
+    # ------------------------------------------------------------------
+    def _on_button1(self, event):
+        # Canvas widgets don't grab keyboard focus on click by themselves in
+        # Tk -- without this, Escape/Delete/arrow-key navigation would only
+        # ever work after some *other* path happened to focus the canvas
+        # (e.g. tab-switching -- see MainWindow._on_tab_changed), not right
+        # after the click that a user would naturally expect to enable them.
+        self.canvas.focus_set()
+
+        entry_id = self._entry_id_at(event.x, event.y)
+        if entry_id is not None:
+            if event.state & CONTROL_STATE_MASK:
+                # Ctrl+click on a block duplicates it on the spot -- a
+                # keyboard-modifier shortcut for the same thing the
+                # right-click "Duplicate…" menu item does through a dialog.
+                # The copy lands in the exact same slot as the original, so
+                # it necessarily overlaps it; that's fine now that
+                # overlapping blocks render side by side (_layout_day_entries)
+                # instead of being rejected.
+                self._duplicate_entry_in_place(entry_id)
+                self._drag_state = None
+                return
+            region = self._hit_region(entry_id, event.y)
+            entry = self.entries_by_id[entry_id]
+            day_idx = self._entry_day_idx(entry)
+            self._drag_state = {
+                "mode": region,
+                "entry_id": entry_id,
+                "orig_entry": entry,
+                "start_day_idx": day_idx,
+                "start_minute": _hhmm_to_minute(entry.start_time),
+                "end_minute": _hhmm_to_minute(entry.end_time),
+                "anchor_x": event.x,
+                "anchor_y": event.y,
+                "moved": False,
+            }
+            return
+
+        # Empty-area click: either quick-assign or start a create-drag.
+        # Clicking away from every block also deselects whatever was
+        # selected, same as clicking empty space in most calendar/drawing
+        # apps.
+        if self.selected_entry_id is not None:
+            self.selected_entry_id = None
+            self.refresh()
+
+        day_idx = self._day_idx_for_x(event.x)
+        if day_idx is None:
+            return
+        minute = self._snapped_minute_for_y(event.y)
+        self._drag_state = {
+            "mode": "create",
+            "anchor_day_idx": day_idx,
+            "anchor_minute": minute,
+            "cur_day_idx": day_idx,
+            "cur_minute": minute,
+            "anchor_x": event.x,
+            "anchor_y": event.y,
+            "preview_rect": None,
+            "moved": False,
+        }
+
+    def _on_motion_drag(self, event):
+        if not self._drag_state:
+            return
+        state = self._drag_state
+        dx = event.x - state["anchor_x"]
+        dy = event.y - state["anchor_y"]
+        if abs(dx) > config.DRAG_THRESHOLD_PX or abs(dy) > config.DRAG_THRESHOLD_PX:
+            state["moved"] = True
+
+        if state["mode"] == "create":
+            self._update_create_preview(event, state)
+        elif state["mode"] in ("resize-top", "resize-bottom", "move"):
+            # Only touch the real canvas items once an actual drag (past the
+            # click threshold) is confirmed -- sub-pixel jitter on a plain
+            # click must never mutate/replace the settled entry item.
+            if state["moved"]:
+                self._update_entry_drag_preview(event, state)
+
+    def _update_create_preview(self, event, state: dict):
+        day_idx = self._day_idx_for_x(event.x)
+        if day_idx is None:
+            day_idx = state["anchor_day_idx"]
+        minute = self._snapped_minute_for_y(event.y)
+        state["cur_day_idx"] = state["anchor_day_idx"]  # creation stays within the starting day
+        state["cur_minute"] = minute
+
+        start_min = min(state["anchor_minute"], minute)
+        end_min = max(state["anchor_minute"], minute)
+        if end_min == start_min:
+            end_min = min(_minutes_total(), start_min + config.SLOT_MINUTES)
+
+        x0 = self.gutter_width + day_idx * self.day_width + 3
+        x1 = x0 + self.day_width - 6
+        y0 = self.header_height + start_min * self.px_per_min
+        y1 = self.header_height + end_min * self.px_per_min
+
+        if state["preview_rect"] is None:
+            state["preview_rect"] = self.canvas.create_rectangle(
+                x0, y0, x1, y1, fill=theme.PREVIEW_FILL, outline=theme.PREVIEW_OUTLINE,
+                width=1, stipple="gray25",
+            )
+        else:
+            self.canvas.coords(state["preview_rect"], x0, y0, x1, y1)
+
+    def _update_entry_drag_preview(self, event, state: dict):
+        entry = state["orig_entry"]
+
+        if "drag_rect_id" not in state:
+            # First confirmed-drag frame: swap the settled (rounded) entry
+            # items for a lightweight rectangle we can cheaply reposition
+            # every motion event. The real rounded item is restored by the
+            # refresh() that always runs at the end of the drag.
+            for item in self.canvas.find_withtag(f"entry_{state['entry_id']}"):
+                self.canvas.delete(item)
+            state["drag_rect_id"] = self.canvas.create_rectangle(
+                0, 0, 0, 0, fill=entry.color, outline=theme.PANEL_BG, width=2, dash=(4, 2),
+            )
+            state["drag_text_id"] = self.canvas.create_text(
+                0, 0, text="", anchor="nw", fill="#FFFFFF",
+                font=(self.family, 8, "bold"), justify="left",
+            )
+
+        rect_id = state["drag_rect_id"]
+        text_id = state["drag_text_id"]
+        duration = state["end_minute"] - state["start_minute"]
+
+        if state["mode"] == "resize-top":
+            new_start = self._snapped_minute_for_y(event.y)
+            new_start = min(new_start, state["end_minute"] - config.SLOT_MINUTES)
+            new_start = max(0, new_start)
+            new_end = state["end_minute"]
+            day_idx = state["start_day_idx"]
+        elif state["mode"] == "resize-bottom":
+            new_end = self._snapped_minute_for_y(event.y)
+            new_end = max(new_end, state["start_minute"] + config.SLOT_MINUTES)
+            new_end = min(_minutes_total(), new_end)
+            new_start = state["start_minute"]
+            day_idx = state["start_day_idx"]
+        else:  # move
+            dy_minutes = round((event.y - state["anchor_y"]) / self.px_per_min / config.SLOT_MINUTES) * config.SLOT_MINUTES
+            new_start = state["start_minute"] + dy_minutes
+            new_start = max(0, min(_minutes_total() - duration, new_start))
+            new_end = new_start + duration
+            day_idx = self._day_idx_for_x(event.x)
+            if day_idx is None:
+                day_idx = state["start_day_idx"]
+
+        state["preview_day_idx"] = day_idx
+        state["preview_start"] = new_start
+        state["preview_end"] = new_end
+
+        x0 = self.gutter_width + day_idx * self.day_width + 3
+        x1 = x0 + self.day_width - 6
+        y0 = self.header_height + new_start * self.px_per_min
+        y1 = self.header_height + new_end * self.px_per_min
+        self.canvas.coords(rect_id, x0, y0, x1, y1)
+
+        label = entry.activity_name
+        if entry.jira_key:
+            label += f" [{entry.jira_key}]"
+        label += f"\n{_minute_to_hhmm(new_start)}–{_minute_to_hhmm(new_end)}"
+        self.canvas.itemconfigure(text_id, text=label, width=max(10, x1 - x0 - 10))
+        self.canvas.coords(text_id, x0 + 6, y0 + 4)
+        self.canvas.tag_raise(text_id, rect_id)
+
+    def _on_release(self, event):
+        state = self._drag_state
+        self._drag_state = None
+        if state is None:
+            return
+
+        if state["mode"] == "create":
+            self._finish_create(event, state)
+        else:
+            self._finish_entry_drag(state)
+
+    def _finish_create(self, event, state):
+        if state["preview_rect"] is not None:
+            self.canvas.delete(state["preview_rect"])
+
+        day_idx = state["anchor_day_idx"]
+
+        if not state["moved"]:
+            # Plain click. Quick-assign if an activity is armed; else open a
+            # blank dialog for the clicked slot.
+            armed = self.get_armed_activity()
+            start_min = state["anchor_minute"]
+            if armed:
+                duration = armed.default_duration_minutes or config.SLOT_MINUTES
+                end_min = min(_minutes_total(), start_min + duration)
+                if end_min == start_min:
+                    return
+                start_hhmm = _minute_to_hhmm(start_min)
+                end_hhmm = _minute_to_hhmm(end_min)
+                entry = self._make_entry(
+                    None, armed.id, armed.name, armed.jira_key, armed.color, day_idx,
+                    start_hhmm, end_hhmm, "", armed.jira_project, armed.issue_type,
+                )
+                new_id = self._db_add_entry(entry)
+                self._push_undo({"kind": "add", "items": [
+                    {"id": new_id, "fields": self._snapshot(entry, day_idx)}]})
+                self.selected_entry_id = new_id
+                self.refresh()
+                return
+            else:
+                end_min = min(_minutes_total(), start_min + config.SLOT_MINUTES)
+                self._open_entry_dialog(new=True, day_idx=day_idx,
+                                         start_hhmm=_minute_to_hhmm(start_min),
+                                         end_hhmm=_minute_to_hhmm(end_min))
+                return
+
+        start_min = min(state["anchor_minute"], state["cur_minute"])
+        end_min = max(state["anchor_minute"], state["cur_minute"])
+        if end_min == start_min:
+            end_min = min(_minutes_total(), start_min + config.SLOT_MINUTES)
+        self._open_entry_dialog(new=True, day_idx=day_idx,
+                                 start_hhmm=_minute_to_hhmm(start_min),
+                                 end_hhmm=_minute_to_hhmm(end_min))
+
+    def _finish_entry_drag(self, state):
+        entry = state["orig_entry"]
+        if not state["moved"]:
+            # Plain click on an entry: select it (Delete removes it, arrow
+            # keys nudge it -- see MainWindow's key handlers) rather than
+            # doing nothing. Right-click still opens the full Edit/
+            # Duplicate/Delete menu regardless of selection.
+            self.selected_entry_id = state["entry_id"]
+            self.refresh()
+            return
+
+        day_idx = state.get("preview_day_idx", state["start_day_idx"])
+        new_start = state.get("preview_start", state["start_minute"])
+        new_end = state.get("preview_end", state["end_minute"])
+        new_start_hhmm = _minute_to_hhmm(new_start)
+        new_end_hhmm = _minute_to_hhmm(new_end)
+
+        self.selected_entry_id = state["entry_id"]
+
+        unchanged = (day_idx == self._entry_day_idx(entry) and new_start_hhmm == entry.start_time
+                     and new_end_hhmm == entry.end_time)
+        if unchanged:
+            self.refresh()
+            return
+
+        before = self._snapshot(entry, self._entry_day_idx(entry))
+        if self.template_mode:
+            assert isinstance(entry, TemplateEntry)
+            entry.day_of_week = day_idx
+        else:
+            assert isinstance(entry, TimeEntry)
+            entry.date = self.day_date(day_idx).isoformat()
+        entry.start_time = new_start_hhmm
+        entry.end_time = new_end_hhmm
+        self._db_update_entry(entry)
+        after = self._snapshot(entry, day_idx)
+        self._push_undo({"kind": "update", "id": state["entry_id"], "before": before, "after": after})
+        self.refresh()
+
+    def _cancel_drag(self):
+        # Escape does three jobs depending on what's active, cheapest first:
+        # cancel an in-progress drag, un-arm an activity queued from the
+        # sidebar, and deselect a keyboard-selected block -- all three are
+        # harmless no-ops when they don't apply, and self.refresh() below
+        # repaints whichever of them actually did something.
+        if self._drag_state and self._drag_state.get("preview_rect") is not None:
+            self.canvas.delete(self._drag_state["preview_rect"])
+        self._drag_state = None
+        self.clear_armed_activity()
+        self.selected_entry_id = None
+        self.refresh()
+
+    # ------------------------------------------------------------------
+    # Hover cursor
+    # ------------------------------------------------------------------
+    def _on_hover(self, event):
+        if self._drag_state:
+            return
+        entry_id = self._entry_id_at(event.x, event.y)
+        if entry_id is not None:
+            if event.state & CONTROL_STATE_MASK:
+                # Hints at the Ctrl+click-to-duplicate shortcut.
+                self.canvas.config(cursor="plus")
+                return
+            region = self._hit_region(entry_id, event.y)
+            cursor = "sb_v_double_arrow" if region != "move" else "fleur"
+            self.canvas.config(cursor=cursor)
+        else:
+            armed = self.get_armed_activity()
+            self.canvas.config(cursor="hand2" if armed else "")
+
+    # ------------------------------------------------------------------
+    # Right-click menu
+    # ------------------------------------------------------------------
+    def _on_right_click(self, event):
+        entry_id = self._entry_id_at(event.x, event.y)
+        if entry_id is None:
+            return
+        entry = self.entries_by_id[entry_id]
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="Edit…", command=lambda: self._edit_entry(entry))
+        menu.add_command(label="Duplicate…", command=lambda: self._open_duplicate_dialog(entry))
+        menu.add_separator()
+        menu.add_command(label="Delete", command=lambda: self._delete_entry(entry))
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _edit_entry(self, entry: EntryLike):
+        self._open_entry_dialog(new=False, existing=entry)
+
+    def _delete_entry(self, entry: EntryLike):
+        assert entry.id is not None
+        if messagebox.askyesno("Delete time block",
+                                f"Delete “{entry.activity_name}” "
+                                f"({entry.start_time}–{entry.end_time}) on "
+                                f"{self._entry_day_label(entry)}?"):
+            deleted_id = entry.id
+            fields = self._snapshot(entry, self._entry_day_idx(entry))
+            self._db_delete_entry(deleted_id)
+            self._push_undo({"kind": "remove", "items": [{"id": deleted_id, "fields": fields}]})
+            if self.selected_entry_id == deleted_id:
+                self.selected_entry_id = None
+            self.refresh()
+
+    def _delete_selected_entry(self, event=None):
+        """Delete/Backspace shortcut -- removes whatever block is currently
+        selected (see self.selected_entry_id), with the same confirmation
+        dialog as the right-click menu's Delete. A no-op when nothing is
+        selected, so it's safe to bind unconditionally on the canvas."""
+        if self.selected_entry_id is None:
+            return
+        entry = self.entries_by_id.get(self.selected_entry_id)
+        if entry is None:
+            self.selected_entry_id = None
+            return
+        self._delete_entry(entry)
+
+    # ------------------------------------------------------------------
+    # Duplicate
+    # ------------------------------------------------------------------
+    def _duplicate_entry_in_place(self, entry_id: int):
+        """Ctrl+click shortcut: duplicate a block into its own exact slot
+        (same day, same start/end). It will overlap the original by
+        definition -- that's expected, not an error; overlapping blocks
+        render side by side (see _layout_day_entries) so both stay visible
+        and you can drag either one to a new time afterward."""
+        entry = self.entries_by_id.get(entry_id)
+        if entry is None:
+            return
+        day_idx = self._entry_day_idx(entry)
+        copy = self._make_entry(
+            None, entry.activity_id, entry.activity_name, entry.jira_key,
+            entry.color, day_idx, entry.start_time, entry.end_time, entry.notes,
+            entry.jira_project, entry.issue_type,
+        )
+        new_id = self._db_add_entry(copy)
+        self._push_undo({"kind": "add", "items": [
+            {"id": new_id, "fields": self._snapshot(copy, day_idx)}]})
+        self.selected_entry_id = new_id
+        self.refresh()
+
+    def _open_duplicate_dialog(self, entry: EntryLike):
+        def on_duplicate(target_day_indices):
+            items = []
+            for day_idx in target_day_indices:
+                copy = self._make_entry(
+                    None, entry.activity_id, entry.activity_name, entry.jira_key,
+                    entry.color, day_idx, entry.start_time, entry.end_time, entry.notes,
+                    entry.jira_project, entry.issue_type,
+                )
+                new_id = self._db_add_entry(copy)
+                items.append({"id": new_id, "fields": self._snapshot(copy, day_idx)})
+            if items:
+                self._push_undo({"kind": "add", "items": items})
+                self.selected_entry_id = items[-1]["id"]
+            self.refresh()
+
+        source_day_idx = self._entry_day_idx(entry)
+        assert self.open_duplicate is not None
+        self.open_duplicate(
+            source_entry=entry, day_options=self._day_options(),
+            source_day_idx=source_day_idx, on_duplicate=on_duplicate,
+        )
+
+    # ------------------------------------------------------------------
+    # Add/Edit dialog
+    # ------------------------------------------------------------------
+    def _open_entry_dialog(self, new: bool, day_idx: Optional[int] = None,
+                            start_hhmm: Optional[str] = None, end_hhmm: Optional[str] = None,
+                            existing: Optional[EntryLike] = None):
+        activities = self.db.list_activities()
+        armed = self.get_armed_activity() if new else None
+
+        def on_save(result):
+            target_day_idx = result["day_idx"]
+            if new:
+                entry = self._make_entry(
+                    None, result["activity_id"], result["activity_name"], result["jira_key"],
+                    result["color"], target_day_idx, result["start_time"], result["end_time"],
+                    result["notes"], result["jira_project"], result["issue_type"],
+                )
+                new_id = self._db_add_entry(entry)
+                self._push_undo({"kind": "add", "items": [
+                    {"id": new_id, "fields": self._snapshot(entry, target_day_idx)}]})
+                self.selected_entry_id = new_id
+            else:
+                assert existing is not None
+                before = self._snapshot(existing, self._entry_day_idx(existing))
+                existing.activity_id = result["activity_id"]
+                existing.activity_name = result["activity_name"]
+                existing.jira_key = result["jira_key"]
+                existing.color = result["color"]
+                if self.template_mode:
+                    assert isinstance(existing, TemplateEntry)
+                    existing.day_of_week = target_day_idx
+                else:
+                    assert isinstance(existing, TimeEntry)
+                    existing.date = self.day_date(target_day_idx).isoformat()
+                existing.start_time = result["start_time"]
+                existing.end_time = result["end_time"]
+                existing.notes = result["notes"]
+                existing.jira_project = result["jira_project"]
+                existing.issue_type = result["issue_type"]
+                self._db_update_entry(existing)
+                after = self._snapshot(existing, target_day_idx)
+                self._push_undo({"kind": "update", "id": existing.id, "before": before, "after": after})
+                self.selected_entry_id = existing.id
+            self.refresh()
+            return True
+
+        def on_delete():
+            assert existing is not None
+            self._delete_entry(existing)
+
+        existing_day_idx = self._entry_day_idx(existing) if existing else None
+
+        assert self.open_time_block is not None
+        self.open_time_block(
+            activities=activities,
+            day_options=self._day_options(),
+            initial_day_idx=day_idx if day_idx is not None else existing_day_idx,
+            initial_start=start_hhmm or (existing.start_time if existing else None),
+            initial_end=end_hhmm or (existing.end_time if existing else None),
+            initial_activity_id=(armed.id if armed else (existing.activity_id if existing else None)),
+            initial_notes=(existing.notes if existing else ""),
+            initial_jira_project=((armed.jira_project if armed else
+                                    (existing.jira_project if existing else None)) or ""),
+            initial_issue_type=((armed.issue_type if armed else (existing.issue_type if existing else None)) or ""),
+            on_save=on_save,
+            on_delete=on_delete if existing else None,
+            start_hour=config.START_HOUR, end_hour=config.END_HOUR,
+            slot_minutes=config.SLOT_MINUTES,
+            is_new=new,
+        )
