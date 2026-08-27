@@ -15,26 +15,51 @@
 # plain double-clicking works.)
 cd "$(dirname "$0")"
 
-echo "Rebuilding QUASAR Timesheet Manager from this folder..."
-echo ""
-bash packaging/build_macos.sh
-build_status=$?
-
-if [ $build_status -ne 0 ]; then
-    echo ""
-    echo "The build failed (see the errors above) -- nothing in /Applications"
-    echo "was touched."
-    read -r -p "Press Return to close this window..."
-    exit 1
-fi
-
 APP_SRC="dist/QUASAR Timesheet Manager.app"
 APP_DST="/Applications/QUASAR Timesheet Manager.app"
 
-if [ ! -d "$APP_SRC" ]; then
+# The build is safe to just run again -- packaging/build_macos.sh wipes
+# and recreates build/, dist/, and its own throwaway venv every time, so a
+# retry never builds on top of a half-finished previous attempt. Most
+# failures here are transient (a flaky network blip while it's pip
+# installing PyInstaller, a momentary file lock) rather than something
+# actually wrong with the code, so a couple of automatic retries clear
+# those up without you needing to notice or do anything -- only a failure
+# that survives all of them is worth stopping and showing you.
+MAX_ATTEMPTS=3
+attempt=1
+build_ok=false
+while [ $attempt -le $MAX_ATTEMPTS ]; do
+    if [ $attempt -gt 1 ]; then
+        echo ""
+        echo "Retrying build (attempt $attempt of $MAX_ATTEMPTS)..."
+        sleep 3
+    fi
+    echo "Rebuilding QUASAR Timesheet Manager from this folder..."
     echo ""
-    echo "Build finished but $APP_SRC wasn't found -- something unexpected"
-    echo "happened. Nothing in /Applications was touched."
+    bash packaging/build_macos.sh
+    build_status=$?
+
+    if [ $build_status -eq 0 ] && [ -d "$APP_SRC" ]; then
+        build_ok=true
+        break
+    fi
+
+    if [ $build_status -ne 0 ]; then
+        echo ""
+        echo "The build failed (attempt $attempt of $MAX_ATTEMPTS -- see the errors above)."
+    else
+        echo ""
+        echo "Build finished but $APP_SRC wasn't found (attempt $attempt of $MAX_ATTEMPTS)."
+    fi
+    attempt=$((attempt + 1))
+done
+
+if [ "$build_ok" != true ]; then
+    echo ""
+    echo "The build failed $MAX_ATTEMPTS times in a row -- nothing in"
+    echo "/Applications was touched. Scroll up to see the actual error from"
+    echo "the last attempt."
     read -r -p "Press Return to close this window..."
     exit 1
 fi
@@ -52,9 +77,9 @@ echo "right-click the app -> Open -> Open once, same as before."
 echo ""
 echo "Closing this window automatically..."
 
-# Best-effort auto-close, success path only -- the two failure cases
-# above still stop and wait for Return, so a real error stays on screen
-# to actually be read instead of the window vanishing along with it.
+# Best-effort auto-close, success path only -- the failure path above
+# still stops and waits for Return, so a real error stays on screen to
+# actually be read instead of the window vanishing along with it.
 # Only does anything inside Terminal.app itself (TERM_PROGRAM check); in
 # iTerm or any other terminal this is a harmless no-op and the window is
 # left open as before, same as if this block weren't here at all.
