@@ -7,11 +7,6 @@ activities/meetings grouped into color-coded projects, and a one-click
 internet connection required. All data lives in a single SQLite file on your
 machine.
 
-(This app used to display the name "Free Timesheet" on screen — the code,
-launcher scripts, and data folder underneath still use that older name, so
-nothing about upgrading or where your data lives changes; only the heading
-shown at the top of the window is new.)
-
 ## Getting the app (colleagues start here)
 
 This repo is private, so you'll need to be added as a collaborator first
