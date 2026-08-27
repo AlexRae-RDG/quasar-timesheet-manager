@@ -49,4 +49,24 @@ echo "Done. \"QUASAR Timesheet Manager\" in /Applications is now up to date --"
 echo "open it from there or Launchpad like normal. If macOS still asks about"
 echo "an unidentified developer the very first time after an update,"
 echo "right-click the app -> Open -> Open once, same as before."
-read -r -p "Press Return to close this window..."
+echo ""
+echo "Closing this window automatically..."
+
+# Best-effort auto-close, success path only -- the two failure cases
+# above still stop and wait for Return, so a real error stays on screen
+# to actually be read instead of the window vanishing along with it.
+# Only does anything inside Terminal.app itself (TERM_PROGRAM check); in
+# iTerm or any other terminal this is a harmless no-op and the window is
+# left open as before, same as if this block weren't here at all.
+if [ "$TERM_PROGRAM" = "Apple_Terminal" ]; then
+    close_tty="$(tty)"
+    # Backgrounded with a short delay and disowned so it survives this
+    # script's own exit below instead of asking Terminal to close a
+    # window whose shell still looks "running" (which prompts a "are you
+    # sure" dialog instead of just closing) or being killed outright when
+    # the parent shell exits.
+    (sleep 1; osascript -e "tell application \"Terminal\" to close (every window whose tty is \"$close_tty\")" \
+        >/dev/null 2>&1) &
+    disown
+fi
+exit 0

@@ -22,6 +22,7 @@ class MainWindow(tk.Tk):
         self.title("QUASAR Timesheet Manager")
         self.geometry("1240x780")
         self.minsize(1000, 640)
+        self._maximize_on_start()
 
         self.db = Database()
 
@@ -77,6 +78,45 @@ class MainWindow(tk.Tk):
             x, y = self.winfo_x(), self.winfo_y()
             self.geometry(f"+{x + 1}+{y}")
             self.after(50, lambda: self.geometry(f"+{x}+{y}"))
+        except tk.TclError:
+            pass
+
+    def _maximize_on_start(self):
+        """Start filling the screen rather than the fixed 1240x780
+        self.geometry() above (kept as the fallback size if every
+        approach here fails, e.g. some unusual window manager) -- Tk
+        doesn't have one call that reliably does this everywhere, so each
+        platform gets its own best option:
+
+        Windows and most Linux window managers support a real "zoomed"
+        window state (self.state("zoomed")) or, failing that, the
+        "-zoomed" attribute some X11 window managers use instead.
+
+        macOS is deliberately handled differently, not just as the last
+        resort below: the Tk/Aqua build macOS still bundles system-wide
+        has a long history of quirks (see _nudge_to_force_repaint's own
+        note on the same build's blank-window-on-launch bug), and
+        "zoomed" isn't reliably one of the states it honors. Sizing the
+        window to the screen's own dimensions gets the same practical
+        result without depending on that support."""
+        if sys.platform == "darwin":
+            try:
+                self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
+            except tk.TclError:
+                pass
+            return
+        try:
+            self.state("zoomed")
+            return
+        except tk.TclError:
+            pass
+        try:
+            self.attributes("-zoomed", True)
+            return
+        except tk.TclError:
+            pass
+        try:
+            self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
         except tk.TclError:
             pass
 
