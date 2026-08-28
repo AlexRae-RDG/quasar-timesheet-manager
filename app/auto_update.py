@@ -40,6 +40,8 @@ import zipfile
 from pathlib import Path, PureWindowsPath
 from typing import List, Optional
 
+from .update_check import build_ssl_context
+
 
 class AutoUpdateError(Exception):
     """Raised for any failure along the download/extract/swap path.
@@ -126,7 +128,10 @@ def download_asset(url: str, dest_dir: Path, timeout: float = 60.0) -> Path:
     dest = dest_dir / "update.zip"
     request = urllib.request.Request(url, headers=_HEADERS)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        # See update_check.build_ssl_context's docstring -- a frozen
+        # macOS build can lose track of its own trusted certificate
+        # bundle for HTTPS requests, this download included.
+        with urllib.request.urlopen(request, timeout=timeout, context=build_ssl_context()) as response:
             dest.write_bytes(response.read())
     except Exception as exc:
         raise AutoUpdateError(f"download failed: {exc}") from exc

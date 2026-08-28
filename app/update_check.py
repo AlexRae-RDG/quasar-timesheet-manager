@@ -20,6 +20,7 @@ one small, infrequent GET request doesn't need more than that.
 import json
 import os
 import re
+import ssl
 import time
 import urllib.request
 from typing import Optional, Tuple
@@ -60,6 +61,33 @@ def is_newer(candidate: str, current: str) -> bool:
     return parse_version(candidate) > parse_version(current)
 
 
+def build_ssl_context() -> ssl.SSLContext:
+    """ssl.create_default_context() needs to find a trusted CA bundle to
+    verify certificates against. Running from source, Python's own
+    install already knows where to look. Inside a PyInstaller-frozen
+    macOS build, though, the default context can come up with no CA
+    roots at all -- a known PyInstaller/macOS packaging quirk: the
+    frozen interpreter loses track of the certificate bundle its own
+    bundled OpenSSL wants, even though the exact same code works fine
+    unfrozen (confirmed via update_check.log: "[SSL:
+    CERTIFICATE_VERIFY_FAILED] ... unable to get local issuer
+    certificate" -- see _log_check_failure above).
+
+    macOS ships its own system-wide root CA bundle at /etc/ssl/cert.pem
+    regardless of any of that, so when it's present, build the context
+    from it explicitly instead of leaving OpenSSL to find its own
+    (missing) default. This only takes effect when that path exists --
+    everywhere else (a normal source run, Windows, Linux) this is
+    exactly ssl.create_default_context()'s own behavior, unchanged.
+
+    Shared with auto_update.py's download_asset(), which hits the exact
+    same HTTPS-from-a-frozen-build situation downloading the actual
+    release zip."""
+    if os.path.exists("/etc/ssl/cert.pem"):
+        return ssl.create_default_context(cafile="/etc/ssl/cert.pem")
+    return ssl.create_default_context()
+
+
 def _log_check_failure(exc: Exception) -> None:
     """Appends a one-line, best-effort record of a failed update check to
     a small log file, without ever letting the logging itself raise --
@@ -94,7 +122,7 @@ def check_latest_version(timeout: float = 4.0) -> Optional[dict]:
     that matches the platform this app is running on."""
     request = urllib.request.Request(_LATEST_RELEASE_URL, headers=_HEADERS)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=build_ssl_context()) as response:
             data = json.loads(response.read().decode("utf-8"))
     except Exception as exc:
         # Deliberately blanket toward the CALLER: see the module

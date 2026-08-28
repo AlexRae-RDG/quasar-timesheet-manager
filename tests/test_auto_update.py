@@ -109,6 +109,23 @@ class TestDownloadAndExtract(unittest.TestCase):
                 dest = auto_update.download_asset("https://x/mac.zip", Path(tmp))
             self.assertEqual(dest.read_bytes(), b"zip-bytes-here")
 
+    def test_download_asset_passes_the_shared_ssl_context(self):
+        # See update_check.build_ssl_context's docstring -- a frozen
+        # macOS build can lose track of its own trusted certificate
+        # bundle, which is exactly what a real update_check.log recorded
+        # for the update-CHECK request; this download uses the same
+        # HTTPS-from-a-frozen-build path and needs the same fix.
+        fake_resp = MagicMock()
+        fake_resp.read.return_value = b"zip-bytes-here"
+        fake_resp.__enter__ = lambda self: fake_resp
+        fake_resp.__exit__ = lambda self, *a: False
+        sentinel_context = object()
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("app.auto_update.urllib.request.urlopen", return_value=fake_resp) as mock_urlopen, \
+                 patch("app.auto_update.build_ssl_context", return_value=sentinel_context):
+                auto_update.download_asset("https://x/mac.zip", Path(tmp))
+            self.assertIs(mock_urlopen.call_args.kwargs.get("context"), sentinel_context)
+
     def test_download_failure_raises_auto_update_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("app.auto_update.urllib.request.urlopen", side_effect=OSError("boom")):
@@ -195,6 +212,7 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         with patch.object(auto_update.sys, "platform", "darwin"), \
              patch.object(auto_update.sys, "executable", exe), \
              patch.object(auto_update, "is_frozen", return_value=True), \
+             patch("app.auto_update.build_ssl_context", return_value=None), \
              patch("app.auto_update.urllib.request.urlopen", return_value=fake_resp), \
              patch("app.auto_update.zipfile.ZipFile", side_effect=fake_zipfile):
             auto_update.perform_update(assets)
@@ -229,6 +247,7 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         with patch.object(auto_update.sys, "platform", "win32"), \
              patch.object(auto_update.sys, "executable", exe), \
              patch.object(auto_update, "is_frozen", return_value=True), \
+             patch("app.auto_update.build_ssl_context", return_value=None), \
              patch("app.auto_update.urllib.request.urlopen", return_value=fake_resp), \
              patch("app.auto_update.zipfile.ZipFile", side_effect=fake_zipfile):
             auto_update.perform_update(assets)

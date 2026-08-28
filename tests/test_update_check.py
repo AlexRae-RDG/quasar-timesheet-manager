@@ -144,6 +144,38 @@ class TestCheckLatestVersion(unittest.TestCase):
         self.assertIn("user-agent", header_keys_lower)
 
 
+class TestBuildSslContext(unittest.TestCase):
+    """See build_ssl_context's docstring -- this is the actual fix for
+    the "[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer
+    certificate" failure a real user's update_check.log recorded from a
+    packaged macOS build."""
+
+    @patch("app.update_check.os.path.exists", return_value=True)
+    @patch("app.update_check.ssl.create_default_context")
+    def test_uses_macos_system_bundle_when_present(self, mock_create_ctx, mock_exists):
+        sentinel = object()
+        mock_create_ctx.return_value = sentinel
+        result = update_check.build_ssl_context()
+        mock_exists.assert_called_once_with("/etc/ssl/cert.pem")
+        mock_create_ctx.assert_called_once_with(cafile="/etc/ssl/cert.pem")
+        self.assertIs(result, sentinel)
+
+    @patch("app.update_check.os.path.exists", return_value=False)
+    @patch("app.update_check.ssl.create_default_context")
+    def test_falls_back_to_plain_default_context(self, mock_create_ctx, mock_exists):
+        sentinel = object()
+        mock_create_ctx.return_value = sentinel
+        result = update_check.build_ssl_context()
+        mock_create_ctx.assert_called_once_with()
+        self.assertIs(result, sentinel)
+
+    def test_returns_a_real_ssl_context(self):
+        # No mocking -- confirms this actually returns something urlopen
+        # can use, on whatever platform the test suite runs on.
+        import ssl
+        self.assertIsInstance(update_check.build_ssl_context(), ssl.SSLContext)
+
+
 class TestLogCheckFailure(unittest.TestCase):
     """_log_check_failure is check_latest_version()'s only concession to
     debuggability -- every actual failure is still silent toward the
