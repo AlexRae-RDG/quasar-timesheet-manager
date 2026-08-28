@@ -77,6 +77,28 @@ def _is_dark(color: str) -> bool:
     return luminance < 128
 
 
+# Dark text used on a bright/light time-block or chart-slice color --
+# matches the near-black summary_panel.py's own pie-chart labels already
+# used for exactly this problem, reused here rather than inventing a
+# second, slightly different near-black.
+BLOCK_TEXT_DARK = "#1A1A1A"
+BLOCK_TEXT_LIGHT = "#FFFFFF"
+
+
+def block_text_color(bg_hex: str) -> str:
+    """Pick a readable label color for text drawn on top of an arbitrary
+    fill color -- calendar_view.py's time-block labels
+    (_draw_entry/_update_entry_drag_preview) and summary_panel.py's pie-
+    chart slice labels both use this. Unlike ACCENT -- which every
+    curated theme picks specifically so plain white text always reads on
+    it -- these colors come from whatever a Project was given (one of
+    config.DEFAULT_PROJECT_COLORS, or any custom hex the user picked in
+    ProjectPanel), independent of the active theme, which spans plenty of
+    pale/bright colors white text disappears on. Reuses the same
+    luminance check _is_dark() already uses for palette derivation."""
+    return BLOCK_TEXT_LIGHT if _is_dark(bg_hex) else BLOCK_TEXT_DARK
+
+
 def derive_palette(app_bg: str, panel_bg: str, text_primary: str, accent: str,
                     danger: str = None, now_line: str = None) -> dict:
     """Build a full ~24-color palette from four required seed colors (an

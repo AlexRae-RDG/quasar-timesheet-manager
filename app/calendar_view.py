@@ -856,11 +856,12 @@ class CalendarGrid(tk.Frame):
             self.canvas, x0, y0, x1, y1, radius=config.BLOCK_CORNER_RADIUS,
             fill=entry.color, outline=outline_color, width=outline_width, tags=("entry", tag),
         )
+        text_color = theme.block_text_color(entry.color)
         for text, is_bold, ty in self._entry_text_lines(entry, x0, y0, x1, y1):
             item = self.canvas.create_text(
                 x0 + 7, ty, text=text, anchor="nw",
                 font=(self.family, 8, "bold" if is_bold else "normal"),
-                fill="#FFFFFF", tags=("entry_text", tag),
+                fill=text_color, tags=("entry_text", tag),
             )
             self.canvas.tag_raise(item, rect)
 
@@ -1047,7 +1048,7 @@ class CalendarGrid(tk.Frame):
                 0, 0, 0, 0, fill=entry.color, outline=theme.PANEL_BG, width=2, dash=(4, 2),
             )
             state["drag_text_id"] = self.canvas.create_text(
-                0, 0, text="", anchor="nw", fill="#FFFFFF",
+                0, 0, text="", anchor="nw", fill=theme.block_text_color(entry.color),
                 font=(self.family, 8, "bold"), justify="left",
             )
 

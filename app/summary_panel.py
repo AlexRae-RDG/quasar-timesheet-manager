@@ -420,11 +420,12 @@ class SummaryPanel(tk.Frame):
             canvas.create_oval(x0, y0, x1, y1, outline=theme.BORDER, width=2)
             return
 
-        def label_color(slice_color: str) -> str:
-            # Picked from the slice's own fill, not the active app theme --
-            # slice colors are whatever Projects were assigned, independent
-            # of light/dark theme, so contrast has to be judged per-slice.
-            return "#FFFFFF" if theme._is_dark(slice_color) else "#1A1A1A"
+        # theme.block_text_color picks per-slice, not from the active app
+        # theme -- slice colors are whatever Projects were assigned,
+        # independent of light/dark theme, so contrast has to be judged
+        # per-slice. Shared with calendar_view.py's time-block labels,
+        # which have the identical problem.
+        label_color = theme.block_text_color
 
         def draw_label(mid_angle_deg: float, name: str, pct: float, color: str):
             rad = math.radians(mid_angle_deg)
