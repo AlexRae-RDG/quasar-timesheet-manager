@@ -140,7 +140,29 @@ def download_asset(url: str, dest_dir: Path, timeout: float = 60.0) -> Path:
 
 def extract_zip(zip_path: Path, dest_dir: Path) -> Path:
     """Extracts zip_path into dest_dir (created by the caller), returning
-    dest_dir back for convenience."""
+    dest_dir back for convenience.
+
+    macOS specifically shells out to `ditto` instead of using Python's
+    zipfile module: zipfile.extractall() doesn't actually recreate
+    symlinks -- it writes each one out as a plain file containing the
+    link's target path as text instead of a real symlink. A macOS .app
+    built with a bundled Python framework has real internal symlinks
+    (e.g. Python.framework/Versions/Current), so extracting one with
+    zipfile silently corrupts it just enough that macOS refuses to open
+    it at all, with no useful error -- confirmed the hard way against a
+    real downloaded update. `ditto` is Apple's own archive tool, and
+    it's the exact same one release.yml uses to CREATE this zip in the
+    first place, so it round-trips symlinks (and everything else
+    macOS-bundle-specific) correctly. zipfile is fine for Windows, which
+    has no such symlinks to lose."""
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(["ditto", "-x", "-k", str(zip_path), str(dest_dir)],
+                            check=True, capture_output=True, text=True)
+        except (subprocess.CalledProcessError, OSError) as exc:
+            raise AutoUpdateError(f"couldn't extract the downloaded update: {exc}") from exc
+        return dest_dir
+
     try:
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(dest_dir)

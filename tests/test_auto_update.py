@@ -153,6 +153,37 @@ class TestDownloadAndExtract(unittest.TestCase):
             with self.assertRaises(auto_update.AutoUpdateError):
                 auto_update.extract_zip(bad_zip, extract_dir)
 
+    def test_extract_zip_uses_ditto_on_macos(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            zip_path = tmp_path / "update.zip"
+            zip_path.write_bytes(b"pretend-zip-bytes")  # never actually read -- ditto is mocked
+            extract_dir = tmp_path / "extracted"
+            extract_dir.mkdir()
+
+            with patch.object(auto_update.sys, "platform", "darwin"), \
+                 patch("app.auto_update.subprocess.run") as mock_run:
+                auto_update.extract_zip(zip_path, extract_dir)
+
+            mock_run.assert_called_once_with(
+                ["ditto", "-x", "-k", str(zip_path), str(extract_dir)],
+                check=True, capture_output=True, text=True,
+            )
+
+    def test_extract_zip_ditto_failure_raises_auto_update_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            zip_path = tmp_path / "update.zip"
+            zip_path.write_bytes(b"pretend-zip-bytes")
+            extract_dir = tmp_path / "extracted"
+            extract_dir.mkdir()
+
+            with patch.object(auto_update.sys, "platform", "darwin"), \
+                 patch("app.auto_update.subprocess.run",
+                       side_effect=auto_update.subprocess.CalledProcessError(1, "ditto")):
+                with self.assertRaises(auto_update.AutoUpdateError):
+                    auto_update.extract_zip(zip_path, extract_dir)
+
     def test_find_extracted_root_missing_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(auto_update.AutoUpdateError):
@@ -198,23 +229,24 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         fake_resp.__enter__ = lambda self: fake_resp
         fake_resp.__exit__ = lambda self, *a: False
 
-        real_zipfile_init = zipfile.ZipFile
-
-        def fake_zipfile(path, *a, **kw):
-            # Build a real (tiny) zip on first open-for-read so
-            # extractall has something valid to work with, matching the
-            # "QUASAR Timesheet Manager.app" name current_install_paths()
-            # will derive from `exe` above.
-            with real_zipfile_init(path, "w") as zf:
-                zf.writestr("QUASAR Timesheet Manager.app/Contents/Info.plist", "fake")
-            return real_zipfile_init(path, *a, **kw)
+        def fake_ditto(cmd, **kw):
+            # cmd = ["ditto", "-x", "-k", str(zip_path), str(extract_dir)] --
+            # real ditto isn't available/relevant to this test, so just
+            # create the extracted app bundle it would have produced,
+            # matching the "QUASAR Timesheet Manager.app" name
+            # current_install_paths() will derive from `exe` above.
+            extract_dir = Path(cmd[4])
+            app_contents = extract_dir / "QUASAR Timesheet Manager.app" / "Contents"
+            app_contents.mkdir(parents=True)
+            (app_contents / "Info.plist").write_text("fake")
+            return MagicMock(returncode=0)
 
         with patch.object(auto_update.sys, "platform", "darwin"), \
              patch.object(auto_update.sys, "executable", exe), \
              patch.object(auto_update, "is_frozen", return_value=True), \
              patch("app.auto_update.build_ssl_context", return_value=None), \
              patch("app.auto_update.urllib.request.urlopen", return_value=fake_resp), \
-             patch("app.auto_update.zipfile.ZipFile", side_effect=fake_zipfile):
+             patch("app.auto_update.subprocess.run", side_effect=fake_ditto):
             auto_update.perform_update(assets)
 
         mock_popen.assert_called_once()
