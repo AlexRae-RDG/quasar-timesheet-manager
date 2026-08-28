@@ -22,6 +22,7 @@ from typing import Callable, Dict, List, Optional, Union
 
 from . import config, theme
 from .models import Activity, Project, TemplateEntry, TimeEntry
+from .version import APP_VERSION
 from .widgets import RoundedButton, ScrollArea, show_saved_toast
 
 EntryLike = Union[TimeEntry, TemplateEntry]
@@ -674,6 +675,10 @@ class SettingsPanel(tk.Frame):
             tk.Label(shortcuts, text=description, font=(self.family, 10),
                      bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY, anchor="nw",
                      justify="left", wraplength=360).grid(row=i, column=1, sticky="nw", pady=5)
+
+        tk.Label(right, text=f"QUASAR Timesheet Manager v{APP_VERSION}",
+                 font=(self.family, 9), bg=theme.PANEL_BG, fg=theme.TEXT_MUTED).grid(
+            row=2, column=0, sticky="w", pady=(20, 0))
 
         btns = ttk.Frame(outer)
         btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
