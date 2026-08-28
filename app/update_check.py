@@ -18,9 +18,13 @@ a dependency -- this app has stayed dependency-free everywhere else, and
 one small, infrequent GET request doesn't need more than that.
 """
 import json
+import os
 import re
+import time
 import urllib.request
 from typing import Optional, Tuple
+
+from . import config
 
 # Must match this project's actual GitHub repo (see the remote in `git
 # remote -v`) -- there's nowhere else this could be auto-detected from
@@ -56,6 +60,25 @@ def is_newer(candidate: str, current: str) -> bool:
     return parse_version(candidate) > parse_version(current)
 
 
+def _log_check_failure(exc: Exception) -> None:
+    """Appends a one-line, best-effort record of a failed update check to
+    a small log file, without ever letting the logging itself raise --
+    check_latest_version() has to stay silent-on-failure toward its
+    caller (see the module docstring above), but a *completely* silent
+    failure is nearly impossible to debug from the outside once this is
+    running as a packaged app with no visible console. This log file --
+    right next to the app's own database -- is the only place that
+    information survives, so a "why didn't the update popup show up"
+    report can actually be diagnosed instead of guessed at."""
+    try:
+        os.makedirs(config.APP_DIR, exist_ok=True)
+        log_path = os.path.join(config.APP_DIR, "update_check.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {type(exc).__name__}: {exc}\n")
+    except Exception:
+        pass  # logging the failure must never itself become a new failure
+
+
 def check_latest_version(timeout: float = 4.0) -> Optional[dict]:
     """Returns {"tag_name": "v1.6.0", "html_url": "...", "assets": [...]}
     for the latest published GitHub Release, or None if it couldn't be
@@ -73,11 +96,15 @@ def check_latest_version(timeout: float = 4.0) -> Optional[dict]:
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
-    except Exception:
-        # Deliberately blanket: see the module docstring -- every failure
-        # mode here (no network, a 404 from a still-private repo or a repo
-        # with no releases yet, a timeout, malformed JSON, ...) should be
-        # indistinguishable to the caller from "nothing to report".
+    except Exception as exc:
+        # Deliberately blanket toward the CALLER: see the module
+        # docstring -- every failure mode here (no network, a 404 from a
+        # still-private repo or a repo with no releases yet, a timeout,
+        # malformed JSON, ...) should be indistinguishable to
+        # main_window.py from "nothing to report". _log_check_failure
+        # still records exactly what happened, for diagnosing that from
+        # outside a packaged build with no console.
+        _log_check_failure(exc)
         return None
 
     tag_name = data.get("tag_name")

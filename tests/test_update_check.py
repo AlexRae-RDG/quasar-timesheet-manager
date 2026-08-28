@@ -3,6 +3,7 @@ real network calls (urllib.request.urlopen is mocked throughout)."""
 import io
 import os
 import sys
+import tempfile
 import unittest
 import urllib.error
 from unittest.mock import MagicMock, patch
@@ -95,32 +96,41 @@ class TestCheckLatestVersion(unittest.TestCase):
         result = update_check.check_latest_version()
         self.assertEqual(result["assets"], [])
 
+    @patch("app.update_check._log_check_failure")
     @patch("app.update_check.urllib.request.urlopen")
-    def test_missing_tag_name_returns_none(self, mock_urlopen):
+    def test_missing_tag_name_returns_none(self, mock_urlopen, mock_log):
         mock_urlopen.return_value = fake_response(b'{"foo": "bar"}')
         self.assertIsNone(update_check.check_latest_version())
 
+    @patch("app.update_check._log_check_failure")
     @patch("app.update_check.urllib.request.urlopen")
-    def test_http_404_returns_none(self, mock_urlopen):
+    def test_http_404_returns_none(self, mock_urlopen, mock_log):
         # e.g. a still-private repo, or a repo with no releases yet.
         mock_urlopen.side_effect = urllib.error.HTTPError(
             update_check._LATEST_RELEASE_URL, 404, "Not Found", {}, None)
         self.assertIsNone(update_check.check_latest_version())
+        mock_log.assert_called_once()
 
+    @patch("app.update_check._log_check_failure")
     @patch("app.update_check.urllib.request.urlopen")
-    def test_network_error_returns_none(self, mock_urlopen):
+    def test_network_error_returns_none(self, mock_urlopen, mock_log):
         mock_urlopen.side_effect = urllib.error.URLError("no route to host")
         self.assertIsNone(update_check.check_latest_version())
+        mock_log.assert_called_once()
 
+    @patch("app.update_check._log_check_failure")
     @patch("app.update_check.urllib.request.urlopen")
-    def test_timeout_returns_none(self, mock_urlopen):
+    def test_timeout_returns_none(self, mock_urlopen, mock_log):
         mock_urlopen.side_effect = TimeoutError("timed out")
         self.assertIsNone(update_check.check_latest_version())
+        mock_log.assert_called_once()
 
+    @patch("app.update_check._log_check_failure")
     @patch("app.update_check.urllib.request.urlopen")
-    def test_malformed_json_returns_none(self, mock_urlopen):
+    def test_malformed_json_returns_none(self, mock_urlopen, mock_log):
         mock_urlopen.return_value = fake_response(b"not json at all")
         self.assertIsNone(update_check.check_latest_version())
+        mock_log.assert_called_once()
 
     @patch("app.update_check.urllib.request.urlopen")
     def test_request_carries_a_user_agent(self, mock_urlopen):
@@ -132,6 +142,39 @@ class TestCheckLatestVersion(unittest.TestCase):
         # rather than assume the exact casing survives.
         header_keys_lower = {k.lower() for k in sent_request.headers}
         self.assertIn("user-agent", header_keys_lower)
+
+
+class TestLogCheckFailure(unittest.TestCase):
+    """_log_check_failure is check_latest_version()'s only concession to
+    debuggability -- every actual failure is still silent toward the
+    caller (see check_latest_version's own tests above), but this is what
+    lets a real "why didn't the popup show up" report get diagnosed from
+    outside a packaged build with no visible console."""
+
+    def test_writes_a_line_with_the_exception(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(update_check.config, "APP_DIR", tmp):
+                update_check._log_check_failure(ValueError("boom"))
+                log_path = os.path.join(tmp, "update_check.log")
+                self.assertTrue(os.path.exists(log_path))
+                with open(log_path) as f:
+                    contents = f.read()
+                self.assertIn("ValueError", contents)
+                self.assertIn("boom", contents)
+
+    def test_creates_app_dir_if_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_dir = os.path.join(tmp, "not-created-yet")
+            with patch.object(update_check.config, "APP_DIR", missing_dir):
+                update_check._log_check_failure(OSError("no network"))
+                self.assertTrue(os.path.exists(os.path.join(missing_dir, "update_check.log")))
+
+    def test_never_raises_even_if_logging_itself_fails(self):
+        # e.g. APP_DIR pointing somewhere unwritable -- logging a failure
+        # must never become a second, unhandled failure of its own.
+        with patch.object(update_check.config, "APP_DIR", "/this/path/does/not/exist/and/cant/be/made"):
+            with patch("app.update_check.os.makedirs", side_effect=OSError("denied")):
+                update_check._log_check_failure(RuntimeError("whatever"))  # must not raise
 
 
 if __name__ == "__main__":
