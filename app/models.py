@@ -60,6 +60,19 @@ class TimeEntry:
     notes: str = ""
     jira_project: Optional[str] = None
     issue_type: Optional[str] = None
+    # ISO timestamp (see app.db._now()) set the moment this entry is
+    # successfully uploaded to Jira via app.jira_client -- None means
+    # "never uploaded" (or uploaded-then-reset, which nothing in this app
+    # currently does). This is the entire duplicate-protection mechanism
+    # for the "Upload to Jira" button: re-running it only ever sends
+    # entries where this is still None, rather than re-posting a worklog
+    # Jira already has. Editing an already-uploaded entry does NOT clear
+    # this (see Database.update_time_entry) -- there's no "update an
+    # existing Jira worklog" call, only "create a new one", so silently
+    # clearing it on every edit would risk a duplicate worklog for a
+    # one-word notes fix. Deliberately unrelated to CSV export, which has
+    # no such tracking of its own and can always be re-run freely.
+    jira_uploaded_at: Optional[str] = None
 
     def duration_minutes(self) -> int:
         sh, sm = (int(x) for x in self.start_time.split(":"))

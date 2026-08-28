@@ -110,6 +110,11 @@ _MIGRATIONS = {
     "time_entries": [
         ("jira_project", "TEXT"),
         ("issue_type", "TEXT"),
+        # ISO timestamp set once this entry has been successfully sent to
+        # Jira via app.jira_client's "Upload to Jira" button -- NULL means
+        # "not yet uploaded". See TimeEntry.jira_uploaded_at's docstring
+        # for why this only ever gets set once, not cleared on edit.
+        ("jira_uploaded_at", "TEXT"),
     ],
     "template_entries": [
         ("jira_project", "TEXT"),
@@ -782,6 +787,22 @@ class Database:
                 return True
         return False
 
+    def mark_time_entries_jira_uploaded(self, entry_ids: List[int]):
+        """Stamp jira_uploaded_at on every id in entry_ids with the current
+        time -- called once per app.jira_client.upload_entries() call, with
+        only the ids that Jira actually accepted (see main_window.py's
+        _do_jira_upload). A no-op on an empty list, so callers don't need
+        to special-case "nothing succeeded" before calling this."""
+        if not entry_ids:
+            return
+        now = _now()
+        placeholders = ",".join("?" for _ in entry_ids)
+        with self._cursor() as cur:
+            cur.execute(
+                f"UPDATE time_entries SET jira_uploaded_at=? WHERE id IN ({placeholders})",
+                (now, *entry_ids),
+            )
+
     @staticmethod
     def _row_to_entry(r) -> TimeEntry:
         return TimeEntry(
@@ -789,6 +810,7 @@ class Database:
             jira_key=r["jira_key"], color=r["color"], date=r["date"],
             start_time=r["start_time"], end_time=r["end_time"], notes=r["notes"],
             jira_project=r["jira_project"], issue_type=r["issue_type"],
+            jira_uploaded_at=r["jira_uploaded_at"],
         )
 
     # ------------------------------------------------------------------

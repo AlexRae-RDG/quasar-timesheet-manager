@@ -97,6 +97,19 @@ sudo dnf install python3-tkinter # Fedora
 sudo pacman -S tk                # Arch
 ```
 
+**Optional, for the "Upload to Jira" button only:** everything else in
+this app (including "Export to Jira CSV") runs with just the standard
+library. That one button additionally needs the two packages listed in
+`requirements.txt`:
+
+```bash
+pip install -r requirements.txt
+```
+
+Skipping this is fine if you don't use that button — the app still
+launches and runs normally; "Upload to Jira" just tells you what's
+missing if you click it without installing them first.
+
 ## Using the app
 
 **Calendar**
@@ -227,6 +240,43 @@ Quasar Delivery Management,Sub-task,QDM-5455,2026-07-24 00:00:00,Alex Rae,1h 00m
 Run a test import on a couple of rows first in Jira's CSV importer
 (**System → External System Import → CSV**) — Atlassian recommends this
 since exact behavior can differ slightly by Jira version.
+
+## Uploading directly to Jira
+
+**File → Upload to Jira…** (or the "Upload to Jira" button in the header,
+next to "Export to Jira CSV") sends worklogs straight to Jira over its
+REST API — no CSV file, no manual import step. It's an alternative to the
+CSV export above, not a replacement: both stay available, and which one
+you use for a given week is entirely up to you.
+
+**Jira Cloud only** — this doesn't support Jira Server/Data Center.
+
+**One-time setup**, in **Settings → Jira Cloud Upload**:
+1. **Site URL** — your Jira Cloud address, e.g. `yourteam.atlassian.net`
+   (the `https://` is optional).
+2. **Email** — the email address you log into Jira with.
+3. **API Token** — click "Get an API token" to open
+   `id.atlassian.com/manage-profile/security/api-tokens`, generate one,
+   and paste it in. The token is stored in your operating system's own
+   keychain (macOS Keychain / Windows Credential Locker / Secret Service
+   or KWallet on Linux), never in this app's own settings file — Settings
+   shows whether a token is currently stored without ever displaying the
+   token itself again. Leave the field blank on later visits to Settings
+   to keep the stored token unchanged; paste a new one to replace it, or
+   use "Clear stored token" to remove it.
+
+**Using it**: pick a date range the same way as the CSV export. Only
+blocks with a Jira Issue Key are sent (others are skipped, same as CSV
+export). Every entry it successfully sends is marked as uploaded, so
+**re-running it on the same (or an overlapping) date range only ever
+sends entries that haven't been uploaded before** — safe to click again
+without creating duplicate worklogs in Jira. This tracking is separate
+from CSV export, which has no memory of what's already been imported.
+
+Note: editing a time block's notes or duration *after* it's already been
+uploaded doesn't automatically re-send it — there's no "update an
+existing Jira worklog" step, only "create a new one", so this app
+deliberately doesn't risk creating a duplicate over a small edit.
 
 ## For developers
 
