@@ -26,6 +26,7 @@ class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("QUASAR Timesheet Manager")
+        self._force_consistent_dpi_scaling()
         self.geometry("1240x780")
         self.minsize(1000, 640)
         self._maximize_on_start()
@@ -224,6 +225,33 @@ class MainWindow(tk.Tk):
                 f.write("\n".join(lines) + "\n")
         except Exception:
             pass  # a diagnostic must never itself become a startup failure
+
+    def _force_consistent_dpi_scaling(self):
+        """Forces a fixed points-to-pixels DPI scaling factor on macOS,
+        instead of trusting whatever the bundled Tcl/Tk auto-detects.
+
+        A real side-by-side comparison (via _log_startup_diagnostics)
+        caught this directly: Tcl/Tk 9.0 (a modern local Python install)
+        correctly auto-detects ~96 DPI on a Retina display, while Tcl/Tk
+        8.6 (what GitHub's macOS runner happens to bundle for the
+        packaged builds -- see release.yml) falls back to the old
+        pre-Retina default of exactly 72 DPI. Since every font in this
+        app is specified in points (not raw pixels -- e.g.
+        font=(self.family, 9)), that gap alone made the entire packaged
+        macOS build's UI render about 25% smaller than the same code
+        built locally, purely by chance of which machine happened to
+        build it -- not something this app should depend on.
+
+        Forcing 96 (the same reference DPI Windows already uses) makes
+        every build render identically regardless of that chance. Must
+        run before any other widget/font is created, so this is the
+        very first thing __init__ does after the window itself exists."""
+        if sys.platform != "darwin":
+            return
+        try:
+            self.tk.call("tk", "scaling", 96 / 72)
+        except tk.TclError:
+            pass
 
     def _maximize_on_start(self):
         """Start filling the screen rather than the fixed 1240x780
