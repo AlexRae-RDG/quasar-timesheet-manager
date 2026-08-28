@@ -57,12 +57,18 @@ def is_newer(candidate: str, current: str) -> bool:
 
 
 def check_latest_version(timeout: float = 4.0) -> Optional[dict]:
-    """Returns {"tag_name": "v1.6.0", "html_url": "..."} for the latest
-    published GitHub Release, or None if it couldn't be determined for
-    any reason. Blocks for up to `timeout` seconds -- callers (see
-    main_window.py's _check_for_updates) are expected to run this off the
-    Tkinter main thread so a slow/unreachable network never freezes the
-    UI."""
+    """Returns {"tag_name": "v1.6.0", "html_url": "...", "assets": [...]}
+    for the latest published GitHub Release, or None if it couldn't be
+    determined for any reason. Blocks for up to `timeout` seconds --
+    callers (see main_window.py's _check_for_updates) are expected to run
+    this off the Tkinter main thread so a slow/unreachable network never
+    freezes the UI.
+
+    "assets" is the release's raw list of downloadable files, each a dict
+    with (among other things) "name" and "browser_download_url" -- passed
+    straight through from GitHub's API, unfiltered, since it's
+    auto_update.py's job (not this module's) to pick out the one asset
+    that matches the platform this app is running on."""
     request = urllib.request.Request(_LATEST_RELEASE_URL, headers=_HEADERS)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -77,4 +83,8 @@ def check_latest_version(timeout: float = 4.0) -> Optional[dict]:
     tag_name = data.get("tag_name")
     if not tag_name:
         return None
-    return {"tag_name": tag_name, "html_url": data.get("html_url") or _RELEASES_PAGE_URL}
+    return {
+        "tag_name": tag_name,
+        "html_url": data.get("html_url") or _RELEASES_PAGE_URL,
+        "assets": data.get("assets") or [],
+    }

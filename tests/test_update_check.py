@@ -63,6 +63,7 @@ class TestCheckLatestVersion(unittest.TestCase):
         self.assertEqual(result, {
             "tag_name": "v1.6.0",
             "html_url": "https://github.com/x/y/releases/tag/v1.6.0",
+            "assets": [],
         })
 
     @patch("app.update_check.urllib.request.urlopen")
@@ -72,6 +73,27 @@ class TestCheckLatestVersion(unittest.TestCase):
         result = update_check.check_latest_version()
         self.assertEqual(result["tag_name"], "v1.6.0")
         self.assertEqual(result["html_url"], update_check._RELEASES_PAGE_URL)
+
+    @patch("app.update_check.urllib.request.urlopen")
+    def test_assets_array_is_passed_through(self, mock_urlopen):
+        payload = (
+            b'{"tag_name": "v1.6.0", "html_url": "https://x/y",'
+            b' "assets": [{"name": "QUASAR-Timesheet-Manager-macOS.zip",'
+            b' "browser_download_url": "https://x/y/download/mac.zip"}]}'
+        )
+        mock_urlopen.return_value = fake_response(payload)
+        result = update_check.check_latest_version()
+        self.assertEqual(result["assets"], [{
+            "name": "QUASAR-Timesheet-Manager-macOS.zip",
+            "browser_download_url": "https://x/y/download/mac.zip",
+        }])
+
+    @patch("app.update_check.urllib.request.urlopen")
+    def test_missing_assets_defaults_to_empty_list(self, mock_urlopen):
+        payload = b'{"tag_name": "v1.6.0"}'
+        mock_urlopen.return_value = fake_response(payload)
+        result = update_check.check_latest_version()
+        self.assertEqual(result["assets"], [])
 
     @patch("app.update_check.urllib.request.urlopen")
     def test_missing_tag_name_returns_none(self, mock_urlopen):

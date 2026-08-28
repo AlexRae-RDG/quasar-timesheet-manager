@@ -311,16 +311,39 @@ useful for testing the build itself).
 `app/update_check.py` asks GitHub's API for the latest published Release
 a few seconds after launch (on a background thread, so a slow or missing
 connection never delays startup) and compares its tag against
-`app/version.py`'s `APP_VERSION`. If it's newer, a popup offers to open
-the download page; choosing "No" remembers that version so it won't ask
-again until something newer than *that* ships, and "Cancel" just asks
-again next launch.
+`app/version.py`'s `APP_VERSION`. If it's newer, a popup offers to update;
+choosing "No" remembers that version so it won't ask again until
+something newer than *that* ships, and "Cancel" just asks again next
+launch.
 
 This only works once the repo is public — an unauthenticated request
 against a private repo's API 404s, which this app treats the same as "no
 internet right now" (silently does nothing, no error shown). See
 **Install and get started** above for the public-repo download flow this
 depends on.
+
+Choosing "Yes" is a real one-click update, not just a link: `app/auto_update.py`
+downloads the matching release asset for whatever OS it's running on
+(`QUASAR-Timesheet-Manager-macOS.zip` / `-Windows.zip`, matching the two
+files `release.yml` publishes), extracts it, and hands off to a small,
+detached helper script it writes to a temp file — a `.sh` on macOS, a
+`.bat` on Windows — that waits for this app to fully quit, replaces the
+old install with the new one in place, and relaunches it. This only works
+for an actual packaged build (`sys.frozen`); running from source has no
+single "install" to replace. If anything along that path fails for any
+reason — not a packaged build, no matching asset on the release, a
+download or extraction error — it falls back to the old behavior (opens
+the release page in a browser) instead of leaving the app stuck, and says
+so.
+
+Worth knowing if you're changing this: the actual file-swap-and-relaunch
+step can only be partially tested from a normal dev machine (there's no
+way to safely test a real app replacing itself mid-run without actually
+doing it), so treat any change to `app/auto_update.py` as something to
+try for real — on both macOS and Windows — before trusting it broadly.
+The pure logic around it (picking the right release asset, resolving the
+current install's path, error handling) is covered by
+`tests/test_auto_update.py`.
 
 ### Tests
 

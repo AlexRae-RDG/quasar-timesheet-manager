@@ -5,7 +5,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import messagebox, ttk
 
-from . import config, theme, update_check
+from . import auto_update, config, theme, update_check
 from .calendar_view import CalendarGrid
 from .db import Database
 from .export_csv import export_entries
@@ -116,14 +116,61 @@ class MainWindow(tk.Tk):
             "Update available",
             f"A new version of QUASAR Timesheet Manager is available: {latest_tag} "
             f"(you have v{APP_VERSION}).\n\n"
-            "Download it now? (Choosing \u201cNo\u201d won't ask again about this "
-            "version -- \u201cCancel\u201d will ask again next time you open the app.)",
+            "Download it now? QUASAR will download it, close, and reopen on "
+            "its own -- there's nothing to unzip or move yourself. (Choosing "
+            "\u201cNo\u201d won't ask again about this version -- \u201cCancel\u201d "
+            "will ask again next time you open the app.)",
         )
         if choice is True:
-            webbrowser.open(html_url)
+            self._start_auto_update(info, html_url)
         elif choice is False:
             self.db.set_setting("skipped_update_version", latest_tag)
         # choice is None (Cancel/closed) -- do nothing, ask again next launch.
+
+    def _start_auto_update(self, info: dict, html_url: str):
+        """Kicks off the download/swap in the background (see
+        auto_update.py) after the user picks "Yes". Runs off the main
+        thread since the download can take a few seconds; a failure at
+        any point -- not a packaged build, no matching release asset, a
+        network hiccup mid-download, a bad zip -- falls back to exactly
+        the old behavior (open the release page in a browser) instead of
+        leaving the user stuck."""
+        messagebox.showinfo(
+            "Downloading update",
+            "Downloading the latest version now. QUASAR Timesheet Manager "
+            "will close and reopen automatically once it's ready -- this "
+            "can take a few seconds depending on your connection.",
+        )
+
+        def worker():
+            try:
+                auto_update.perform_update(info.get("assets") or [])
+            except auto_update.AutoUpdateError as exc:
+                self.after(0, lambda: self._auto_update_failed(html_url, exc))
+            else:
+                self.after(0, self._quit_for_update)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _auto_update_failed(self, html_url: str, exc: Exception):
+        messagebox.showinfo(
+            "Couldn't auto-update",
+            "The automatic update couldn't complete, so opening the "
+            "download page in your browser instead -- you'll need to "
+            "download and reinstall it yourself this time.\n\n"
+            f"(Details: {exc})",
+        )
+        webbrowser.open(html_url)
+
+    def _quit_for_update(self):
+        """Closes the app the same way _on_close does (log any running
+        timer, close the database) so the swap script -- already waiting
+        on this process's PID -- can safely replace the install the
+        moment this process actually exits."""
+        if self.timer_bar.is_running():
+            self.timer_bar.stop()
+        self.db.close()
+        self.destroy()
 
     def _nudge_to_force_repaint(self):
         try:
