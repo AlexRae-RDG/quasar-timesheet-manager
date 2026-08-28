@@ -596,6 +596,31 @@ class SettingsPanel(tk.Frame):
         right = ttk.Frame(outer)
         right.grid(row=1, column=1, sticky="new")
 
+        # `left` and `right` split `outer` into two equal-*weight* columns
+        # (_configure_half_width_columns), but neither one's actual
+        # content can shrink to fit a narrower share of that split: the
+        # theme preview grid below is a fixed matrix of swatch cards, and
+        # the Keyboard Shortcuts table is two fixed-wraplength label
+        # columns. Below some window width, evenly splitting the space
+        # forces both columns narrower than that fixed content needs --
+        # the content itself doesn't get smaller, it just spills past its
+        # own column's boundary into the other one, which is what showed
+        # up as the shortcuts table visually overlapping the theme grid.
+        # _reflow_settings_columns watches outer's actual rendered width
+        # (which tracks the window's width -- see ScrollArea's own
+        # canvas-forced-width binding in widgets.py) and switches
+        # Keyboard Shortcuts from beside the settings fields to below
+        # them, full width, the moment there isn't room for both at their
+        # natural size -- ScrollArea's existing vertical scrolling then
+        # handles the extra height exactly like it already does for a
+        # tall left column on its own.
+        self._settings_left = left
+        self._settings_right = right
+        self._settings_outer = outer
+        self._settings_stacked = False
+        outer.bind("<Configure>", self._reflow_settings_columns)
+        outer.after_idle(self._reflow_settings_columns)
+
         ttk.Label(left, text="Display Name", style="Heading.TLabel").grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
         tk.Label(left, text="Appears in every exported row.",
@@ -680,10 +705,54 @@ class SettingsPanel(tk.Frame):
                  font=(self.family, 9), bg=theme.PANEL_BG, fg=theme.TEXT_MUTED).grid(
             row=2, column=0, sticky="w", pady=(20, 0))
 
+        # row=20 (not row=2) so this stays below Keyboard Shortcuts either
+        # way -- beside the settings fields at row=1 (the normal, wide-
+        # window layout) or stacked below them at row=2 (see
+        # _reflow_settings_columns) -- without needing to move this row
+        # to match whichever layout is currently active. An unused grid
+        # row number doesn't reserve any space, so this doesn't add a gap.
         btns = ttk.Frame(outer)
-        btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        btns.grid(row=20, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         RoundedButton(btns, text="Cancel", style="Secondary.TButton", command=self._cancel).pack(side="right")
         RoundedButton(btns, text="Save", style="Accent.TButton", command=self._save).pack(side="right", padx=6)
+
+    def _reflow_settings_columns(self, event=None):
+        """Bound to outer's <Configure> (plus one after_idle call so a
+        Settings tab opened directly at a narrow window size starts
+        stacked instead of waiting for the next resize) -- see the long
+        comment where self._settings_left/right/outer are set, in
+        __init__, for why this exists at all."""
+        left = self._settings_left
+        right = self._settings_right
+        outer = self._settings_outer
+        # 36 matches the padx gap __init__ gives `left` in the side-by-
+        # side layout -- the actual space that gap needs, so it's part of
+        # "how much width do both columns need together".
+        needed = left.winfo_reqwidth() + right.winfo_reqwidth() + 36
+        available = outer.winfo_width()
+        # available <= 1 means outer hasn't been given a real size by its
+        # own parent yet (still mid-construction) -- wait for the next
+        # <Configure> instead of guessing from a meaningless width.
+        if available <= 1:
+            return
+        should_stack = available < needed
+        if should_stack == self._settings_stacked:
+            return
+        self._settings_stacked = should_stack
+        if should_stack:
+            # Collapse column 1's weight to 0 too -- otherwise, even with
+            # `right` moved out of it, outer's two equal-weight columns
+            # would still split the width evenly between them, leaving
+            # `left` (now the only thing at row 1) stuck at half-width
+            # with an empty gap beside it instead of using the space
+            # `right` just vacated.
+            outer.columnconfigure(1, weight=0)
+            left.grid_configure(padx=0, pady=(0, 24))
+            right.grid_configure(row=2, column=0, columnspan=2, pady=(0, 0))
+        else:
+            outer.columnconfigure(1, weight=1)
+            left.grid_configure(padx=(0, 36), pady=0)
+            right.grid_configure(row=1, column=1, columnspan=1, pady=0)
 
     def _build_theme_grid(self):
         # A fixed 4-columns-wide grid of theme preview cards -- "System"
