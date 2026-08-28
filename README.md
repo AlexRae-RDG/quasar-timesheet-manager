@@ -10,15 +10,14 @@ data lives in a single SQLite file on your machine.
 
 **This is the fastest way to get going — no Python, no Terminal, no git.**
 
-1. This repo is private — make sure you've been added as a collaborator
-   (ask whoever shared this with you to add your GitHub account under the
-   repo's **Settings → Collaborators**).
-2. Go to the **[Releases](../../releases)** page and open the newest
-   release (the one at the top).
-3. Under **Assets**, download the zip for your OS:
+1. Go to the **[Releases](https://github.com/AlexRae-RDG/quasar-timesheet-manager/releases)**
+   page and open the newest release (the one at the top). This repo is
+   public, so no GitHub account or invite is needed — anyone with the
+   link can download it.
+2. Under **Assets**, download the zip for your OS:
    `QUASAR-Timesheet-Manager-macOS.zip` or
    `QUASAR-Timesheet-Manager-Windows.zip`.
-4. Unzip it.
+3. Unzip it.
    - **macOS:** drag `QUASAR Timesheet Manager.app` into `/Applications`.
      First launch: right-click (or Control-click) it → **Open** → **Open**
      — needed once, since the app isn't signed with a paid Apple Developer
@@ -29,7 +28,7 @@ data lives in a single SQLite file on your machine.
      A Desktop shortcut to the .exe inside is the easiest way to launch it.
      Windows SmartScreen may warn about an "unrecognized app" the first
      time — click **More info** → **Run anyway**.
-5. Open it. Your data is stored locally on your own machine (see
+4. Open it. Your data is stored locally on your own machine (see
    "Updating the app" below for exactly where) — nothing is shared between
    colleagues, each person's timesheet is entirely their own.
 

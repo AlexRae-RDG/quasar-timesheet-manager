@@ -141,7 +141,7 @@ cal._on_down_key()
 win.update()
 moved = db.get_time_entry(new_id)
 check(f"Down arrow moved its time later by one slot (got {moved.start_time}-{moved.end_time})",
-      moved.start_time == "13:30" and moved.end_time == "14:30")
+      moved.start_time == "13:15" and moved.end_time == "14:15")
 cal._on_up_key()
 win.update()
 moved = db.get_time_entry(new_id)

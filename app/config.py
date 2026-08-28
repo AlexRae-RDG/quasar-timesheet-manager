@@ -2,8 +2,8 @@
 Application-wide configuration constants for the Jira Timesheet app.
 
 Feel free to tweak these values to fit your own workflow (e.g. change
-SLOT_MINUTES to 15 for finer-grained time blocking, or widen the visible
-hours).
+SLOT_MINUTES back to 30 for coarser-grained time blocking, or widen the
+visible hours).
 """
 import os
 from typing import Optional
@@ -61,7 +61,7 @@ def week_end_offset() -> int:
     return len(DAY_NAMES) - 1
 
 # Size of each draggable slot, in minutes. 30 or 15 both work well.
-SLOT_MINUTES = 30
+SLOT_MINUTES = 15
 
 # Pixel height of a single slot row and pixel width of a single day column.
 # The calendar grid is dynamic: it stretches to fill whatever space its
