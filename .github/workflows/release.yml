@@ -29,9 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Python 3.11's macOS build bundles Tcl/Tk 8.6, which misreports
+      # Retina displays as 72 DPI (instead of ~96+), making the packaged
+      # app render noticeably smaller/less responsive than a local build.
+      # Python 3.14+ bundles Tcl/Tk 9.0, which detects Retina DPI
+      # correctly -- use it here so the CI build matches local dev.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Build QUASAR Timesheet Manager.app
         run: bash packaging/build_macos.sh
