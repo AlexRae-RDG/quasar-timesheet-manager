@@ -1,6 +1,9 @@
 """Top-level application window: header bar, sidebar, and weekly calendar grid."""
+import os
+import platform
 import sys
 import threading
+import time
 import tkinter as tk
 import webbrowser
 from tkinter import messagebox, ttk
@@ -26,6 +29,7 @@ class MainWindow(tk.Tk):
         self.geometry("1240x780")
         self.minsize(1000, 640)
         self._maximize_on_start()
+        self._log_startup_diagnostics()
 
         self.db = Database()
 
@@ -179,6 +183,47 @@ class MainWindow(tk.Tk):
             self.after(50, lambda: self.geometry(f"+{x}+{y}"))
         except tk.TclError:
             pass
+
+    def _log_startup_diagnostics(self):
+        """Best-effort, never-blocking record of exactly what Tk thinks
+        it's running on, written once per launch to
+        ~/.jira_timesheet/startup_diagnostics.log -- added specifically
+        to chase down a real report of a packaged macOS build (built via
+        GitHub Actions, see release.yml) opening at the wrong size and
+        rendering noticeably slower than the exact same code built
+        locally, despite both bundling the same Tcl/Tk 8.6. The likely
+        suspects (which windowing backend Tk actually initialized as --
+        native Aqua vs. a generic/X11-style fallback -- and what it
+        thinks the screen's real dimensions are) are only visible from
+        inside a running Tk instance, so this is the only way to compare
+        a 'good' build against a 'bad' one without guessing. Wrapped in
+        its own try/except, same reasoning as update_check.py's
+        _log_check_failure: a diagnostic must never itself become a new
+        way for the app to fail to start."""
+        try:
+            # Forces Tk to actually process the geometry() call from
+            # _maximize_on_start() before asking winfo_width/height for
+            # it below -- without this, they'd still report Tk's
+            # not-yet-realized placeholder size (1x1) rather than what
+            # was actually requested.
+            self.update_idletasks()
+            os.makedirs(config.APP_DIR, exist_ok=True)
+            log_path = os.path.join(config.APP_DIR, "startup_diagnostics.log")
+            lines = [
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} APP_VERSION={APP_VERSION} "
+                f"frozen={getattr(sys, 'frozen', False)} platform={sys.platform}",
+                f"  mac_ver={platform.mac_ver()[0]!r}" if sys.platform == "darwin" else "  (not macOS)",
+                f"  tk windowingsystem={self.tk.call('tk', 'windowingsystem')!r} "
+                f"tcl patchlevel={self.tk.call('info', 'patchlevel')!r}",
+                f"  screen={self.winfo_screenwidth()}x{self.winfo_screenheight()} "
+                f"window={self.winfo_width()}x{self.winfo_height()} "
+                f"requested_geometry={self.geometry()!r} "
+                f"fpixels_per_inch={self.winfo_fpixels('1i')}",
+            ]
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+        except Exception:
+            pass  # a diagnostic must never itself become a startup failure
 
     def _maximize_on_start(self):
         """Start filling the screen rather than the fixed 1240x780
