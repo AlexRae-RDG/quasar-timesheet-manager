@@ -302,6 +302,13 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         # first real Windows update attempt.
         self.assertIn('cd /d "%~dp0"', contents)
         self.assertNotIn("QUASAR Timesheet Manager\\QUASAR Timesheet Manager.exe", kwargs.get("cwd", ""))
+        # Regression guard: since this script runs fully detached with no
+        # console, it must log its own progress somewhere readable --
+        # otherwise a failure here is completely invisible (which is
+        # exactly what happened on the first real attempt).
+        self.assertIn("quasar-update-swap.log", contents)
+        self.assertIn("rmdir errorlevel=", contents)
+        self.assertIn("move errorlevel=", contents)
         script_path.unlink()
 
 

@@ -226,18 +226,40 @@ def _write_windows_swap_script(script_path: Path, pid: int, new_dir: Path, insta
 :: own folder as the current directory, which this detached script
 :: would otherwise inherit. cd somewhere unrelated first so the rmdir
 :: below can actually succeed.
+::
+:: This whole script runs fully detached with no console window, so if
+:: any step here fails, there is normally NO way to see why -- any
+:: error text a command would have printed just goes nowhere. Log every
+:: step (including each command's errorlevel) to %TEMP% instead, so a
+:: failed update can actually be diagnosed after the fact.
 cd /d "%~dp0"
+set LOG=%TEMP%\\quasar-update-swap.log
+echo [%DATE% %TIME%] starting, pid={pid} > "%LOG%"
+echo   new_dir={new_dir} >> "%LOG%"
+echo   install_dir={install_dir} >> "%LOG%"
 :waitloop
 tasklist /FI "PID eq {pid}" 2>NUL | find "{pid}" >NUL
 if not errorlevel 1 (
     timeout /t 1 /nobreak >nul
     goto waitloop
 )
+echo [%DATE% %TIME%] pid {pid} has exited, proceeding >> "%LOG%"
 
 rmdir /s /q "{install_dir}"
+echo [%DATE% %TIME%] rmdir errorlevel=%errorlevel% >> "%LOG%"
+
 move "{new_dir}" "{install_dir}"
-start "" "{install_dir}\\{exe_name}"
+echo [%DATE% %TIME%] move errorlevel=%errorlevel% >> "%LOG%"
+
+if exist "{install_dir}\\{exe_name}" (
+    echo [%DATE% %TIME%] {exe_name} present in install_dir, launching >> "%LOG%"
+    start "" "{install_dir}\\{exe_name}"
+) else (
+    echo [%DATE% %TIME%] ERROR: {exe_name} NOT found in install_dir after move -- not launching >> "%LOG%"
+)
+
 rmdir /s /q "{cleanup_dir}"
+echo [%DATE% %TIME%] cleanup errorlevel=%errorlevel%, done >> "%LOG%"
 """
     script_path.write_text(script)
 
