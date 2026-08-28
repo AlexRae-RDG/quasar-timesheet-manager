@@ -287,7 +287,12 @@ hand, see "Updating the app" above (`Update and Reinstall App.command`).
 
 `.github/workflows/release.yml` runs both build scripts on GitHub's own
 macOS/Windows runners and attaches the results to a GitHub Release
-whenever a version tag is pushed:
+whenever a version tag is pushed. **First, bump `app/version.py`'s
+`APP_VERSION` to match** and commit that — the running app compares this
+against the tag to power the "update available" popup covered below, so
+a tag pushed without a matching `APP_VERSION` bump means that popup
+either never fires for this release or fires again on the very build
+that IS the update:
 
 ```bash
 git tag v1.1.0
@@ -300,6 +305,22 @@ there's no enforced versioning scheme beyond that. You can also trigger a
 build manually from **Actions → Build and release → Run workflow**
 without a tag (uploads as workflow artifacts instead of a Release —
 useful for testing the build itself).
+
+### Checking for updates on launch
+
+`app/update_check.py` asks GitHub's API for the latest published Release
+a few seconds after launch (on a background thread, so a slow or missing
+connection never delays startup) and compares its tag against
+`app/version.py`'s `APP_VERSION`. If it's newer, a popup offers to open
+the download page; choosing "No" remembers that version so it won't ask
+again until something newer than *that* ships, and "Cancel" just asks
+again next launch.
+
+This only works once the repo is public — an unauthenticated request
+against a private repo's API 404s, which this app treats the same as "no
+internet right now" (silently does nothing, no error shown). See
+**Install and get started** above for the public-repo download flow this
+depends on.
 
 ### Tests
 
@@ -331,5 +352,8 @@ Edit with the right data).
    colleagues on a downloaded build don't have it yet.
 5. **Cut a release if it's worth colleagues getting** (see above) — not
    every commit needs one.
-6. **Let colleagues know** — there's no auto-update; they re-download
-   from Releases when they want it (see "Updating the app" above).
+6. **Let colleagues know, if it's urgent** — there's no silent
+   auto-update, but everyone's app checks for a newer Release a few
+   seconds after launch and offers to open the download page (see
+   "Checking for updates on launch" above), so most releases reach people
+   the next time they open the app without you needing to say anything.

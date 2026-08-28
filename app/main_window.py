@@ -1,9 +1,11 @@
 """Top-level application window: header bar, sidebar, and weekly calendar grid."""
 import sys
+import threading
 import tkinter as tk
+import webbrowser
 from tkinter import messagebox, ttk
 
-from . import config, theme
+from . import config, theme, update_check
 from .calendar_view import CalendarGrid
 from .db import Database
 from .export_csv import export_entries
@@ -13,6 +15,7 @@ from .sidebar import Sidebar
 from .summary_panel import SummaryPanel
 from .timeblock_panel import TimeBlockPanel
 from .timer_bar import TimerBar
+from .version import APP_VERSION
 from .widgets import RoundedButton
 
 
@@ -72,6 +75,55 @@ class MainWindow(tk.Tk):
             # back right after launch forces that repaint automatically so
             # nobody has to do it by hand.
             self.after(150, self._nudge_to_force_repaint)
+
+        # Delayed so it never competes with getting the window itself on
+        # screen first -- the actual network call happens on a background
+        # thread regardless (see _check_for_updates), this delay is just
+        # about not kicking that thread off in the same instant as
+        # everything else __init__ is doing.
+        self.after(1500, self._check_for_updates)
+
+    def _check_for_updates(self):
+        """Best-effort, silent-on-failure check for a newer GitHub Release
+        than this build's own version.py -- see update_check.py's module
+        docstring for exactly what "failure" covers (no network, private
+        repo, no releases yet, ...). Runs the actual HTTP request on a
+        background thread since it can block for a few seconds; the
+        result comes back onto the main thread via self.after(0, ...)
+        because Tkinter widgets (the popup) can only be touched from
+        there."""
+        def worker():
+            info = update_check.check_latest_version()
+            if info is not None:
+                self.after(0, lambda: self._on_update_check_result(info))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_check_result(self, info: dict):
+        latest_tag = info.get("tag_name", "")
+        if not update_check.is_newer(latest_tag, APP_VERSION):
+            return
+
+        # A version the user already said "skip" to for THIS build stays
+        # skipped -- but only until something newer than that skipped
+        # version shows up, so a follow-up release after the one they
+        # skipped still gets offered.
+        skipped = self.db.get_setting("skipped_update_version", "") or ""
+        if skipped and not update_check.is_newer(latest_tag, skipped):
+            return
+
+        html_url = info.get("html_url") or f"https://github.com/{update_check.GITHUB_REPO}/releases/latest"
+        choice = messagebox.askyesnocancel(
+            "Update available",
+            f"A new version of QUASAR Timesheet Manager is available: {latest_tag} "
+            f"(you have v{APP_VERSION}).\n\n"
+            "Download it now? (Choosing \u201cNo\u201d won't ask again about this "
+            "version -- \u201cCancel\u201d will ask again next time you open the app.)",
+        )
+        if choice is True:
+            webbrowser.open(html_url)
+        elif choice is False:
+            self.db.set_setting("skipped_update_version", latest_tag)
+        # choice is None (Cancel/closed) -- do nothing, ask again next launch.
 
     def _nudge_to_force_repaint(self):
         try:
