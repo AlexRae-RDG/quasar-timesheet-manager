@@ -218,6 +218,15 @@ def _write_windows_swap_script(script_path: Path, pid: int, new_dir: Path, insta
 :: into place, and relaunches it. Deliberately does NOT delete itself
 :: (a running .bat file can't reliably delete its own file on Windows) --
 :: it's a few KB left in %TEMP%, which Windows cleans up on its own.
+::
+:: Critically, this script's own working directory must NOT be inside
+:: the install folder it's about to rmdir -- Windows refuses to delete
+:: a directory that is any running process's current directory (unlike
+:: macOS/Unix), and a double-clicked .exe normally launches with its
+:: own folder as the current directory, which this detached script
+:: would otherwise inherit. cd somewhere unrelated first so the rmdir
+:: below can actually succeed.
+cd /d "%~dp0"
 :waitloop
 tasklist /FI "PID eq {pid}" 2>NUL | find "{pid}" >NUL
 if not errorlevel 1 (
@@ -265,12 +274,18 @@ def perform_update(assets: List[dict]) -> None:
     new_root = find_extracted_root(extract_dir, install_path.name)
 
     pid = os.getpid()
+    # Neither swap process may run with its working directory inside
+    # install_path -- it's about to delete/move that folder, and (on
+    # Windows especially) a directory can't be removed while any running
+    # process has it as its current directory. tempfile.gettempdir() is
+    # unrelated to wherever the app is installed on either OS.
+    safe_cwd = tempfile.gettempdir()
     if sys.platform == "darwin":
         fd, script_name = tempfile.mkstemp(prefix="quasar-update-swap-", suffix=".sh")
         os.close(fd)
         script_path = Path(script_name)
         _write_macos_swap_script(script_path, pid, new_root, install_path, work_dir)
-        subprocess.Popen(["/bin/bash", str(script_path)], start_new_session=True)
+        subprocess.Popen(["/bin/bash", str(script_path)], start_new_session=True, cwd=safe_cwd)
     elif sys.platform == "win32":
         fd, script_name = tempfile.mkstemp(prefix="quasar-update-swap-", suffix=".bat")
         os.close(fd)
@@ -279,6 +294,6 @@ def perform_update(assets: List[dict]) -> None:
         _write_windows_swap_script(script_path, pid, new_root, install_path, work_dir, exe_name=PureWindowsPath(sys.executable).name)
         detached_flags = getattr(subprocess, "DETACHED_PROCESS", 0x00000008) | \
             getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-        subprocess.Popen(["cmd", "/c", str(script_path)], creationflags=detached_flags)
+        subprocess.Popen(["cmd", "/c", str(script_path)], creationflags=detached_flags, cwd=safe_cwd)
     else:
         raise AutoUpdateError(f"auto-update isn't supported on this platform: {sys.platform!r}")

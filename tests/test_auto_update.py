@@ -257,6 +257,9 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         contents = script_path.read_text()
         self.assertIn("QUASAR Timesheet Manager.app", contents)
         self.assertIn(str(os.getpid()), contents)
+        # The swap process's cwd must not be inside the app bundle it's
+        # about to replace.
+        self.assertNotIn("/Applications/QUASAR Timesheet Manager.app", kwargs.get("cwd", ""))
         script_path.unlink()
 
     @patch("app.auto_update.subprocess.Popen")
@@ -292,6 +295,13 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         contents = script_path.read_text()
         self.assertIn("QUASAR Timesheet Manager.exe", contents)
         self.assertIn(str(os.getpid()), contents)
+        # Regression guard: the swap .bat's own working directory must
+        # not be left inside the install folder it's about to rmdir --
+        # Windows refuses to delete a directory that is any running
+        # process's current directory, which silently broke the very
+        # first real Windows update attempt.
+        self.assertIn('cd /d "%~dp0"', contents)
+        self.assertNotIn("QUASAR Timesheet Manager\\QUASAR Timesheet Manager.exe", kwargs.get("cwd", ""))
         script_path.unlink()
 
 
