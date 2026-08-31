@@ -220,12 +220,12 @@ def _write_windows_swap_script(script_path: Path, pid: int, new_dir: Path, insta
 :: it's a few KB left in %TEMP%, which Windows cleans up on its own.
 ::
 :: Critically, this script's own working directory must NOT be inside
-:: the install folder it's about to rmdir -- Windows refuses to delete
-:: a directory that is any running process's current directory (unlike
-:: macOS/Unix), and a double-clicked .exe normally launches with its
-:: own folder as the current directory, which this detached script
-:: would otherwise inherit. cd somewhere unrelated first so the rmdir
-:: below can actually succeed.
+:: the install folder it's about to replace -- Windows refuses to
+:: delete/rename a directory that is any running process's current
+:: directory (unlike macOS/Unix), and a double-clicked .exe normally
+:: launches with its own folder as the current directory, which this
+:: detached script would otherwise inherit. cd somewhere unrelated
+:: first so the steps below can actually succeed.
 ::
 :: Waits for the old process to exit via a single PowerShell
 :: Wait-Process call rather than a `tasklist | find` polling loop --
@@ -233,13 +233,29 @@ def _write_windows_swap_script(script_path: Path, pid: int, new_dir: Path, insta
 :: with no console (see perform_update's CREATE_NO_WINDOW comment) can
 :: wedge indefinitely instead of ever completing.
 ::
+:: The swap itself moves the OLD install aside to a sibling "-old-swap"
+:: folder first, and only moves the new build into install_dir once
+:: that succeeded -- rather than deleting install_dir outright and
+:: then moving the new build in. A straight rmdir-then-move sounds
+:: equivalent but isn't: if the rmdir silently failed (a real
+:: first-attempt bug -- e.g. something still had install_dir open a
+:: moment after the app quit) and install_dir still existed, `move`
+:: would move the new build INSIDE it instead of renaming it, silently
+:: nesting the app one folder deeper every single update. Moving the
+:: old install aside first means that failure mode is instead just a
+:: fully-logged, harmless no-op: if install_dir can't be vacated, the
+:: swap aborts before ever touching the new build, and the previous
+:: install is left exactly as it was.
+::
 :: This script otherwise runs with no visible console window, so if
 :: any step here fails, there is normally NO way to see why -- any
 :: error text a command would have printed just goes nowhere. Log
-:: every step (including each command's errorlevel) to %TEMP% instead,
-:: so a failed update can actually be diagnosed after the fact.
+:: every step (including each command's errorlevel and output) to
+:: %TEMP% instead, so a failed update can actually be diagnosed after
+:: the fact.
 cd /d "%~dp0"
 set LOG=%TEMP%\\quasar-update-swap.log
+set BACKUP={install_dir}-old-swap
 echo [%DATE% %TIME%] starting, pid={pid} > "%LOG%"
 echo   new_dir={new_dir} >> "%LOG%"
 echo   install_dir={install_dir} >> "%LOG%"
@@ -247,19 +263,39 @@ echo   install_dir={install_dir} >> "%LOG%"
 powershell -NoProfile -Command "try {{ Wait-Process -Id {pid} -ErrorAction Stop }} catch {{}}"
 echo [%DATE% %TIME%] pid {pid} has exited, proceeding >> "%LOG%"
 
-rmdir /s /q "{install_dir}"
-echo [%DATE% %TIME%] rmdir errorlevel=%errorlevel% >> "%LOG%"
-
-move "{new_dir}" "{install_dir}"
-echo [%DATE% %TIME%] move errorlevel=%errorlevel% >> "%LOG%"
-
-if exist "{install_dir}\\{exe_name}" (
-    echo [%DATE% %TIME%] {exe_name} present in install_dir, launching >> "%LOG%"
-    start "" "{install_dir}\\{exe_name}"
-) else (
-    echo [%DATE% %TIME%] ERROR: {exe_name} NOT found in install_dir after move -- not launching >> "%LOG%"
+if exist "%BACKUP%" (
+    echo [%DATE% %TIME%] stale backup folder from an earlier attempt, removing it first >> "%LOG%"
+    rmdir /s /q "%BACKUP%"
 )
 
+if not exist "{install_dir}" goto :swap_in
+move "{install_dir}" "%BACKUP%" >>"%LOG%" 2>&1
+echo [%DATE% %TIME%] moved old install aside, errorlevel=%errorlevel% >> "%LOG%"
+if exist "{install_dir}" (
+    echo [%DATE% %TIME%] ERROR: install_dir still exists after trying to move it aside -- aborting swap so the new build can't get nested inside it >> "%LOG%"
+    goto :cleanup
+)
+
+:swap_in
+move "{new_dir}" "{install_dir}" >>"%LOG%" 2>&1
+echo [%DATE% %TIME%] moved new build into place, errorlevel=%errorlevel% >> "%LOG%"
+
+if not exist "{install_dir}\\{exe_name}" (
+    echo [%DATE% %TIME%] ERROR: {exe_name} NOT found in install_dir after move -- restoring the previous install >> "%LOG%"
+    if exist "{install_dir}" rmdir /s /q "{install_dir}"
+    if exist "%BACKUP%" move "%BACKUP%" "{install_dir}" >>"%LOG%" 2>&1
+)
+
+if exist "{install_dir}\\{exe_name}" (
+    echo [%DATE% %TIME%] launching {exe_name} >> "%LOG%"
+    start "" "{install_dir}\\{exe_name}"
+) else (
+    echo [%DATE% %TIME%] ERROR: nothing launchable at install_dir after the swap/restore attempt >> "%LOG%"
+)
+
+if exist "%BACKUP%" rmdir /s /q "%BACKUP%"
+
+:cleanup
 rmdir /s /q "{cleanup_dir}"
 echo [%DATE% %TIME%] cleanup errorlevel=%errorlevel%, done >> "%LOG%"
 """

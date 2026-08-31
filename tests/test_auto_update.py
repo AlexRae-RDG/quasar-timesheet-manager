@@ -308,8 +308,20 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         # otherwise a failure here is completely invisible (which is
         # exactly what happened on the first real attempt).
         self.assertIn("quasar-update-swap.log", contents)
-        self.assertIn("rmdir errorlevel=", contents)
-        self.assertIn("move errorlevel=", contents)
+        self.assertIn("moved old install aside, errorlevel=", contents)
+        self.assertIn("moved new build into place, errorlevel=", contents)
+        # Regression guard: the first successful swap left the app
+        # nested one folder deeper than it should be (install_dir\
+        # install_dir\...exe) -- caused by a straight rmdir-then-move:
+        # if the rmdir silently failed and install_dir still existed,
+        # `move` moved the new build INSIDE it rather than renaming it,
+        # nesting a level deeper on every single update. The swap must
+        # move the OLD install aside to a backup path first, and only
+        # abort (never touching the new build) if that didn't leave
+        # install_dir empty -- never fall through to a `move` that could
+        # land inside a still-existing install_dir.
+        self.assertIn("-old-swap", contents)
+        self.assertIn("aborting swap so the new build can't get nested", contents)
         # Regression guard: the first real Windows test showed a visible,
         # stuck console window with the old `tasklist | find` polling
         # loop under DETACHED_PROCESS -- piping between two independently
