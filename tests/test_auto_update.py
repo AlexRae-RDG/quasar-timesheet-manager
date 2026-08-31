@@ -322,6 +322,14 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         # land inside a still-existing install_dir.
         self.assertIn("-old-swap", contents)
         self.assertIn("aborting swap so the new build can't get nested", contents)
+        # Regression guard: a real Windows run showed the "move old
+        # install aside" step fail on its first attempt (something --
+        # likely antivirus -- briefly held a lock right after the app
+        # quit) and succeed moments later. Give it a few retries with a
+        # short pause instead of aborting (and leaving the update
+        # un-applied) on the very first failure.
+        self.assertIn(":retry_move_aside", contents)
+        self.assertIn("goto :retry_move_aside", contents)
         # Regression guard: the first real Windows test showed a visible,
         # stuck console window with the old `tasklist | find` polling
         # loop under DETACHED_PROCESS -- piping between two independently

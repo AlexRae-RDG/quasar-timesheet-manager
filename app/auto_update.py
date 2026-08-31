@@ -268,13 +268,28 @@ if exist "%BACKUP%" (
     rmdir /s /q "%BACKUP%"
 )
 
+set MOVE_ASIDE_TRIES=0
 if not exist "{install_dir}" goto :swap_in
+
+:retry_move_aside
 move "{install_dir}" "%BACKUP%" >>"%LOG%" 2>&1
 echo [%DATE% %TIME%] moved old install aside, errorlevel=%errorlevel% >> "%LOG%"
-if exist "{install_dir}" (
-    echo [%DATE% %TIME%] ERROR: install_dir still exists after trying to move it aside -- aborting swap so the new build can't get nested inside it >> "%LOG%"
-    goto :cleanup
+if not exist "{install_dir}" goto :swap_in
+
+:: A real Windows test hit exactly this: something (most likely
+:: antivirus briefly scanning freshly-touched files) held a lock just
+:: long enough for the first attempt to fail. Retry a handful of times
+:: with a short pause rather than giving up (and aborting the update)
+:: on the very first try.
+set /a MOVE_ASIDE_TRIES+=1
+if %MOVE_ASIDE_TRIES% LSS 8 (
+    echo [%DATE% %TIME%] install_dir still exists after attempt %MOVE_ASIDE_TRIES%, retrying shortly >> "%LOG%"
+    timeout /t 1 /nobreak >nul
+    goto :retry_move_aside
 )
+
+echo [%DATE% %TIME%] ERROR: install_dir still exists after %MOVE_ASIDE_TRIES% attempts to move it aside -- aborting swap so the new build can't get nested inside it >> "%LOG%"
+goto :cleanup
 
 :swap_in
 move "{new_dir}" "{install_dir}" >>"%LOG%" 2>&1
