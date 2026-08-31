@@ -37,10 +37,20 @@ source" below.
 
 ## Updating the app
 
-**If you're using a downloaded build (most people):** go back to the
-[Releases](../../releases) page, download the newest zip, and repeat the
-install steps above over your old copy. Your data isn't touched — it
-lives separately (see below), not inside the app itself.
+**If you're using a downloaded build (most people):** the app checks for
+a newer release a few seconds after launch and, if one's out, offers a
+popup with a one-click **Yes** — it downloads the new version, swaps it
+in, and relaunches automatically, no unzipping or dragging required.
+Choosing "No" won't ask again until something newer than that ships;
+"Cancel" asks again next launch.
+
+If that popup fails for any reason (no internet, a download hiccup),
+it falls back to just opening the Releases page in your browser instead
+of leaving you stuck — at that point, or if you'd rather update by hand
+anyway, go back to the [Releases](../../releases) page, download the
+newest zip, and repeat the install steps above over your old copy. Your
+data isn't touched either way — it lives separately (see below), not
+inside the app itself.
 
 **If you're working from this source folder (developers):**
 1. `git pull` to get the latest code.
@@ -306,6 +316,13 @@ build manually from **Actions → Build and release → Run workflow**
 without a tag (uploads as workflow artifacts instead of a Release —
 useful for testing the build itself).
 
+The `build-macos` job pins Python 3.14 specifically (not something more
+conservative) because of a real display bug — see "Checking for updates
+on launch" below for the full story — where an older Python's bundled
+Tcl/Tk misdetects Retina displays as 72 DPI instead of ~96+, making the
+packaged app render noticeably smaller and less responsive than a local
+build. Don't downgrade it without re-checking that.
+
 ### Checking for updates on launch
 
 `app/update_check.py` asks GitHub's API for the latest published Release
@@ -336,14 +353,94 @@ download or extraction error — it falls back to the old behavior (opens
 the release page in a browser) instead of leaving the app stuck, and says
 so.
 
-Worth knowing if you're changing this: the actual file-swap-and-relaunch
-step can only be partially tested from a normal dev machine (there's no
-way to safely test a real app replacing itself mid-run without actually
-doing it), so treat any change to `app/auto_update.py` as something to
-try for real — on both macOS and Windows — before trusting it broadly.
-The pure logic around it (picking the right release asset, resolving the
-current install's path, error handling) is covered by
-`tests/test_auto_update.py`.
+**Worth knowing if you're changing this** — every one of the following
+was a real bug hit shipping this feature for the first time, not a
+theoretical concern:
+
+- **SSL on a frozen macOS build:** `ssl.create_default_context()` can
+  fail with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer
+  certificate` inside a PyInstaller-frozen macOS app even though the
+  exact same code works fine unfrozen — the frozen build can lose track
+  of its own trusted CA bundle. Fixed by `update_check.build_ssl_context()`,
+  which explicitly points at macOS's system CA bundle
+  (`/etc/ssl/cert.pem`) when present; both the release-check request and
+  the actual download in `auto_update.py` use it.
+- **Extracting the downloaded zip on macOS:** Python's `zipfile.extractall()`
+  does not preserve symlinks — it writes each one out as a plain file
+  containing the link's target path as *text*. A macOS `.app` built with
+  a bundled Python framework has real internal symlinks (e.g.
+  `Python.framework/Versions/Current`), so extracting one with `zipfile`
+  silently corrupts it just enough that macOS refuses to open it at all
+  ("can't be opened"), with no useful error. `auto_update.extract_zip()`
+  shells out to `ditto` on macOS instead — the same tool `release.yml`
+  uses to *create* the zip in the first place, so it round-trips
+  everything correctly. `zipfile` is fine on Windows, which has no such
+  symlinks to lose.
+- **The macOS build rendering ~25% smaller with a less responsive UI**
+  than a local build, despite being the exact same source: GitHub's
+  macOS runner, via `actions/setup-python`, bundles whatever Tcl/Tk
+  ships with the requested Python version. Tcl/Tk 8.6 (bundled through
+  Python 3.13) reports the old pre-Retina default of 72 DPI on a Retina
+  display instead of auto-detecting the real ~96+ DPI, and since every
+  font in this app is specified in points, that alone shrinks the whole
+  UI. Tcl/Tk 9.0 (bundled starting with Python 3.14's official macOS
+  installer) detects Retina DPI correctly — which is why
+  `release.yml`'s `build-macos` job pins Python 3.14, not something
+  more conservative. (An application-level `tk scaling` override was
+  tried first and did **not** actually fix the rendering scale despite
+  `winfo_fpixels` appearing to report a corrected number afterward —
+  confirmed by directly comparing screenshots pixel-for-pixel, not just
+  reading the diagnostic log. Don't trust that log in isolation if you
+  revisit this; verify visually too.)
+- **The Windows swap script's own working directory:** it inherited
+  `install_dir` as its current directory (a double-clicked `.exe`
+  launches with its own folder as the current directory), and Windows
+  refuses to delete or rename a directory that is any running process's
+  current directory — unlike macOS/Unix. The script now `cd`s somewhere
+  unrelated (`%~dp0`, its own temp location) before touching
+  `install_dir`, and `perform_update()` passes an explicit `cwd` to
+  `Popen` on both platforms for the same reason.
+- **`DETACHED_PROCESS` wedging the Windows swap script:** the original
+  wait loop (`tasklist | find`) left a visible, stuck console window
+  and never completed. `DETACHED_PROCESS` gives the new `cmd.exe`
+  *no* console at all, but `tasklist`/`find` are themselves console
+  programs, so each has to allocate its own throwaway console just to
+  run — and piping between two independently self-allocated consoles
+  can wedge instead of ever finishing. Fixed by waiting via a single
+  PowerShell `Wait-Process -Id <pid>` call (no piping) and switching to
+  `CREATE_NO_WINDOW` — the flag actually meant for "run normally, just
+  don't show a window." Per Microsoft's own docs, `CREATE_NO_WINDOW` is
+  silently ignored if `DETACHED_PROCESS` is also set, so the two must
+  never be combined.
+- **The Windows swap nesting the app one folder deeper on every
+  update:** the script used to `rmdir /s /q install_dir` then
+  `move new_dir install_dir`. If the `rmdir` silently failed (something
+  — most likely antivirus briefly scanning the freshly-touched files —
+  held a lock on it right after the app quit) and `install_dir` still
+  existed, `move` doesn't error; it just moves `new_dir` *inside* the
+  still-existing folder instead of renaming it there, nesting the app
+  one level deeper every single time this happened. Fixed by moving the
+  *old* install aside to a sibling `-old-swap` folder first (retried up
+  to 8 times, a second apart, to ride out exactly that kind of
+  transient lock) and only moving the new build into `install_dir` once
+  that's confirmed empty — if it can't be vacated, the swap now aborts
+  before ever touching the new build, rather than risking a nested move.
+
+If a Windows update doesn't go as expected, `%TEMP%\quasar-update-swap.log`
+has a timestamped line for every step the swap script took (including
+each command's errorlevel and any output) — it's the only way to see
+what happened, since the script runs with no visible console window.
+`update_check.log` and `startup_diagnostics.log`, both under this app's
+own data folder alongside `timesheet.db`, cover release-check failures
+and startup display/Tcl-Tk info respectively.
+
+The actual file-swap-and-relaunch step can only be partially tested from
+a normal dev machine (there's no way to safely test a real app replacing
+itself mid-run without actually doing it), so treat any change to
+`app/auto_update.py` as something to try for real — on both macOS and
+Windows — before trusting it broadly. The pure logic around it (picking
+the right release asset, resolving the current install's path, error
+handling) is covered by `tests/test_auto_update.py`.
 
 ### Tests
 
