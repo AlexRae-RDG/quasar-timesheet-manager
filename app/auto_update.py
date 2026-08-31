@@ -227,22 +227,24 @@ def _write_windows_swap_script(script_path: Path, pid: int, new_dir: Path, insta
 :: would otherwise inherit. cd somewhere unrelated first so the rmdir
 :: below can actually succeed.
 ::
-:: This whole script runs fully detached with no console window, so if
+:: Waits for the old process to exit via a single PowerShell
+:: Wait-Process call rather than a `tasklist | find` polling loop --
+:: the first real Windows test confirmed a `tasklist | find` pipe left
+:: with no console (see perform_update's CREATE_NO_WINDOW comment) can
+:: wedge indefinitely instead of ever completing.
+::
+:: This script otherwise runs with no visible console window, so if
 :: any step here fails, there is normally NO way to see why -- any
-:: error text a command would have printed just goes nowhere. Log every
-:: step (including each command's errorlevel) to %TEMP% instead, so a
-:: failed update can actually be diagnosed after the fact.
+:: error text a command would have printed just goes nowhere. Log
+:: every step (including each command's errorlevel) to %TEMP% instead,
+:: so a failed update can actually be diagnosed after the fact.
 cd /d "%~dp0"
 set LOG=%TEMP%\\quasar-update-swap.log
 echo [%DATE% %TIME%] starting, pid={pid} > "%LOG%"
 echo   new_dir={new_dir} >> "%LOG%"
 echo   install_dir={install_dir} >> "%LOG%"
-:waitloop
-tasklist /FI "PID eq {pid}" 2>NUL | find "{pid}" >NUL
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto waitloop
-)
+
+powershell -NoProfile -Command "try {{ Wait-Process -Id {pid} -ErrorAction Stop }} catch {{}}"
 echo [%DATE% %TIME%] pid {pid} has exited, proceeding >> "%LOG%"
 
 rmdir /s /q "{install_dir}"
@@ -314,8 +316,22 @@ def perform_update(assets: List[dict]) -> None:
         script_path = Path(script_name)
         # PureWindowsPath again -- same reasoning as current_install_paths' win32 branch above.
         _write_windows_swap_script(script_path, pid, new_root, install_path, work_dir, exe_name=PureWindowsPath(sys.executable).name)
-        detached_flags = getattr(subprocess, "DETACHED_PROCESS", 0x00000008) | \
+        # CREATE_NO_WINDOW, not DETACHED_PROCESS: the first real Windows
+        # test showed a visible (stuck) console window despite
+        # DETACHED_PROCESS. DETACHED_PROCESS gives the new cmd.exe truly
+        # NO console at all -- but tasklist/find/powershell are console
+        # programs themselves, so each one has to allocate its own
+        # throwaway console just to run, and piping between two
+        # independently self-allocated consoles (tasklist | find) can
+        # wedge instead of ever completing, which is exactly what was
+        # observed (log stuck on "starting", a stray console visible).
+        # CREATE_NO_WINDOW gives the process a real (inherited-by-its-
+        # children) console, just never shows its window -- which is
+        # what "run this invisibly" actually needs here. Also note per
+        # Microsoft's docs CREATE_NO_WINDOW is silently ignored if
+        # combined with DETACHED_PROCESS, so the two must not be mixed.
+        no_window_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) | \
             getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-        subprocess.Popen(["cmd", "/c", str(script_path)], creationflags=detached_flags, cwd=safe_cwd)
+        subprocess.Popen(["cmd", "/c", str(script_path)], creationflags=no_window_flags, cwd=safe_cwd)
     else:
         raise AutoUpdateError(f"auto-update isn't supported on this platform: {sys.platform!r}")

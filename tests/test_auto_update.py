@@ -9,6 +9,7 @@ machines -- see auto_update.py's module docstring. These tests only
 check that perform_update() builds the right inputs and writes/launches
 something, via mocks."""
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -309,6 +310,22 @@ class TestPerformUpdateFallbacks(unittest.TestCase):
         self.assertIn("quasar-update-swap.log", contents)
         self.assertIn("rmdir errorlevel=", contents)
         self.assertIn("move errorlevel=", contents)
+        # Regression guard: the first real Windows test showed a visible,
+        # stuck console window with the old `tasklist | find` polling
+        # loop under DETACHED_PROCESS -- piping between two independently
+        # self-allocated consoles could wedge instead of ever completing.
+        # A single Wait-Process call needs no piping, and CREATE_NO_WINDOW
+        # (not DETACHED_PROCESS, which silently disables it) is what
+        # actually keeps every step invisible without that risk.
+        self.assertIn("Wait-Process", contents)
+        self.assertNotIn("tasklist /FI", contents)  # the old polling command itself, not the explanatory comment above
+        # These constants only exist on the subprocess module on Windows
+        # itself -- fall back to their documented numeric values (same
+        # fallback app/auto_update.py uses) so this test can run here.
+        detached_process = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        self.assertEqual(kwargs.get("creationflags", 0) & detached_process, 0)
+        self.assertTrue(kwargs.get("creationflags", 0) & create_no_window)
         script_path.unlink()
 
 
