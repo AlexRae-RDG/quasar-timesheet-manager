@@ -667,17 +667,46 @@ class SettingsPanel(tk.Frame):
         self.show_weekends_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(left, text="Show weekends (Saturday & Sunday)",
                          variable=self.show_weekends_var, style="Big.TCheckbutton").grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=(0, 28))
+            row=6, column=0, columnspan=2, sticky="w", pady=(0, 14))
+
+        # Checked = hidden (not "shown"): this is an opt-*in* away from the
+        # default, so "Hide the Timer bar" reads more naturally as the
+        # thing you're turning on than a double-negative "Don't show the
+        # Timer bar" would -- _save() below inverts it back to the
+        # show_timer_bar bool main_window.py actually persists/reads.
+        self.hide_timer_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(left, text="Hide the Timer bar",
+                         variable=self.hide_timer_var, style="Big.TCheckbutton").grid(
+            row=7, column=0, columnspan=2, sticky="w", pady=(0, 2))
+        tk.Label(left, text="Frees up space above the calendar. Turn back on here any time.",
+                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
+                 font=(self.family, 9)).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 20))
+
+        ttk.Label(left, text="Heading", style="Heading.TLabel").grid(
+            row=9, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        tk.Label(left, text="Standard shows the full title bar. Compact shrinks it. Hidden "
+                            "removes it -- the calendar gets that space back either way.",
+                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
+                 font=(self.family, 9)).grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self.header_style_row = tk.Frame(left, bg=theme.PANEL_BG)
+        self.header_style_row.grid(row=11, column=0, columnspan=2, sticky="w", pady=(0, 28))
+        self.header_style_choice = "standard"
+        self.header_style_buttons: Dict[str, RoundedButton] = {}
+        for key, label in (("standard", "Standard"), ("compact", "Compact"), ("hidden", "Hidden")):
+            btn = RoundedButton(self.header_style_row, text=label, style="Secondary.TButton",
+                                 command=lambda k=key: self._select_header_style(k))
+            btn.pack(side="left", padx=(0, 6))
+            self.header_style_buttons[key] = btn
 
         ttk.Label(left, text="Theme", style="Heading.TLabel").grid(
-            row=7, column=0, columnspan=2, sticky="w", pady=(0, 6))
+            row=12, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self.theme_description_label = tk.Label(
             left, text="", fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left",
             wraplength=480, font=(self.family, 9))
-        self.theme_description_label.grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        self.theme_description_label.grid(row=13, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         self.theme_grid = ttk.Frame(left)
-        self.theme_grid.grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        self.theme_grid.grid(row=14, column=0, columnspan=2, sticky="w", pady=(0, 12))
         self._build_theme_grid()
 
         # Only visible while "Custom" is the selected card above (toggled
@@ -685,7 +714,7 @@ class SettingsPanel(tk.Frame):
         # remembers the row/col/sticky/pady for automatically -- no need
         # to repeat them at toggle time).
         self.custom_controls_frame = tk.Frame(left, bg=theme.PANEL_BG)
-        self.custom_controls_frame.grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        self.custom_controls_frame.grid(row=15, column=0, columnspan=2, sticky="w", pady=(0, 16))
         self._build_custom_controls()
 
         ttk.Label(right, text="Keyboard Shortcuts", style="Heading.TLabel").grid(
@@ -715,6 +744,15 @@ class SettingsPanel(tk.Frame):
         btns.grid(row=20, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         RoundedButton(btns, text="Cancel", style="Secondary.TButton", command=self._cancel).pack(side="right")
         RoundedButton(btns, text="Save", style="Accent.TButton", command=self._save).pack(side="right", padx=6)
+
+    def _select_header_style(self, key: str):
+        """Click handler for the Standard/Compact/Hidden segmented row --
+        same selected/unselected style convention as the tab bar and
+        SummaryPanel's Week/Month toggle (Accent for the chosen one,
+        Secondary for the rest)."""
+        self.header_style_choice = key
+        for btn_key, btn in self.header_style_buttons.items():
+            btn.config(style="Accent.TButton" if btn_key == key else "Secondary.TButton")
 
     def _reflow_settings_columns(self, event=None):
         """Bound to outer's <Configure> (plus one after_idle call so a
@@ -855,8 +893,8 @@ class SettingsPanel(tk.Frame):
         return datetime.strptime(str(hour_0_23 % 24), "%H").strftime("%I %p").lstrip("0")
 
     def load(self, display_name: str, current_theme_id: str, work_start_hour: int,
-              work_end_hour: int, show_weekends: bool,
-              on_save: Callable[[str, str, int, int, bool], None]):
+              work_end_hour: int, show_weekends: bool, show_timer_bar: bool, header_style: str,
+              on_save: Callable[[str, str, int, int, bool, bool, str], None]):
         self.on_save = on_save
         self.display_name_var.set(display_name)
         self.theme_var.set(theme.resolve_theme_id(current_theme_id))
@@ -870,6 +908,8 @@ class SettingsPanel(tk.Frame):
         self.work_start_combo.current(start_idx)
         self.work_end_combo.current(end_idx)
         self.show_weekends_var.set(show_weekends)
+        self.hide_timer_var.set(not show_timer_bar)
+        self._select_header_style(header_style if header_style in self.header_style_buttons else "standard")
 
     def _save(self):
         assert self.on_save is not None
@@ -888,6 +928,8 @@ class SettingsPanel(tk.Frame):
             work_start_hour,
             work_end_hour,
             self.show_weekends_var.get(),
+            not self.hide_timer_var.get(),
+            self.header_style_choice,
         )
         show_saved_toast(self)
         self.on_close()

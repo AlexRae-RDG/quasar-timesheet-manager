@@ -51,6 +51,44 @@ def set_show_weekends(show: bool):
     DAY_NAMES = (list(WEEKDAY_NAMES) + list(WEEKEND_NAMES)) if show else list(WEEKDAY_NAMES)
 
 
+def zoom_clamp(raw_value: float, min_px: float, max_px: float, zoom_mult: float) -> float:
+    """Apply the manual zoom control to `raw_value` (an auto-shrink-to-fit
+    day width or slot height -- see app/calendar_view.py's CalendarGrid):
+    first pin raw_value to the ordinary [min_px, max_px] auto-fit range to
+    get the *unzoomed* ("100%") size, then scale THAT by zoom_mult.
+
+    This went through two wrong versions before landing here, both because
+    they clamped instead of scaling:
+
+    1. Originally: clamp raw_value to [min_px, max_px], multiply by
+       zoom_mult, then clamp AGAIN to the same fixed [min_px, max_px].
+       That final reclamp undid the zoom entirely for any value that
+       reached the floor or ceiling -- on a narrow window (raw_value
+       pinned at min_px already), every zoom-out level below 100% got
+       clamped right back to the same min_px, so 85% and 70% looked
+       identical instead of actually shrinking further.
+    2. Then: clamp raw_value into [min_px * zoom_mult, max_px * zoom_mult]
+       (scaling the *bounds* instead of reclamping to the fixed ones).
+       That fixed zoom-out (a value pinned at the floor now floors lower
+       as the scaled floor drops) but silently broke zoom-in: any
+       raw_value that already sat *inside* [min_px, max_px] -- the
+       ordinary case on most window sizes -- was still inside the new,
+       wider [min_px*zoom_mult, max_px*zoom_mult] range too, so it passed
+       through completely unscaled and zooming in above 100% did nothing
+       at all.
+
+    The fix is to not clamp raw_value against a moving target twice --
+    pin it to the fixed range ONCE to get the unzoomed size, then
+    multiply that by zoom_mult with no further clamping. zoom_mult is
+    itself bounded (CalendarGrid's _zoom_min/_zoom_max, e.g. 0.7-1.3), so
+    the result always lands in a sane [min_px*_zoom_min, max_px*_zoom_max]
+    range without needing a second clamp. zoom_mult=1.0 (100%, the
+    default) reduces this to the plain auto-shrink-to-fit clamp, so
+    behavior is unchanged until zoom is actually touched."""
+    fit = max(min_px, min(max_px, raw_value))
+    return fit * zoom_mult
+
+
 def week_end_offset() -> int:
     """Days from Monday to the last visible day of the week -- 4 for a
     plain Mon-Fri week, 6 once weekends are shown. The one shared source
@@ -88,6 +126,21 @@ CANVAS_BOTTOM_PAD_PX = 16
 # wider than this as the window grows, but never narrower).
 TOTALS_ROW_HEIGHT_PX = 28
 MIN_SIDEBAR_WIDTH_PX = 230
+
+# Fixed width of the Activities sidebar when collapsed to its narrow icon
+# rail (see app/sidebar.py's Sidebar collapsed mode and app/main_window.py's
+# "Sidebar" collapse toggle) -- unlike MIN_SIDEBAR_WIDTH_PX above, this
+# doesn't grow with the window; it stays this size regardless.
+#
+# 60px is a real width budget, not a guess: collapsed mode uses a 6px
+# outer pack margin plus a 4px RoundedCard pad on each side (see
+# Sidebar.__init__'s card_padx/card_pady), leaving 60 - 2*(6+4) = 40px of
+# actual content width -- enough for the 32px round expand button and the
+# rotated "QDM's" label/Project dots below it without clipping. An
+# earlier 40px (then 48px) version didn't budget for that padding at all,
+# which is why the button and dots rendered as thin clipped slivers
+# instead of the small-but-intact shapes they were meant to be.
+SIDEBAR_COLLAPSED_WIDTH_PX = 60
 
 # Corner radius (px) used when drawing time blocks.
 BLOCK_CORNER_RADIUS = 10

@@ -27,7 +27,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 from . import config, theme
 from .db import Database
 from .models import Activity, TemplateEntry, TimeEntry
-from .widgets import CARD_RADIUS, RoundedButton, RoundedCard
+from .widgets import CARD_RADIUS, HorizontalVectorScrollbar, RoundedButton, RoundedCard, VectorScrollbar
 
 def _minutes_total() -> int:
     """(END_HOUR - START_HOUR) * 60, computed fresh on every call instead
@@ -101,7 +101,22 @@ class CalendarGrid(tk.Frame):
         self.day_width = config.DAY_WIDTH_PX
         self.slot_height = config.SLOT_HEIGHT_PX
         self.px_per_min = self.slot_height / config.SLOT_MINUTES
-        self._last_canvas_size = None
+        # Manual zoom (the -/100%/+ controls in the nav row below): a
+        # multiplier applied on top of the normal shrink-to-fit day
+        # width/slot height, re-clamped to the same MIN/MAX bounds
+        # afterwards -- so it can't make blocks unreadably small or
+        # absurdly large, just lets someone dial in a size they prefer
+        # within that range instead of always taking whatever the window's
+        # current size happens to compute. Not persisted -- resets to
+        # 100% next launch, same as any other in-session view preference.
+        self._zoom_mult = 1.0
+        self._zoom_min = 0.7
+        self._zoom_max = 1.3
+        self._zoom_step = 0.15
+        # The scroll host's own last <Configure> size -- _zoom_in/
+        # _zoom_out reuse this to recompute the grid without waiting for
+        # an actual resize event.
+        self._last_viewport_size = (0, 0)
 
         # Which block (by id), if any, is currently keyboard-selected -- set
         # by clicking a block without dragging it, or by dragging one to a
@@ -172,6 +187,14 @@ class CalendarGrid(tk.Frame):
 
         nav = tk.Frame(body, bg=theme.PANEL_BG)
         nav.pack(fill="x", pady=(0, 10))
+        self._nav_row = nav
+        # Both toggled off (in that order) by _reflow_nav_row below,
+        # before either one can start overlapping the always-needed prev/
+        # Today/next + zoom controls on a narrow window -- see that
+        # method's docstring.
+        self.apply_template_btn: Optional[RoundedButton] = None
+        self._apply_template_visible = True
+        self._hint_visible = True
 
         if not self.template_mode:
             # shadow=True on these four only -- the ones the user pointed
@@ -192,31 +215,116 @@ class CalendarGrid(tk.Frame):
             # this grid currently has open -- the fast way to fill in a
             # recurring week instead of re-creating the same meetings by
             # hand every time.
-            RoundedButton(nav, text="Apply Template to This Week", style="Nav.TButton", shadow=True,
-                          command=self._apply_template).pack(side="left", padx=(4, 0))
+            self.apply_template_btn = RoundedButton(
+                nav, text="Apply Template to This Week", style="Nav.TButton", shadow=True,
+                command=self._apply_template)
+            self.apply_template_btn.pack(side="left", padx=(4, 0))
 
         self.hint_label = tk.Label(nav, text="", font=(self.family, 9), bd=0)
         self.hint_label.pack(side="right")
+
+        # Manual zoom -- "-" / percentage / "+", packed right-to-left so
+        # they land just left of the hint text (side="right" packs stack
+        # inward from whatever's already claimed the right edge -- see the
+        # nav-button comments above for the same pattern with ‹/Today/›).
+        # Plain ASCII glyphs rather than a magnifying-glass icon, same
+        # reasoning as theme.draw_logo_mark's own docstring: no font/
+        # platform-availability guesswork.
+        RoundedButton(nav, text="+", width=3, style="Nav.TButton", shadow=True,
+                      command=self._zoom_in).pack(side="right", padx=(6, 0))
+        self.zoom_label = tk.Label(nav, text="100%", font=(self.family, 9, "bold"),
+                                    bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY, width=4)
+        self.zoom_label.pack(side="right")
+        RoundedButton(nav, text="−", width=3, style="Nav.TButton", shadow=True,
+                      command=self._zoom_out).pack(side="right")
+
+        # Below some width, "Apply Template to This Week" (and then the
+        # hint text) would otherwise start overlapping the zoom controls
+        # instead of everything just quietly not fitting -- pack() alone
+        # doesn't shrink or wrap widgets that no longer fit their row, it
+        # lets them collide. See _reflow_nav_row.
+        nav.bind("<Configure>", self._reflow_nav_row)
+        nav.after_idle(self._reflow_nav_row)
 
         canvas_width = self.gutter_width + len(config.DAY_NAMES) * self.day_width
         canvas_height = self.header_height + _minutes_total() * self.px_per_min
 
         # width/height here are just the initial preferred size (used to
-        # size the window on first launch). fill="both", expand=True below
-        # is what actually lets the canvas stretch with its window --
-        # _on_canvas_resize() reacts to that and recomputes the grid.
+        # size the window on first launch). The real sizing happens in
+        # _on_canvas_resize() below, bound to _scroll_host's <Configure>
+        # (the actual available viewport) rather than self.canvas's own --
+        # see the long comment on _scroll_host just below for why.
         # highlightthickness=0 -- the outer card now draws the one border
         # for the whole nav+grid+totals box, so the grid itself needs none.
         canvas_holder = tk.Frame(body, bg=theme.GRID_BG)
         canvas_holder.pack(fill="both", expand=True)
+        canvas_holder.grid_rowconfigure(0, weight=1)
+        canvas_holder.grid_columnconfigure(0, weight=1)
+
+        # Below its MIN_DAY_WIDTH_PX/MIN_SLOT_HEIGHT_PX floor, the grid
+        # used to have no way to reach content that no longer fit its
+        # window -- it just silently clipped at the canvas edge. Fixed by
+        # NOT scrolling self.canvas itself (every drag/resize/hit-test
+        # handler below reads raw event.x/event.y, which would need
+        # converting to self.canvas.canvasx()/canvasy() everywhere the
+        # moment self.canvas's own view could shift -- too easy to miss
+        # one of those call sites and silently break dragging). Instead,
+        # self.canvas is placed as a single fixed-size window inside
+        # `_scroll_host`, a separate plain Canvas that does the actual
+        # scrolling -- self.canvas's own coordinate space never moves, so
+        # every existing handler keeps working unchanged.
+        self._scroll_host = tk.Canvas(canvas_holder, bg=theme.GRID_BG, highlightthickness=0)
+        self._scroll_host.grid(row=0, column=0, sticky="nsew")
+
+        self._vscroll = VectorScrollbar(canvas_holder, command=self._scroll_host.yview, bg=theme.GRID_BG)
+        self._hscroll = HorizontalVectorScrollbar(canvas_holder, command=self._scroll_host.xview,
+                                                    bg=theme.GRID_BG)
+        # Not gridded here -- _update_scrollbars (called from
+        # _on_canvas_resize) shows/hides each one depending on whether the
+        # grid's current content actually overflows the viewport, so a
+        # roomy window shows no scrollbar chrome at all.
+
         self.canvas = tk.Canvas(
-            canvas_holder, width=canvas_width, height=canvas_height + config.CANVAS_BOTTOM_PAD_PX,
+            self._scroll_host, width=canvas_width, height=canvas_height + config.CANVAS_BOTTOM_PAD_PX,
             bg=theme.GRID_BG, highlightthickness=0,
         )
-        self.canvas.pack(fill="both", expand=True, padx=0, pady=0)
+        self._canvas_window = self._scroll_host.create_window((0, 0), window=self.canvas, anchor="nw")
+        # xscrollcommand goes through _on_grid_xscroll (not straight to
+        # self._hscroll.set) so every horizontal scroll -- wheel, drag,
+        # arrow-click, keyboard -- also keeps the totals row's own
+        # scrolling strip (_totals_host, built below) in lockstep. See
+        # its own comment for why the totals row needs this at all.
+        self._scroll_host.configure(yscrollcommand=self._vscroll.set, xscrollcommand=self._on_grid_xscroll)
+        self._scroll_host.bind("<Configure>", self._on_canvas_resize)
 
-        totals_frame = tk.Frame(body, bg=theme.PANEL_BG)
-        totals_frame.pack(fill="x", pady=(10, 0))
+        # Mouse-wheel scrolling, as a convenience alongside the always-
+        # functional scrollbars above (see VectorScrollbar's own docstring
+        # on why this app never trusts wheel delivery alone). Plain wheel
+        # scrolls vertically; Shift+wheel scrolls horizontally, the
+        # standard convention this app's target platforms already use for
+        # a horizontally-scrolling view.
+        for widget in (self.canvas, self._scroll_host):
+            widget.bind("<MouseWheel>", self._on_mousewheel)
+            widget.bind("<Shift-MouseWheel>", self._on_shift_mousewheel)
+            widget.bind("<Button-4>", self._on_mousewheel)
+            widget.bind("<Button-5>", self._on_mousewheel)
+
+        totals_holder = tk.Frame(body, bg=theme.PANEL_BG)
+        totals_holder.pack(fill="x", pady=(10, 0))
+        # A second small scrolling strip, kept horizontally in lockstep
+        # with _scroll_host above via _on_grid_xscroll -- so the per-day
+        # totals stay aligned with whichever day columns are currently
+        # scrolled into view, instead of a plain fixed row that would
+        # otherwise either overflow with no way to reach it, or drift out
+        # of sync with the grid, once the grid's content is wider than
+        # the window (see _scroll_host's own long comment above for why
+        # the grid itself scrolls this way rather than clipping).
+        self._totals_host = tk.Canvas(totals_holder, bg=theme.PANEL_BG, highlightthickness=0,
+                                       height=config.TOTALS_ROW_HEIGHT_PX)
+        self._totals_host.pack(fill="x")
+
+        totals_frame = tk.Frame(self._totals_host, bg=theme.PANEL_BG)
+        self._totals_window = self._totals_host.create_window((0, 0), window=totals_frame, anchor="nw")
         # Explicit height + pack_propagate(False): these frames need a fixed
         # width to line up with the grid columns above, but pack_propagate
         # off with no height set collapses them to almost nothing -- which
@@ -246,7 +354,24 @@ class CalendarGrid(tk.Frame):
         self.canvas.bind("<Motion>", self._on_hover)
         self.canvas.bind("<Button-3>", self._on_right_click)
         self.canvas.bind("<Escape>", lambda e: self._cancel_drag())
-        self.canvas.bind("<Configure>", self._on_canvas_resize)
+        # Deliberately NOT self.canvas.bind("<Configure>", ...) here -- see
+        # the long comment where _scroll_host is built above for why only
+        # ITS <Configure> (the real, stable available viewport) should
+        # ever drive a recompute. self.canvas's own size is the *output*
+        # of that math (_recompute_grid_dimensions calls
+        # self.canvas.config(width=..., height=...) directly), so a
+        # <Configure> binding here used to fire right back into
+        # _on_canvas_resize with self.canvas's own just-set (and already
+        # zoomed) size masquerading as the viewport -- corrupting
+        # self._last_viewport_size with shrunk content instead of the
+        # real window size. That compounded on every zoom press (85% did
+        # far more than an actual 15% reduction, and going back to 100%
+        # landed smaller than the original, since "100%" was now being
+        # computed against a polluted, already-shrunken "viewport") and
+        # could also throw off _update_scrollbars' overflow check enough
+        # to hide the vertical scrollbar while real content still ran off
+        # the bottom. Removed; self.canvas is resized only as a
+        # consequence of _scroll_host's own <Configure>/zoom now.
 
         # Keyboard shortcuts, bound directly on the canvas (rather than
         # app-wide) so they only ever fire while the calendar itself has
@@ -276,24 +401,97 @@ class CalendarGrid(tk.Frame):
         self.canvas.bind("<Delete>", self._delete_selected_entry)
         self.canvas.bind("<BackSpace>", self._delete_selected_entry)
 
-    def _on_canvas_resize(self, event):
-        """Recompute day-column width and slot height so the grid stretches
-        to fill the canvas's current size, then redraw."""
-        size = (event.width, event.height)
-        if size == self._last_canvas_size:
-            return
-        self._last_canvas_size = size
+    def _reflow_nav_row(self, event=None):
+        """Bound to the nav row's own <Configure> (plus one after_idle
+        call so a tab opened directly at a narrow window starts already
+        collapsed instead of waiting for the next resize -- same pattern
+        as SettingsPanel's _reflow_settings_columns).
 
+        Plain pack() doesn't shrink or wrap a widget that no longer fits
+        its row -- it just lets it collide with whatever else is packed
+        there, which is exactly what "Apply Template to This Week" (a
+        long label) started doing to the zoom controls on a narrower
+        window once those existed. Rather than let that overlap happen,
+        this hides -- in order, least useful first -- the hint text, then
+        Apply Template, the moment there genuinely isn't room for them
+        alongside the prev/Today/next buttons, the week range, and the
+        zoom controls, all of which always stay visible."""
+        nav = self._nav_row
+        available = nav.winfo_width()
+        if available <= 1:
+            return
+
+        always_on = [w for w in nav.winfo_children()
+                     if w is not self.apply_template_btn and w is not self.hint_label]
+        core_w = sum(w.winfo_reqwidth() for w in always_on)
+
+        if self.apply_template_btn is not None:
+            fits_apply = available >= core_w + self.apply_template_btn.winfo_reqwidth() + 8
+            if fits_apply != self._apply_template_visible:
+                self._apply_template_visible = fits_apply
+                if fits_apply:
+                    self.apply_template_btn.pack(side="left", padx=(4, 0))
+                else:
+                    self.apply_template_btn.pack_forget()
+
+        shown_w = core_w
+        if self.apply_template_btn is not None and self._apply_template_visible:
+            shown_w += self.apply_template_btn.winfo_reqwidth()
+        fits_hint = available >= shown_w + self.hint_label.winfo_reqwidth() + 8
+        if fits_hint != self._hint_visible:
+            self._hint_visible = fits_hint
+            if fits_hint:
+                self.hint_label.pack(side="right")
+            else:
+                self.hint_label.pack_forget()
+
+    def _on_canvas_resize(self, event):
+        """Bound to _scroll_host's <Configure> (the real available
+        viewport -- see the long comment where _scroll_host is built).
+        Recompute day-column width/slot height to fit it, then hand off
+        to _recompute_grid_dimensions for the rest."""
+        size = (event.width, event.height)
+        if size == self._last_viewport_size:
+            return
+        self._last_viewport_size = size
+        self._recompute_grid_dimensions(event.width, event.height)
+
+    def _recompute_grid_dimensions(self, viewport_w, viewport_h):
+        """The actual grid-sizing math: shrink-to-fit `viewport_w` x
+        `viewport_h` within MIN/MAX bounds to get the unzoomed ("100%")
+        size, then scale that by the manual zoom multiplier (see
+        config.zoom_clamp's own docstring -- it went through two wrong
+        versions before this), then size self.canvas to whatever that
+        content turns out to be (which may be smaller, equal to, or
+        larger than the viewport -- larger is exactly the case
+        _update_scrollbars below reveals a scrollbar for, instead of the
+        old silent clipping).
+
+        `viewport_w`/`viewport_h` MUST be the real, stable size of
+        _scroll_host (the actual available viewport) -- never
+        self.canvas's own size, which this method itself sets a few
+        lines down. Feeding that back in here as if it were a fresh
+        viewport is exactly the bug fixed by removing self.canvas's own
+        <Configure> binding above: every zoom press would silently use
+        the previous press's *output* as the next press's *input*,
+        compounding well past the requested step and never landing back
+        on the original size once you zoomed back to 100%.
+
+        Split out from _on_canvas_resize so _zoom_in/_zoom_out can call
+        this directly, reusing the last known viewport size, without
+        needing an actual resize event to have just fired."""
         num_days = len(config.DAY_NAMES)
         num_slots = _minutes_total() / config.SLOT_MINUTES
 
-        available_w = max(0, event.width - self.gutter_width)
-        new_day_width = available_w / num_days if num_days else config.DAY_WIDTH_PX
-        new_day_width = max(config.MIN_DAY_WIDTH_PX, min(config.MAX_DAY_WIDTH_PX, new_day_width))
+        available_w = max(0, viewport_w - self.gutter_width)
+        raw_day_width = available_w / num_days if num_days else config.DAY_WIDTH_PX
+        new_day_width = config.zoom_clamp(raw_day_width, config.MIN_DAY_WIDTH_PX,
+                                           config.MAX_DAY_WIDTH_PX, self._zoom_mult)
 
-        available_h = max(0, event.height - self.header_height - config.CANVAS_BOTTOM_PAD_PX)
-        new_slot_height = available_h / num_slots if num_slots else config.SLOT_HEIGHT_PX
-        new_slot_height = max(config.MIN_SLOT_HEIGHT_PX, min(config.MAX_SLOT_HEIGHT_PX, new_slot_height))
+        available_h = max(0, viewport_h - self.header_height - config.CANVAS_BOTTOM_PAD_PX)
+        raw_slot_height = available_h / num_slots if num_slots else config.SLOT_HEIGHT_PX
+        new_slot_height = config.zoom_clamp(raw_slot_height, config.MIN_SLOT_HEIGHT_PX,
+                                             config.MAX_SLOT_HEIGHT_PX, self._zoom_mult)
 
         self.day_width = new_day_width
         self.slot_height = new_slot_height
@@ -302,7 +500,90 @@ class CalendarGrid(tk.Frame):
         for col in getattr(self, "total_col_frames", []):
             col.config(width=self.day_width)
 
+        content_w = self.gutter_width + num_days * self.day_width
+        content_h = self.header_height + num_slots * self.slot_height + config.CANVAS_BOTTOM_PAD_PX
+        self.canvas.config(width=content_w, height=content_h)
+        self._scroll_host.itemconfigure(self._canvas_window, width=content_w, height=content_h)
+        self._scroll_host.config(scrollregion=(0, 0, content_w, content_h))
+        self._update_scrollbars(viewport_w, viewport_h, content_w, content_h)
+
+        # Totals row: same content_w (it's the same day columns, just one
+        # short row), always its own fixed TOTALS_ROW_HEIGHT_PX -- it never
+        # scrolls vertically, only horizontally, and only ever in lockstep
+        # with the grid above (see _on_grid_xscroll).
+        self._totals_host.itemconfigure(self._totals_window, width=content_w)
+        self._totals_host.config(scrollregion=(0, 0, content_w, config.TOTALS_ROW_HEIGHT_PX))
+        self._totals_host.xview_moveto(self._scroll_host.xview()[0])
+
         self.refresh()
+
+    def _on_grid_xscroll(self, first, last):
+        """xscrollcommand for _scroll_host (see where it's configured,
+        above) -- forwards to the real horizontal scrollbar exactly like
+        VectorScrollbar.set normally would on its own, and additionally
+        keeps the totals row's own scrolling strip (_totals_host) at the
+        same horizontal scroll position, so per-day totals never drift
+        out of alignment with the day columns above them."""
+        self._hscroll.set(first, last)
+        self._totals_host.xview_moveto(float(first))
+
+    def _update_scrollbars(self, viewport_w, viewport_h, content_w, content_h):
+        """Show each scrollbar only while the grid's current content
+        actually overflows the viewport on that axis -- a window roomy
+        enough to fit everything shows no scrollbar chrome at all, same
+        as before this existed."""
+        if content_h > viewport_h + 0.5:
+            self._vscroll.grid(row=0, column=1, sticky="ns")
+        else:
+            self._vscroll.grid_remove()
+            self._scroll_host.yview_moveto(0)
+        if content_w > viewport_w + 0.5:
+            self._hscroll.grid(row=1, column=0, sticky="ew")
+        else:
+            self._hscroll.grid_remove()
+            self._scroll_host.xview_moveto(0)
+
+    # ------------------------------------------------------------------
+    # Manual zoom (nav row -/100%/+) and mouse-wheel scrolling
+    # ------------------------------------------------------------------
+    def _zoom_in(self):
+        self._set_zoom(self._zoom_mult + self._zoom_step)
+
+    def _zoom_out(self):
+        self._set_zoom(self._zoom_mult - self._zoom_step)
+
+    def _set_zoom(self, mult):
+        mult = max(self._zoom_min, min(self._zoom_max, mult))
+        if mult == self._zoom_mult:
+            return
+        self._zoom_mult = mult
+        self.zoom_label.config(text=f"{round(self._zoom_mult * 100)}%")
+        viewport_w, viewport_h = self._last_viewport_size
+        if viewport_w > 1 and viewport_h > 1:
+            self._recompute_grid_dimensions(viewport_w, viewport_h)
+
+    def _on_mousewheel(self, event):
+        # Button-4/Button-5 (X11) always mean one notch up/down (event.num
+        # is 4 or 5, event.delta meaningless); a real <MouseWheel> event
+        # (Windows/macOS) leaves event.num at its unbound default instead
+        # and carries the direction in event.delta -- checking num first
+        # covers both without needing two separate handler methods.
+        if event.num == 4:
+            direction = -1
+        elif event.num == 5:
+            direction = 1
+        else:
+            direction = -1 if event.delta > 0 else 1
+        self._scroll_host.yview_scroll(direction, "units")
+
+    def _on_shift_mousewheel(self, event):
+        if event.num == 4:
+            direction = -1
+        elif event.num == 5:
+            direction = 1
+        else:
+            direction = -1 if event.delta > 0 else 1
+        self._scroll_host.xview_scroll(direction, "units")
 
     # ------------------------------------------------------------------
     # Week navigation (normal mode only)

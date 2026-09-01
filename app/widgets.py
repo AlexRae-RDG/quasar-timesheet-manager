@@ -812,6 +812,198 @@ class VectorScrollbar(tk.Canvas):
         self._redraw()
 
 
+class HorizontalVectorScrollbar(tk.Canvas):
+    """HorizontalVectorScrollbar is VectorScrollbar's mirror image -- same
+    hand-drawn thumb/track/arrow-button approach (see VectorScrollbar's
+    own docstring for why this app draws its own scrollbars at all), just
+    laid out along x instead of y. Used by the calendar grid's new
+    horizontal scroll fallback (see calendar_view.py) -- VectorScrollbar
+    itself is left untouched since ScrollArea and every other existing
+    user of it depends on its vertical-only behavior exactly as it is.
+
+    Same drop-in protocol as VectorScrollbar: `set(first, last)` (via
+    `xscrollcommand`) and `command=` called with ("moveto", fraction) or
+    ("scroll", n, "units")."""
+    HEIGHT = 12
+    MIN_THUMB_W = 24
+    ARROW_W = 14
+    ARROW_REPEAT_MS = 90
+    ARROW_REPEAT_FIRST_MS = 350
+
+    def __init__(self, master, command: Callable[..., None], **kwargs):
+        kwargs.setdefault("height", self.HEIGHT)
+        kwargs.setdefault("bg", theme.PANEL_BG)
+        kwargs.setdefault("highlightthickness", 0)
+        kwargs.setdefault("cursor", "arrow")
+        super().__init__(master, **kwargs)
+        self._command = command
+        self._first = 0.0
+        self._last = 1.0
+        self._dragging = False
+        self._drag_offset = 0.0
+        self._hover = False
+        self._arrow_hover: Optional[str] = None  # "left" | "right" | None
+        self._repeat_job: Optional[str] = None
+        self.bind("<Configure>", lambda e: self._redraw())
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<B1-Motion>", self._on_drag)
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Motion>", self._on_motion)
+
+    def set(self, first, last):
+        """Matches ttk.Scrollbar.set / the xscrollcommand protocol."""
+        self._first = float(first)
+        self._last = float(last)
+        self._redraw()
+
+    # -- Track geometry (the draggable area sits between the two arrows) --
+    def _track_bounds(self):
+        w = self.winfo_width()
+        return self.ARROW_W, max(self.ARROW_W, w - self.ARROW_W)
+
+    def _thumb_bounds(self):
+        track_left, track_right = self._track_bounds()
+        track_w = track_right - track_left
+        if track_w <= 1:
+            return track_left, track_left
+        left = track_left + self._first * track_w
+        right = track_left + self._last * track_w
+        if right - left < self.MIN_THUMB_W:
+            center = (left + right) / 2
+            left = center - self.MIN_THUMB_W / 2
+            right = center + self.MIN_THUMB_W / 2
+            if left < track_left:
+                left, right = track_left, track_left + self.MIN_THUMB_W
+            elif right > track_right:
+                left, right = track_right - self.MIN_THUMB_W, track_right
+        return left, right
+
+    def _which_arrow(self, x) -> Optional[str]:
+        w = self.winfo_width()
+        if w <= 2 * self.ARROW_W:
+            return None
+        if x < self.ARROW_W:
+            return "left"
+        if x > w - self.ARROW_W:
+            return "right"
+        return None
+
+    def _redraw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+        self.create_rectangle(0, 0, w, h, fill=self.cget("bg"), outline="")
+
+        can_scroll = not (self._first <= 0.0 and self._last >= 1.0)
+
+        for which in ("left", "right"):
+            active = self._arrow_hover == which and can_scroll
+            tri_color = theme.ACCENT if active else (
+                theme.TEXT_SECONDARY if can_scroll else theme.BORDER_STRONG)
+            cy = h / 2
+            cx = self.ARROW_W / 2 if which == "left" else w - self.ARROW_W / 2
+            sz = 3.2
+            if which == "left":
+                pts = (cx + sz * 0.6, cy - sz, cx + sz * 0.6, cy + sz, cx - sz * 0.6, cy)
+            else:
+                pts = (cx - sz * 0.6, cy - sz, cx - sz * 0.6, cy + sz, cx + sz * 0.6, cy)
+            self.create_polygon(*pts, fill=tri_color, outline="")
+
+        if not can_scroll:
+            # Everything already fits -- an empty track (and dimmed arrows)
+            # communicates that better than a full-width thumb that can't
+            # actually move.
+            return
+        left, right = self._thumb_bounds()
+        pad = 2
+        color = theme.ACCENT if (self._hover or self._dragging) else theme.BORDER_STRONG
+        theme.rounded_rect(self, left + pad, pad, right - pad, h - pad,
+                            radius=(h - 2 * pad) / 2, fill=color, outline="")
+
+    def _on_enter(self, _event=None):
+        self._hover = True
+        self._redraw()
+
+    def _on_leave(self, _event=None):
+        self._hover = False
+        self._arrow_hover = None
+        self._redraw()
+
+    def _on_motion(self, event):
+        if self._dragging:
+            return
+        arrow = self._which_arrow(event.x)
+        if arrow != self._arrow_hover:
+            self._arrow_hover = arrow
+            self._redraw()
+
+    def _on_click(self, event):
+        arrow = self._which_arrow(event.x)
+        if arrow is not None:
+            self._step(arrow)
+            self._start_repeat(arrow)
+            return
+        left, right = self._thumb_bounds()
+        if left <= event.x <= right:
+            self._dragging = True
+            self._drag_offset = event.x - left
+            self._redraw()
+        else:
+            # Clicking the bare track (left or right of the thumb) jumps
+            # the view to roughly that position, same as clicking a real
+            # scrollbar's track.
+            track_left, track_right = self._track_bounds()
+            track_w = track_right - track_left
+            frac = max(0.0, min(1.0, (event.x - track_left) / track_w)) if track_w > 1 else 0.0
+            self._command("moveto", frac)
+
+    def _step(self, arrow: str):
+        self._command("scroll", -1 if arrow == "left" else 1, "units")
+
+    def _start_repeat(self, arrow: str):
+        # Press-and-hold auto-repeats the step, same as a native scrollbar
+        # arrow, so holding it down pages through a long list instead of
+        # needing repeated clicks.
+        self._cancel_repeat()
+
+        def repeat():
+            if self._arrow_hover != arrow:
+                return
+            self._step(arrow)
+            self._repeat_job = self.after(self.ARROW_REPEAT_MS, repeat)
+
+        self._repeat_job = self.after(self.ARROW_REPEAT_FIRST_MS, repeat)
+
+    def _cancel_repeat(self):
+        if self._repeat_job is not None:
+            self.after_cancel(self._repeat_job)
+            self._repeat_job = None
+
+    def _on_drag(self, event):
+        if not self._dragging:
+            return
+        track_left, track_right = self._track_bounds()
+        track_w = track_right - track_left
+        if track_w <= 1:
+            return
+        left0, right0 = self._thumb_bounds()
+        thumb_w = right0 - left0
+        usable = track_w - thumb_w
+        new_left = max(track_left, min(track_left + usable, event.x - self._drag_offset))
+        frac = (new_left - track_left) / usable if usable > 0 else 0.0
+        self._command("moveto", frac)
+
+    def _on_release(self, _event=None):
+        self._dragging = False
+        self._cancel_repeat()
+        arrow = self._which_arrow(_event.x) if _event is not None else None
+        self._arrow_hover = arrow
+        self._redraw()
+
+
 def show_saved_toast(widget, text: str = "Saved"):
     """Brief, self-dismissing confirmation toast anchored to the
     bottom-right corner of `widget`'s window -- the only feedback after

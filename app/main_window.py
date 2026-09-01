@@ -60,6 +60,33 @@ class MainWindow(tk.Tk):
         config.set_work_hours(saved_start_hour, saved_end_hour)
         config.set_show_weekends((self.db.get_setting("show_weekends", "0") or "0") == "1")
 
+        # Heading (Settings tab) -- same "load once at startup" pattern as
+        # the theme/work-hours settings above. "standard" is the original,
+        # unchanged header (full logo + title); "compact" shrinks it;
+        # "hidden" removes the header row entirely. Any unrecognized/stale
+        # value (a setting from an older build, a hand-edited db, ...)
+        # falls back to "standard" rather than a KeyError deeper in
+        # _build_header's HEADER_STYLES lookup.
+        self.header_style = self.db.get_setting("header_style", "standard") or "standard"
+        if self.header_style not in ("standard", "compact", "hidden"):
+            self.header_style = "standard"
+
+        # Timer bar visibility (Settings tab). Defaults to shown ("1") so
+        # existing installs' behavior is unchanged until someone opts in
+        # to hiding it. self.timer_bar itself is always built (see
+        # _build_timer_bar) even when this is False -- only its on-screen
+        # row is skipped -- so a timer already running keeps running
+        # invisibly rather than being interrupted by hiding the bar.
+        self.show_timer_bar = (self.db.get_setting("show_timer_bar", "1") or "1") == "1"
+
+        # Sidebar collapse (small « / » toggle on the Sidebar itself, not
+        # a Settings entry -- collapsing/expanding is a live layout choice
+        # someone makes while looking at the window, the same kind of
+        # thing a theme or work-hours change isn't). Shared by both
+        # Sidebar instances (Timesheet and Template tabs -- see
+        # _build_body) so they always collapse together.
+        self.sidebar_collapsed = (self.db.get_setting("sidebar_collapsed", "0") or "0") == "1"
+
         self.family = theme.apply_theme(self)
         self.configure(bg=theme.APP_BG)
 
@@ -296,32 +323,43 @@ class MainWindow(tk.Tk):
 
         self.config(menu=menubar)
 
+    # Size profile for each "Heading" choice (Settings tab): pixel size of
+    # the logo mark, its canvas, the outer row's vertical padding, and the
+    # title's font size. "standard" matches the header's original,
+    # unchanged look; "compact" shrinks all four; "hidden" isn't listed
+    # here since _build_header returns before using this at all in that
+    # case.
+    _HEADER_PROFILES = {
+        "standard": {"logo_size": 28, "canvas_px": 30, "pady": 14, "title_pt": 16},
+        "compact": {"logo_size": 16, "canvas_px": 18, "pady": 6, "title_pt": 12},
+    }
+
     def _build_header(self):
+        # "Hidden" removes the header row (and its separator) entirely --
+        # the Export to Jira CSV button that used to live here now always
+        # lives in the tab row instead (see _build_body), so nothing here
+        # is load-bearing for reaching Export once the heading is hidden.
+        if self.header_style == "hidden":
+            return
+
+        profile = self._HEADER_PROFILES.get(self.header_style, self._HEADER_PROFILES["standard"])
+
         header = tk.Frame(self, bg=theme.PANEL_BG)
         header.pack(fill="x")
 
         inner = tk.Frame(header, bg=theme.PANEL_BG)
-        inner.pack(fill="x", padx=20, pady=14)
+        inner.pack(fill="x", padx=20, pady=profile["pady"])
 
         title_row = tk.Frame(inner, bg=theme.PANEL_BG)
         title_row.pack(side="left")
-        logo = tk.Canvas(title_row, width=30, height=30, bg=theme.PANEL_BG, highlightthickness=0)
+        logo = tk.Canvas(title_row, width=profile["canvas_px"], height=profile["canvas_px"],
+                          bg=theme.PANEL_BG, highlightthickness=0)
         logo.pack(side="left", padx=(0, 10))
-        theme.draw_logo_mark(logo)
+        theme.draw_logo_mark(logo, size=profile["logo_size"])
         title_box = tk.Frame(title_row, bg=theme.PANEL_BG)
         title_box.pack(side="left")
-        tk.Label(title_box, text="QUASAR Timesheet Manager", font=(self.family, 16, "bold"),
+        tk.Label(title_box, text="QUASAR Timesheet Manager", font=(self.family, profile["title_pt"], "bold"),
                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).pack(anchor="w")
-
-        # Settings used to have its own header button here -- it's now a
-        # permanent tab (see _build_body) alongside Timesheet/Template/
-        # Summary instead, so there's no separate "open" button for it any
-        # more; the Settings/View-menu "Theme…" entries still reach it
-        # (_open_settings_dialog now just selects the tab).
-        btn_box = tk.Frame(inner, bg=theme.PANEL_BG)
-        btn_box.pack(side="right")
-        RoundedButton(btn_box, text="Export to Jira CSV", style="Accent.TButton",
-                      command=self._open_export_dialog).pack(side="left", padx=(8, 0))
 
         sep = tk.Frame(self, bg=theme.BORDER, height=1)
         sep.pack(fill="x")
@@ -333,10 +371,20 @@ class MainWindow(tk.Tk):
         # Dark Mode at the window's minimum width, and it's arguably the
         # single most-used control in the app, so it gets a row of its own
         # instead of competing for space.
+        #
+        # Always constructed, even when the Settings "Hide the Timer bar"
+        # toggle is on -- only .pack() (and its separator) is skipped
+        # below. That way a timer already running keeps running
+        # invisibly rather than being interrupted by hiding the bar, and
+        # every other call site in this file (is_running/stop/
+        # refresh_activities/get_state) can keep assuming self.timer_bar
+        # exists without an extra None-check.
         self.timer_bar = TimerBar(
             self, self.db, get_activities=lambda: self.db.list_activities(),
             on_saved=self._on_timer_saved, family=self.family,
             initial_state=initial_timer_state)
+        if not self.show_timer_bar:
+            return
         self.timer_bar.pack(fill="x")
 
         sep = tk.Frame(self, bg=theme.BORDER, height=1)
@@ -351,6 +399,18 @@ class MainWindow(tk.Tk):
         self._on_sidebar_change()
         self.calendar._go_today()
         self.notebook.select(0)
+
+    def _toggle_sidebar_collapsed(self):
+        """The «/» button on the Sidebar itself (both the Timesheet and
+        Template tabs' -- see _build_body). Persists, then reuses the
+        same full destroy-and-rebuild _select_theme already triggers for
+        a theme/work-hours change: the sidebar's width is set via the
+        grid column it lives in (see _make_sidebar_track_width), which is
+        owned by MainWindow, not by Sidebar itself, so there's no
+        cheaper way to resize it in place."""
+        self.sidebar_collapsed = not self.sidebar_collapsed
+        self.db.set_setting("sidebar_collapsed", "1" if self.sidebar_collapsed else "0")
+        self._apply_theme_and_rebuild(theme.get_theme_id())
 
     def _make_sidebar_track_width(self, body):
         """Size column 0 (the sidebar) by hand on every resize of `body`,
@@ -386,7 +446,13 @@ class MainWindow(tk.Tk):
         def on_resize(event):
             if event.widget is not body:
                 return
-            sidebar_w = max(config.MIN_SIDEBAR_WIDTH_PX, int(event.width * ratio))
+            # Collapsed: a fixed narrow rail, not a proportional share of
+            # the window -- it doesn't grow with the window the way the
+            # expanded sidebar does.
+            if self.sidebar_collapsed:
+                sidebar_w = config.SIDEBAR_COLLAPSED_WIDTH_PX
+            else:
+                sidebar_w = max(config.MIN_SIDEBAR_WIDTH_PX, int(event.width * ratio))
             body.grid_columnconfigure(0, minsize=sidebar_w, weight=0)
 
         body.bind("<Configure>", on_resize, add="+")
@@ -416,12 +482,27 @@ class MainWindow(tk.Tk):
         # and calls .select() on click, refreshed by _refresh_tab_bar()
         # (called from _on_tab_changed, so it stays in sync with every
         # notebook.select()/tab(state=...) call anywhere in this file).
-        self.tab_bar = tk.Frame(self, bg=theme.APP_BG)
+        # tab_row holds the hand-drawn tab strip on the left and Export to
+        # Jira CSV on the right -- Export used to live in the header (see
+        # _build_header), but now always sits here instead, regardless of
+        # which Heading size is chosen (including "hidden", which has no
+        # header row left to hold it at all). self.tab_bar itself holds
+        # only the tab buttons: _refresh_tab_bar() below destroys and
+        # rebuilds *its* children on every tab change, so Export lives in
+        # this separate sibling frame instead of inside tab_bar, where
+        # that rebuild would otherwise destroy it too.
+        tab_row = tk.Frame(self, bg=theme.APP_BG)
         # Equal gap above and below -- it used to be flush against the
         # separator under the Timer bar (pady top=0) while still getting
         # 8px before the notebook/content card below, which read as
         # crowded against the Timer section and lopsided against the card.
-        self.tab_bar.pack(fill="x", padx=16, pady=(10, 10))
+        tab_row.pack(fill="x", padx=16, pady=(10, 10))
+
+        RoundedButton(tab_row, text="Export to Jira CSV", style="Accent.TButton",
+                      command=self._open_export_dialog).pack(side="right")
+
+        self.tab_bar = tk.Frame(tab_row, bg=theme.APP_BG)
+        self.tab_bar.pack(side="left", fill="x", expand=True)
         self._all_tabs: list = []  # [(widget, tab_text), ...] in tab order
 
         self.notebook = ttk.Notebook(self)
@@ -444,13 +525,17 @@ class MainWindow(tk.Tk):
         # -- it just gets a much smaller share of any extra space than the
         # calendar does, and never shrinks below MIN_SIDEBAR_WIDTH_PX.
         body.grid_rowconfigure(0, weight=1)
-        body.grid_columnconfigure(0, weight=1, minsize=config.MIN_SIDEBAR_WIDTH_PX)
+        body.grid_columnconfigure(
+            0, weight=1,
+            minsize=config.SIDEBAR_COLLAPSED_WIDTH_PX if self.sidebar_collapsed else config.MIN_SIDEBAR_WIDTH_PX)
         body.grid_columnconfigure(1, weight=4)
         self._make_sidebar_track_width(body)
 
         self.sidebar = Sidebar(body, self.db, on_change=self._on_sidebar_change,
                                 open_activity_panel=self._open_activity_panel,
-                                open_project_panel=self._open_project_panel)
+                                open_project_panel=self._open_project_panel,
+                                collapsed=self.sidebar_collapsed,
+                                on_toggle_collapse=self._toggle_sidebar_collapsed)
         # The 14px gap between sidebar and calendar is taken out of the
         # calendar's side (padx on the calendar below), not the sidebar's:
         # the sidebar's ScrollArea draws its rounded card via place(), which
@@ -482,13 +567,17 @@ class MainWindow(tk.Tk):
         self.template_tab = template_body
 
         template_body.grid_rowconfigure(0, weight=1)
-        template_body.grid_columnconfigure(0, weight=1, minsize=config.MIN_SIDEBAR_WIDTH_PX)
+        template_body.grid_columnconfigure(
+            0, weight=1,
+            minsize=config.SIDEBAR_COLLAPSED_WIDTH_PX if self.sidebar_collapsed else config.MIN_SIDEBAR_WIDTH_PX)
         template_body.grid_columnconfigure(1, weight=4)
         self._make_sidebar_track_width(template_body)
 
         self.template_sidebar = Sidebar(template_body, self.db, on_change=self._on_sidebar_change,
                                          open_activity_panel=self._open_activity_panel,
-                                         open_project_panel=self._open_project_panel)
+                                         open_project_panel=self._open_project_panel,
+                                         collapsed=self.sidebar_collapsed,
+                                         on_toggle_collapse=self._toggle_sidebar_collapsed)
         self.template_sidebar.grid(row=0, column=0, sticky="nsew")
 
         self.template_calendar = CalendarGrid(
@@ -803,13 +892,18 @@ class MainWindow(tk.Tk):
         current_work_start_hour = config.START_HOUR
         current_work_end_hour = config.END_HOUR
         current_show_weekends = config.SHOW_WEEKENDS
+        current_show_timer_bar = self.show_timer_bar
+        current_header_style = self.header_style
 
         def on_save(new_display_name, new_theme_id,
-                    new_work_start_hour, new_work_end_hour, new_show_weekends):
+                    new_work_start_hour, new_work_end_hour, new_show_weekends,
+                    new_show_timer_bar, new_header_style):
             self.db.set_setting("jira_display_name", new_display_name)
             self.db.set_setting("work_start_hour", str(new_work_start_hour))
             self.db.set_setting("work_end_hour", str(new_work_end_hour))
             self.db.set_setting("show_weekends", "1" if new_show_weekends else "0")
+            self.db.set_setting("show_timer_bar", "1" if new_show_timer_bar else "0")
+            self.db.set_setting("header_style", new_header_style)
 
             # Always persist the Custom palette's current seed colors,
             # whether or not "custom" is the theme actually being saved --
@@ -830,20 +924,33 @@ class MainWindow(tk.Tk):
                 config.set_work_hours(new_work_start_hour, new_work_end_hour)
                 config.set_show_weekends(new_show_weekends)
 
-            # A theme change and a work-hours/weekend change both need the
-            # same full destroy-and-rebuild (_select_theme already
-            # triggers one for its own reason: plain tk widgets cache
-            # their colors at construction time). The calendar's visible-
-            # hours grid height and day count are baked into its widgets
-            # at construction exactly the same way, so reuse the same
-            # path here rather than a second, separate rebuild routine.
-            # Deferred via after(0, ...) since this callback runs from the
-            # very Settings tab the rebuild is about to destroy.
-            if new_theme_id != current_theme_id or hours_changed:
+            # Same idea as hours_changed above, for the two Heading/Timer
+            # bar toggles: mutate the instance attributes _build_header/
+            # _build_timer_bar actually read *before* the rebuild below,
+            # same as config.set_work_hours/set_show_weekends just did for
+            # their own globals.
+            chrome_changed = (new_show_timer_bar != current_show_timer_bar
+                               or new_header_style != current_header_style)
+            if chrome_changed:
+                self.show_timer_bar = new_show_timer_bar
+                self.header_style = new_header_style
+
+            # A theme change, a work-hours/weekend change, and a Heading/
+            # Timer-bar change all need the same full destroy-and-rebuild
+            # (_select_theme already triggers one for its own reason:
+            # plain tk widgets cache their colors at construction time).
+            # The calendar's visible-hours grid height and day count, and
+            # the header/timer-bar widgets themselves, are all baked into
+            # their widgets at construction exactly the same way, so reuse
+            # the same path here rather than a second, separate rebuild
+            # routine. Deferred via after(0, ...) since this callback runs
+            # from the very Settings tab the rebuild is about to destroy.
+            if new_theme_id != current_theme_id or hours_changed or chrome_changed:
                 self.after(0, lambda: self._select_theme(new_theme_id))
 
         self.settings_panel.load(display_name, current_theme_id, current_work_start_hour,
-                                  current_work_end_hour, current_show_weekends, on_save)
+                                  current_work_end_hour, current_show_weekends,
+                                  current_show_timer_bar, current_header_style, on_save)
 
     def _open_settings_dialog(self):
         # Settings is a permanent tab now (see _build_body) -- this just

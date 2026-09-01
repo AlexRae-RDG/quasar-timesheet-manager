@@ -15,7 +15,9 @@ from .widgets import CARD_RADIUS, RoundedButton, RoundedCard, ScrollArea
 class Sidebar(tk.Frame):
     def __init__(self, master, db: Database, on_change: Callable[[], None],
                  open_activity_panel: Callable[..., None],
-                 open_project_panel: Callable[..., None], **kwargs):
+                 open_project_panel: Callable[..., None],
+                 collapsed: bool = False,
+                 on_toggle_collapse: Optional[Callable[[], None]] = None, **kwargs):
         kwargs.setdefault("bg", theme.APP_BG)
         kwargs.setdefault("highlightthickness", 0)
         super().__init__(master, **kwargs)
@@ -23,6 +25,15 @@ class Sidebar(tk.Frame):
         self.on_change = on_change  # called whenever armed activity or list/project state changes
         self.open_activity_panel = open_activity_panel
         self.open_project_panel = open_project_panel
+        # Collapsed is fixed for this instance's whole lifetime -- toggling
+        # it (see on_toggle_collapse, called from main_window.py) triggers
+        # a full window rebuild rather than switching this Sidebar between
+        # modes in place, since the column width that holds it is owned by
+        # MainWindow's grid, not by this widget. That keeps _render_rows
+        # below simple: it only ever needs to render the one mode this
+        # instance was built for.
+        self.collapsed = collapsed
+        self.on_toggle_collapse = on_toggle_collapse
         self.armed_activity_id: Optional[int] = None
         self.family = theme.resolve_font_family()
         self._activities: List[Activity] = []
@@ -34,32 +45,107 @@ class Sidebar(tk.Frame):
         # bar elsewhere instead of a plain rectangular sidebar with only
         # its inner list rounded. Real content lives in `.body`, exactly
         # like every other RoundedCard user in this app.
-        card = RoundedCard(self, bg=theme.PANEL_BG, radius=CARD_RADIUS)
-        card.pack(fill="both", expand=True, padx=14, pady=14)
+        #
+        # Collapsed mode uses a smaller outer pack margin and a smaller
+        # RoundedCard `pad` than the expanded card above -- the standard
+        # 14px pack margin plus RoundedCard's own ~7px inset (28px total,
+        # both sides) is fine against a 230px+ expanded sidebar, but
+        # against a ~60px collapsed rail it left almost no real content
+        # width. That's what actually broke the first collapsed design:
+        # it wasn't just a styling problem, the button and Project dots
+        # were being squeezed into a sliver only a few pixels wide and
+        # rendering clipped. See config.SIDEBAR_COLLAPSED_WIDTH_PX for the
+        # matching width-budget comment.
+        card_padx, card_pady = (6, 10) if self.collapsed else (14, 14)
+        card = RoundedCard(self, bg=theme.PANEL_BG, radius=CARD_RADIUS,
+                            pad=4 if self.collapsed else None)
+        card.pack(fill="both", expand=True, padx=card_padx, pady=card_pady)
         inner = card.body
 
-        header = tk.Frame(inner, bg=theme.PANEL_BG)
-        header.pack(fill="x", pady=(0, 10))
-        tk.Label(header, text="QDM's", font=(self.family, 13, "bold"),
-                 bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).pack(side="left")
-        RoundedButton(header, text="+ QDM", style="Accent.TButton", command=self._add_activity).pack(
-            side="right")
-        RoundedButton(header, text="+ Project", style="Secondary.TButton", command=self._add_project).pack(
-            side="right", padx=(0, 6))
+        # list_container/canvas stay None in collapsed mode -- there's no
+        # ScrollArea there (see below), so nothing sets them.
+        self.list_container: Optional[ScrollArea] = None
+        self.canvas: Optional[tk.Canvas] = None
 
-        # ScrollArea is itself a RoundedCard with a scrolling interior built
-        # in -- see app/widgets.py for the mouse-wheel/drag/click-arrow
-        # scrolling it provides (three independent ways to scroll, since
-        # wheel-event delivery has proven unreliable on at least one real
-        # user's machine across several binding designs already). Its own
-        # outline is turned off here since it now nests inside the outer
-        # card above -- a second visible border right inside the first
-        # would just look like a box-in-a-box instead of one clean panel.
-        scroll_area = ScrollArea(inner, bg=theme.PANEL_BG, outline=False)
-        scroll_area.pack(fill="both", expand=True)
-        self.list_container = scroll_area
-        self.canvas = scroll_area.canvas
-        self.list_frame = scroll_area.content
+        if self.collapsed:
+            # A narrow icon rail instead of the full card: a round expand
+            # button, a rotated "QDM's" label so it's obvious what's
+            # hidden, then one small color dot per Project (no
+            # Activities, no scrolling) as a quick visual reminder of
+            # what's hidden. self.list_frame still exists here (holding
+            # just the dots) so refresh()/_render_rows() below don't need
+            # two separate call paths for external callers like
+            # MainWindow._on_sidebar_change.
+            #
+            # This went through two earlier designs before landing here.
+            # First, a bare 3-character "»" button was "extremely
+            # difficult" to hit on the ~40px rail. Then a full-width
+            # Accent-styled button was bigger but, combined with the
+            # padding bug described above, rendered as a clipped sliver
+            # instead of an actual button. This version fixes the real
+            # spacing bug AND -- per the user's own pick from three
+            # mocked-up options -- combines the compact round icon button
+            # from one option with the rotated text label from another,
+            # so there's both a proper-sized click target and a label
+            # that reads at a glance. The whole rail (not just the
+            # button) still re-expands on click, all with a hand cursor,
+            # so hitting the exact button is never required.
+            top_row = tk.Frame(inner, bg=theme.PANEL_BG)
+            top_row.pack(pady=(2, 10))
+            expand_btn = tk.Canvas(top_row, width=32, height=32, bg=theme.PANEL_BG,
+                                    highlightthickness=0, cursor="hand2")
+            expand_btn.create_oval(0, 0, 32, 32, fill=theme.ACCENT, outline="")
+            expand_btn.create_line(12, 9, 20, 16, 12, 23, fill="#FFFFFF", width=3,
+                                    capstyle="round", joinstyle="round")
+            expand_btn.pack()
+            if self.on_toggle_collapse is not None:
+                expand_btn.bind("<Button-1>", lambda e: self.on_toggle_collapse())
+
+            # A Canvas (not a Label) so the text can be drawn rotated --
+            # Tk Labels have no rotation option, but Canvas.create_text
+            # does via `angle=`. Sized just wide enough for the rotated
+            # text's height (its *width* once rotated 90 degrees) plus a
+            # little breathing room either side.
+            label_canvas = tk.Canvas(inner, width=22, height=74, bg=theme.PANEL_BG,
+                                      highlightthickness=0, cursor="hand2")
+            label_canvas.create_text(11, 37, text="QDM's", angle=90,
+                                      fill=theme.TEXT_SECONDARY,
+                                      font=(self.family, 10, "bold"))
+            label_canvas.pack(pady=(0, 12))
+
+            self.list_frame = tk.Frame(inner, bg=theme.PANEL_BG)
+            self.list_frame.pack(fill="both", expand=True)
+            if self.on_toggle_collapse is not None:
+                for widget in (card, inner, top_row, label_canvas, self.list_frame):
+                    widget.configure(cursor="hand2")
+                    widget.bind("<Button-1>", lambda e: self.on_toggle_collapse())
+        else:
+            header = tk.Frame(inner, bg=theme.PANEL_BG)
+            header.pack(fill="x", pady=(0, 10))
+            tk.Label(header, text="QDM's", font=(self.family, 13, "bold"),
+                     bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).pack(side="left")
+            if self.on_toggle_collapse is not None:
+                RoundedButton(header, text="«", width=3, style="Secondary.TButton",
+                              command=self.on_toggle_collapse).pack(side="right")
+            RoundedButton(header, text="+ QDM", style="Accent.TButton", command=self._add_activity).pack(
+                side="right", padx=(0, 6))
+            RoundedButton(header, text="+ Project", style="Secondary.TButton", command=self._add_project).pack(
+                side="right", padx=(0, 6))
+
+            # ScrollArea is itself a RoundedCard with a scrolling interior
+            # built in -- see app/widgets.py for the mouse-wheel/drag/
+            # click-arrow scrolling it provides (three independent ways to
+            # scroll, since wheel-event delivery has proven unreliable on
+            # at least one real user's machine across several binding
+            # designs already). Its own outline is turned off here since
+            # it now nests inside the outer card above -- a second visible
+            # border right inside the first would just look like a
+            # box-in-a-box instead of one clean panel.
+            scroll_area = ScrollArea(inner, bg=theme.PANEL_BG, outline=False)
+            scroll_area.pack(fill="both", expand=True)
+            self.list_container = scroll_area
+            self.canvas = scroll_area.canvas
+            self.list_frame = scroll_area.content
 
         self.refresh()
 
@@ -83,6 +169,10 @@ class Sidebar(tk.Frame):
     def _render_rows(self):
         for child in self.list_frame.winfo_children():
             child.destroy()
+
+        if self.collapsed:
+            self._render_collapsed_rail()
+            return
 
         if not self._activities and not self._projects:
             tk.Label(self.list_frame, text="No QDM's yet. Click “+ QDM”.",
@@ -116,6 +206,19 @@ class Sidebar(tk.Frame):
         # (one project's rows appear as another's disappear), which
         # wouldn't otherwise trigger a re-bind of the freshly-created rows.
         self.list_container.bind_wheel_recursive(self.list_frame)
+
+    def _render_collapsed_rail(self):
+        """Collapsed mode's whole "list": one small color dot per Project,
+        no Activities -- just enough to remember what's hidden while the
+        rail is narrow. Clicking any dot re-expands, same as the round
+        button and "QDM's" label above it (and the rest of the rail)."""
+        for project in self._projects:
+            dot = tk.Canvas(self.list_frame, width=12, height=12, bg=theme.PANEL_BG,
+                             highlightthickness=0, cursor="hand2")
+            dot.create_oval(1, 1, 11, 11, fill=project.color, outline="")
+            dot.pack(pady=4)
+            if self.on_toggle_collapse is not None:
+                dot.bind("<Button-1>", lambda e: self.on_toggle_collapse())
 
     def _render_activity_row(self, act: Activity):
         armed = act.id == self.armed_activity_id
