@@ -309,6 +309,25 @@ class CalendarGrid(tk.Frame):
             widget.bind("<Button-4>", self._on_mousewheel)
             widget.bind("<Button-5>", self._on_mousewheel)
 
+        # <TouchpadScroll> (Tk 9+, TIP 684) -- see widgets.ScrollArea's own
+        # class docstring for the full story: on Tk 9.0/macOS, a two-finger
+        # trackpad swipe never fires <MouseWheel>/<Button-4>/<Button-5> at
+        # all, only this dedicated event does (confirmed by an earlier
+        # isolated reproduction, which is why ScrollArea -- used by the
+        # Sidebar and Settings -- binds it too). This scroll fallback was
+        # added to the calendar without it, which is exactly why trackpad
+        # scrolling only visibly broke once zoom made the grid big enough
+        # to actually need scrolling -- at 100% zoom there was never
+        # anything to scroll to, so the missing binding went unnoticed.
+        # Same try/except probe as ScrollArea._bind_touchpad_scroll: some
+        # Tk builds (confirmed on Windows) raise TclError for this event
+        # name at bind time rather than just never firing it.
+        for widget in (self.canvas, self._scroll_host):
+            try:
+                widget.bind("<TouchpadScroll>", self._on_touchpad_scroll, add="+")
+            except tk.TclError:
+                pass
+
         totals_holder = tk.Frame(body, bg=theme.PANEL_BG)
         totals_holder.pack(fill="x", pady=(10, 0))
         # A second small scrolling strip, kept horizontally in lockstep
@@ -584,6 +603,46 @@ class CalendarGrid(tk.Frame):
         else:
             direction = -1 if event.delta > 0 else 1
         self._scroll_host.xview_scroll(direction, "units")
+
+    def _on_touchpad_scroll(self, event):
+        """Two-finger trackpad scrolling (Tk 9+, TIP 684) -- see the long
+        comment where this is bound, above, for why the calendar needs
+        its own separate handler for this rather than relying on
+        _on_mousewheel/_on_shift_mousewheel.
+
+        Reports small, precise per-event pixel deltas for BOTH axes at
+        once via tk::PreciseScrollDeltas (unpacked the same way as
+        widgets.ScrollArea._scroll_touchpad_from_event). A real trackpad
+        swipe already carries its own horizontal and vertical components
+        together, so both are applied here unconditionally rather than
+        gating the horizontal one behind Shift the way the classic wheel
+        path above has to."""
+        try:
+            dx_str, dy_str = self.tk.splitlist(
+                self.tk.call("tk::PreciseScrollDeltas", event.delta))
+            dx, dy = int(dx_str), int(dy_str)
+        except (tk.TclError, ValueError, AttributeError):
+            return
+
+        try:
+            region = self._scroll_host.cget("scrollregion")
+            x0, y0, x1, y1 = (float(v) for v in str(region).split())
+            content_w, content_h = x1 - x0, y1 - y0
+        except (tk.TclError, ValueError):
+            return
+
+        # Sign convention matches widgets.ScrollArea's own (a negative
+        # delta scrolls the view down/right) -- macOS's "natural
+        # scrolling" setting already inverts the raw hardware signal
+        # before Tk ever sees it.
+        if dx != 0 and content_w > 0:
+            current_left = self._scroll_host.xview()[0] * content_w
+            new_left = max(0.0, min(current_left - dx, content_w))
+            self._scroll_host.xview_moveto(new_left / content_w)
+        if dy != 0 and content_h > 0:
+            current_top = self._scroll_host.yview()[0] * content_h
+            new_top = max(0.0, min(current_top - dy, content_h))
+            self._scroll_host.yview_moveto(new_top / content_h)
 
     # ------------------------------------------------------------------
     # Week navigation (normal mode only)
