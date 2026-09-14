@@ -668,8 +668,17 @@ class MainWindow(tk.Tk):
         current_work_start_hour = config.START_HOUR
         current_work_end_hour = config.END_HOUR
         current_show_weekends = config.SHOW_WEEKENDS
-        current_jira_site_url = self.db.get_setting("jira_site_url", "") or ""
-        current_jira_email = self.db.get_setting("jira_email", "") or ""
+        # Defaults (not ""): the first time Settings is ever opened, these
+        # fields come pre-filled with a company-wide Site URL and an
+        # editable "firstname.lastname@..." email template -- see
+        # config.DEFAULT_JIRA_SITE_URL/DEFAULT_JIRA_EMAIL_TEMPLATE for why.
+        # get_setting only falls back to these when nothing has been saved
+        # yet, so a real saved value (even one that matches the default
+        # exactly) is never overridden.
+        current_jira_site_url = self.db.get_setting(
+            "jira_site_url", config.DEFAULT_JIRA_SITE_URL) or ""
+        current_jira_email = self.db.get_setting(
+            "jira_email", config.DEFAULT_JIRA_EMAIL_TEMPLATE) or ""
 
         def on_save(new_display_name, new_theme_id,
                     new_work_start_hour, new_work_end_hour, new_show_weekends,

@@ -252,18 +252,50 @@ you use for a given week is entirely up to you.
 **Jira Cloud only** — this doesn't support Jira Server/Data Center.
 
 **One-time setup**, in **Settings → Jira Cloud Upload**:
-1. **Site URL** — your Jira Cloud address, e.g. `yourteam.atlassian.net`
-   (the `https://` is optional).
-2. **Email** — the email address you log into Jira with.
-3. **API Token** — click "Get an API token" to open
-   `id.atlassian.com/manage-profile/security/api-tokens`, generate one,
-   and paste it in. The token is stored in your operating system's own
-   keychain (macOS Keychain / Windows Credential Locker / Secret Service
-   or KWallet on Linux), never in this app's own settings file — Settings
-   shows whether a token is currently stored without ever displaying the
-   token itself again. Leave the field blank on later visits to Settings
-   to keep the stored token unchanged; paste a new one to replace it, or
-   use "Clear stored token" to remove it.
+1. **Site URL** — your Jira Cloud address. Pre-filled with
+   `raildeliverygroup.atlassian.net` the first time you open Settings,
+   since everyone on this app is on the same Jira instance — only change
+   it if that's ever not true for you. (The `https://` is optional either
+   way.)
+2. **Email** — the email address you log into Jira with. Pre-filled with
+   `firstname.lastname@raildeliverygroup.com` as a template the first
+   time you open Settings — replace `firstname.lastname` with your own
+   name, keeping the same dot-separated pattern and domain.
+3. **API Token** — see "Getting a Jira API token" below for the full
+   walkthrough. Once one is saved, the field itself shows a row of dots
+   (●●●●●●●●) rather than staying blank, so you can tell at a glance
+   that a token is stored — that's a placeholder, not your actual token;
+   click into the field to clear it and type a new one, or leave it
+   alone and click Save to keep what's already stored. "Clear stored
+   token" removes it from your keychain entirely.
+
+Both the Site URL and Email fields only ever pre-fill like this the
+*first* time Settings is opened on a given computer — once you've saved
+Settings even once (for anything, not just these two fields), whatever
+you last saved is what shows up from then on, never silently reset back
+to the default.
+
+### Getting a Jira API token
+
+1. In the app, go to **Settings → Jira Cloud Upload** and click **"Get an
+   API token"** (or go straight to
+   `id.atlassian.com/manage-profile/security/api-tokens` in your
+   browser). Log in with your `raildeliverygroup.atlassian.net`
+   credentials if asked.
+2. Click **Create API token**.
+3. Give it a **label** — this is just for your own reference if you ever
+   need to find or revoke it later, e.g. `QUASAR Timesheet Manager`.
+4. Click **Create**. Atlassian shows you the token **once** — copy it
+   immediately; you can't come back and view it again later, only revoke
+   it and create a new one.
+5. Paste it into the **API Token** field in the app and click **Save**.
+
+The token is stored in your operating system's own keychain (macOS
+Keychain / Windows Credential Locker / Secret Service or KWallet on
+Linux), never in this app's own settings file. Treat it like a password —
+it acts as your full Jira identity for API calls made on your behalf. To
+revoke one, go back to the same Atlassian page and click **Revoke** next
+to its label, then generate and save a new one in the app.
 
 **Using it**: pick a date range the same way as the CSV export. Only
 blocks with a Jira Issue Key are sent (others are skipped, same as CSV

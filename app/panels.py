@@ -48,6 +48,17 @@ _SHORTCUTS = [
                                  "Time Block form without needing to click Save"),
 ]
 
+# Stand-in shown in Settings' API Token field (see SettingsPanel below)
+# whenever a token is already stored, so a glance at the field itself --
+# not just the status text underneath -- tells you one's set. Any
+# non-empty value here renders as dots either way (the Entry's own
+# show="\u2022" masks every character regardless of what it actually is),
+# so the length here is chosen purely to *look* like a plausible token,
+# not to mean anything. Never sent anywhere as a real value -- see
+# SettingsPanel._save's use of _token_field_is_placeholder for how a
+# left-alone field is told apart from someone actually typing a new token.
+_STORED_TOKEN_MASK = "•" * 24
+
 
 def _scroll_body(master, **kwargs) -> tk.Frame:
     """Every embedded panel's content goes inside one of these instead of
@@ -555,6 +566,12 @@ class SettingsPanel(tk.Frame):
         self.on_save: Optional[Callable[[str, str, int, int, bool, str, str, str], None]] = None
         self.theme_var = tk.StringVar(value=theme.DEFAULT_THEME_ID)
         self.theme_swatch_canvases: Dict[str, tk.Canvas] = {}
+        # True whenever the API Token field is showing _STORED_TOKEN_MASK
+        # rather than something the person actually typed -- see that
+        # constant's own comment for why this needs tracking separately
+        # from "the field is non-empty" (a masked Entry can't tell those
+        # apart just by looking at its own displayed value).
+        self._token_field_is_placeholder = False
 
         # Custom palette's four seed colors (background, panel, text,
         # accent) -- staged as a plain dict (nothing binds to it via
@@ -706,13 +723,19 @@ class SettingsPanel(tk.Frame):
         ttk.Label(jira_frame, text="API Token", style="Big.TLabel").grid(row=4, column=0, sticky="w")
         self.jira_api_token_var = tk.StringVar()
         # show="•" (a masked password-style entry) -- this is the one field
-        # here that's a real secret. Always loaded blank (see load()) even
-        # when a token is already stored, so the real value never round-
-        # trips back into a plain Tk widget just to redisplay it -- typing
-        # a new one replaces the stored token, leaving it blank keeps
-        # whatever's already in the keychain untouched (see _save()).
-        ttk.Entry(jira_frame, textvariable=self.jira_api_token_var, width=34,
-                  style="Big.TEntry", show="\u2022").grid(row=5, column=0, sticky="ew", pady=(2, 4))
+        # here that's a real secret. The real stored value never round-
+        # trips back into a plain Tk widget just to redisplay it; when one
+        # is already stored, load() fills this with _STORED_TOKEN_MASK
+        # instead (a placeholder, not the real token) purely so the field
+        # itself -- not just the status text below -- shows dots at a
+        # glance. Clicking into the field clears that placeholder (see
+        # _on_jira_token_focus_in) so typing starts from empty, the same
+        # as any other "enter a new secret" field.
+        self.jira_api_token_entry = ttk.Entry(
+            jira_frame, textvariable=self.jira_api_token_var, width=34,
+            style="Big.TEntry", show="\u2022")
+        self.jira_api_token_entry.grid(row=5, column=0, sticky="ew", pady=(2, 4))
+        self.jira_api_token_entry.bind("<FocusIn>", self._on_jira_token_focus_in)
         self.jira_token_status_label = tk.Label(
             jira_frame, text="", fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left",
             wraplength=320, font=(self.family, 9))
@@ -853,10 +876,7 @@ class SettingsPanel(tk.Frame):
 
         self.jira_site_url_var.set(jira_site_url)
         self.jira_email_var.set(jira_email)
-        # Always blank -- see the API Token entry's own comment above for
-        # why the real stored value never round-trips back into this field.
-        self.jira_api_token_var.set("")
-        self._refresh_jira_token_status()
+        self._refresh_jira_token_field()
 
     def _save(self):
         assert self.on_save is not None
@@ -869,6 +889,17 @@ class SettingsPanel(tk.Frame):
                 "Invalid Work Hours",
                 "The “To” time has to be later than the “From” time.")
             return
+        # A left-alone field is either still showing _STORED_TOKEN_MASK
+        # (never focused) or was cleared by _on_jira_token_focus_in but
+        # never typed into again -- both mean "no change", same as
+        # leaving it blank always has. Only a value the person actually
+        # typed counts as a real new token; see jira_client.store_api_token
+        # / main_window.py's on_save for what happens with each case.
+        raw_token = self.jira_api_token_var.get()
+        if self._token_field_is_placeholder or raw_token == _STORED_TOKEN_MASK:
+            new_token = ""
+        else:
+            new_token = raw_token
         self.on_save(
             self.display_name_var.get().strip(),
             self.theme_var.get(),
@@ -877,10 +908,9 @@ class SettingsPanel(tk.Frame):
             self.show_weekends_var.get(),
             self.jira_site_url_var.get().strip(),
             self.jira_email_var.get().strip(),
-            self.jira_api_token_var.get(),  # blank = "keep whatever's already stored"
+            new_token,  # blank = "keep whatever's already stored"
         )
-        self.jira_api_token_var.set("")
-        self._refresh_jira_token_status()
+        self._refresh_jira_token_field()
         show_saved_toast(self)
         self.on_close()
 
@@ -891,8 +921,13 @@ class SettingsPanel(tk.Frame):
         # it was never actually applied or persisted.
         if self.custom_seeds != self._custom_seeds_on_load:
             theme.set_custom_seeds(**self._custom_seeds_on_load)
-        self.jira_api_token_var.set("")
+        self._refresh_jira_token_field()
         self.on_close()
+
+    def _on_jira_token_focus_in(self, event=None):
+        if self._token_field_is_placeholder:
+            self.jira_api_token_var.set("")
+            self._token_field_is_placeholder = False
 
     def _clear_jira_token(self):
         if not jira_client.has_stored_api_token():
@@ -905,14 +940,24 @@ class SettingsPanel(tk.Frame):
                 "Continue?"):
             return
         jira_client.delete_api_token()
-        self._refresh_jira_token_status()
+        self._refresh_jira_token_field()
 
-    def _refresh_jira_token_status(self):
+    def _refresh_jira_token_field(self):
+        """Syncs both the API Token entry and the status text underneath
+        it to what's actually in the keychain right now -- called after
+        load(), save, cancel, and clearing the stored token, so the field
+        never shows stale state from before any of those. See
+        _STORED_TOKEN_MASK's own comment for why the entry itself (not
+        just this status text) reflects "a token is stored"."""
         if jira_client.has_stored_api_token():
+            self.jira_api_token_var.set(_STORED_TOKEN_MASK)
+            self._token_field_is_placeholder = True
             self.jira_token_status_label.config(
-                text="A token is stored in your OS keychain. Leave the field above blank to "
-                     "keep it, or enter a new one to replace it.")
+                text="A token is stored in your OS keychain. Click the field and type a new "
+                     "one to replace it, or leave it as-is to keep it.")
         else:
+            self.jira_api_token_var.set("")
+            self._token_field_is_placeholder = False
             self.jira_token_status_label.config(text="No token stored yet.")
 
 
