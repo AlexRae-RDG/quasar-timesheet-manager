@@ -190,6 +190,28 @@ DEFAULT_ISSUE_TYPE = "Sub-task"
 # round-trip between that number-only field and the real stored key.
 JIRA_KEY_PREFIX = "QDM-"
 
+# ---------------------------------------------------------------------------
+# Jira Cloud Upload defaults (Settings -> Jira Cloud Upload, app/panels.py's
+# SettingsPanel; see app/jira_client.py for what these actually feed into)
+# ---------------------------------------------------------------------------
+# Pre-fills Settings' Site URL field the first time it's opened, since
+# every user of this app is on the same company Jira instance -- one
+# fixed value, not something each person needs to look up and type
+# themselves. Only ever used as Database.get_setting's fallback (see
+# main_window.py's _load_settings_panel), so once someone actually saves
+# Settings -- even without touching this field -- their saved value takes
+# over and this default is never forced back over it.
+DEFAULT_JIRA_SITE_URL = "raildeliverygroup.atlassian.net"
+
+# Pre-fills Settings' Email field the same way, but as an editable
+# TEMPLATE rather than a real address -- there's no reliable way to derive
+# someone's actual company email from what this app already knows (the
+# Display Name field is free text, not guaranteed to be "First Last").
+# Shows the firstname.lastname@ pattern this company's addresses follow
+# so a person just replaces the two name parts rather than typing the
+# whole thing including the easy-to-typo domain.
+DEFAULT_JIRA_EMAIL_TEMPLATE = "firstname.lastname@raildeliverygroup.com"
+
 
 def jira_key_number(full_key: Optional[str]) -> str:
     """Strip JIRA_KEY_PREFIX for display in a number-only entry field.

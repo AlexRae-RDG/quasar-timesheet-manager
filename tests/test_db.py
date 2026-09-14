@@ -204,6 +204,34 @@ class TestDatabase(unittest.TestCase):
         self.db.set_setting("jira_display_name", "Alex R.")
         self.assertEqual(self.db.get_setting("jira_display_name"), "Alex R.")
 
+    def test_new_time_entry_has_no_jira_upload_marker(self):
+        pid = self.db.add_project(Project(None, "X Project", "#111111"))
+        aid = self.db.add_activity(Activity(None, "X", jira_key="QDM-1", project_id=pid))
+        eid = self.db.add_time_entry(
+            TimeEntry(None, aid, "X", "QDM-1", "#111111", "2026-08-24", "09:00", "10:00", ""))
+        entry = self.db.get_time_entry(eid)
+        self.assertIsNone(entry.jira_uploaded_at)
+
+    def test_mark_time_entries_jira_uploaded_stamps_only_the_given_ids(self):
+        pid = self.db.add_project(Project(None, "X Project", "#111111"))
+        aid = self.db.add_activity(Activity(None, "X", jira_key="QDM-1", project_id=pid))
+        e1 = self.db.add_time_entry(
+            TimeEntry(None, aid, "X", "QDM-1", "#111111", "2026-08-24", "09:00", "10:00", ""))
+        e2 = self.db.add_time_entry(
+            TimeEntry(None, aid, "X", "QDM-1", "#111111", "2026-08-24", "10:00", "11:00", ""))
+
+        self.db.mark_time_entries_jira_uploaded([e1])
+
+        uploaded = self.db.get_time_entry(e1)
+        still_pending = self.db.get_time_entry(e2)
+        self.assertIsNotNone(uploaded.jira_uploaded_at)
+        self.assertIsNone(still_pending.jira_uploaded_at)
+
+    def test_mark_time_entries_jira_uploaded_is_a_no_op_on_empty_list(self):
+        # Must not raise (e.g. from a malformed "IN ()" clause) when
+        # nothing succeeded in a given upload batch.
+        self.db.mark_time_entries_jira_uploaded([])
+
     def test_activity_and_entry_jira_project_issue_type_persist(self):
         pid = self.db.add_project(Project(None, "Photocard", "#123456"))
         aid = self.db.add_activity(Activity(

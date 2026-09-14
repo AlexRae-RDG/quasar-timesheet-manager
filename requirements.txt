@@ -1,8 +1,27 @@
-# No third-party packages required -- everything used (tkinter, sqlite3,
-# csv, dataclasses) is part of the Python standard library.
+# Tkinter, sqlite3, csv, and dataclasses (used everywhere else in this app)
+# are all part of the Python standard library -- nothing to install for
+# those. The two entries below are the only real third-party dependencies,
+# both needed only for the "Upload to Jira" button (app/jira_client.py);
+# every other feature, including the original "Export to Jira CSV" button,
+# still needs nothing beyond the standard library.
+#
+# requests -- makes the actual Jira Cloud REST API calls.
+# keyring  -- stores the Jira API token in the OS's own keychain (macOS
+#             Keychain, Windows Credential Locker, or Secret Service/
+#             KWallet on Linux) rather than in this app's own plaintext
+#             settings database, since unlike theme/display-name/work-hours
+#             it's a real secret. If installing keyring on Linux ever
+#             fails, see https://pypi.org/project/keyring/ for which
+#             system package (e.g. python3-secretstorage, gnome-keyring)
+#             your desktop environment needs for a backend to be available
+#             at all -- without one, Settings' Jira Cloud section will
+#             show a "couldn't reach your OS keychain" message instead of
+#             letting the token be saved.
+requests>=2.31
+keyring>=24.0
 #
 # On Windows and macOS, Tkinter ships with the standard python.org
-# installer, so there is nothing to install.
+# installer, so there is nothing to install for it.
 #
 # On Linux, Tkinter is usually a separate OS package. If `python3 app.py`
 # fails with "ModuleNotFoundError: No module named 'tkinter'", install it

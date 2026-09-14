@@ -36,6 +36,26 @@ APP_NAME = "QUASAR Timesheet Manager"
 
 block_cipher = None
 
+# `keyring` (used by app/jira_client.py to store the Jira API token in the
+# OS keychain) picks its actual backend at runtime via importlib.metadata
+# entry points, which PyInstaller's static import scanner can't see --
+# left to its own devices, a bundled build fails at runtime with
+# "keyring.errors.NoKeyringError: No recommended backend was available"
+# even though `pip install keyring` pulled in a perfectly good one. Listing
+# every stdlib-adjacent backend keyring ships explicitly here is the
+# standard workaround; only one of these actually loads on any given
+# platform; jira_client.py's KeyringUnavailable handling is the fallback
+# for the rare case even this isn't enough (e.g. a Linux box with no
+# Secret Service/KWallet running at all).
+KEYRING_HIDDEN_IMPORTS = [
+    "keyring.backends.macOS",
+    "keyring.backends.Windows",
+    "keyring.backends.SecretService",
+    "keyring.backends.kwallet",
+    "keyring.backends.chainer",
+    "keyring.backends.fail",
+]
+
 a = Analysis(
     [str(ROOT / "app.py")],
     pathex=[str(ROOT)],
@@ -44,7 +64,7 @@ a = Analysis(
     # is vector code in app/theme.py (Tkinter Canvas calls), not an image
     # file, so there's nothing under app/ that needs to be listed here.
     datas=[],
-    hiddenimports=[],
+    hiddenimports=KEYRING_HIDDEN_IMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

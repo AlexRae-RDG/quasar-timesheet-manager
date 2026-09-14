@@ -106,6 +106,19 @@ sudo dnf install python3-tkinter # Fedora
 sudo pacman -S tk                # Arch
 ```
 
+**Optional, for the "Upload to Jira" button only:** everything else in
+this app (including "Export to Jira CSV") runs with just the standard
+library. That one button additionally needs the two packages listed in
+`requirements.txt`:
+
+```bash
+pip install -r requirements.txt
+```
+
+Skipping this is fine if you don't use that button — the app still
+launches and runs normally; "Upload to Jira" just tells you what's
+missing if you click it without installing them first.
+
 ## Using the app
 
 **Calendar**
@@ -236,6 +249,75 @@ Quasar Delivery Management,Sub-task,QDM-5455,2026-07-24 00:00:00,Alex Rae,1h 00m
 Run a test import on a couple of rows first in Jira's CSV importer
 (**System → External System Import → CSV**) — Atlassian recommends this
 since exact behavior can differ slightly by Jira version.
+
+## Uploading directly to Jira
+
+**File → Upload to Jira…** (or the "Upload to Jira" button in the header,
+next to "Export to Jira CSV") sends worklogs straight to Jira over its
+REST API — no CSV file, no manual import step. It's an alternative to the
+CSV export above, not a replacement: both stay available, and which one
+you use for a given week is entirely up to you.
+
+**Jira Cloud only** — this doesn't support Jira Server/Data Center.
+
+**One-time setup**, in **Settings → Jira Cloud Upload**:
+1. **Site URL** — your Jira Cloud address. Pre-filled with
+   `raildeliverygroup.atlassian.net` the first time you open Settings,
+   since everyone on this app is on the same Jira instance — only change
+   it if that's ever not true for you. (The `https://` is optional either
+   way.)
+2. **Email** — the email address you log into Jira with. Pre-filled with
+   `firstname.lastname@raildeliverygroup.com` as a template the first
+   time you open Settings — replace `firstname.lastname` with your own
+   name, keeping the same dot-separated pattern and domain.
+3. **API Token** — see "Getting a Jira API token" below for the full
+   walkthrough. Once one is saved, the field itself shows a row of dots
+   (●●●●●●●●) rather than staying blank, so you can tell at a glance
+   that a token is stored — that's a placeholder, not your actual token;
+   click into the field to clear it and type a new one, or leave it
+   alone and click Save to keep what's already stored. "Clear stored
+   token" removes it from your keychain entirely.
+
+Both the Site URL and Email fields only ever pre-fill like this the
+*first* time Settings is opened on a given computer — once you've saved
+Settings even once (for anything, not just these two fields), whatever
+you last saved is what shows up from then on, never silently reset back
+to the default.
+
+### Getting a Jira API token
+
+1. In the app, go to **Settings → Jira Cloud Upload** and click **"Get an
+   API token"** (or go straight to
+   `id.atlassian.com/manage-profile/security/api-tokens` in your
+   browser). Log in with your `raildeliverygroup.atlassian.net`
+   credentials if asked.
+2. Click **Create API token**.
+3. Give it a **label** — this is just for your own reference if you ever
+   need to find or revoke it later, e.g. `QUASAR Timesheet Manager`.
+4. Click **Create**. Atlassian shows you the token **once** — copy it
+   immediately; you can't come back and view it again later, only revoke
+   it and create a new one.
+5. Paste it into the **API Token** field in the app and click **Save**.
+
+The token is stored in your operating system's own keychain (macOS
+Keychain / Windows Credential Locker / Secret Service or KWallet on
+Linux), never in this app's own settings file. Treat it like a password —
+it acts as your full Jira identity for API calls made on your behalf. To
+revoke one, go back to the same Atlassian page and click **Revoke** next
+to its label, then generate and save a new one in the app.
+
+**Using it**: pick a date range the same way as the CSV export. Only
+blocks with a Jira Issue Key are sent (others are skipped, same as CSV
+export). Every entry it successfully sends is marked as uploaded, so
+**re-running it on the same (or an overlapping) date range only ever
+sends entries that haven't been uploaded before** — safe to click again
+without creating duplicate worklogs in Jira. This tracking is separate
+from CSV export, which has no memory of what's already been imported.
+
+Note: editing a time block's notes or duration *after* it's already been
+uploaded doesn't automatically re-send it — there's no "update an
+existing Jira worklog" step, only "create a new one", so this app
+deliberately doesn't risk creating a duplicate over a small edit.
 
 ## For developers
 

@@ -8,12 +8,13 @@ import tkinter as tk
 import webbrowser
 from tkinter import messagebox, ttk
 
-from . import auto_update, config, theme, update_check
+from . import auto_update, config, jira_client, theme, update_check
 from .calendar_view import CalendarGrid
 from .db import Database
 from .export_csv import export_entries
 from .models import Project
-from .panels import ActivityPanel, BackupPanel, DuplicatePanel, ExportPanel, ProjectPanel, SettingsPanel
+from .panels import (ActivityPanel, BackupPanel, DuplicatePanel, ExportPanel, JiraUploadPanel,
+                      ProjectPanel, SettingsPanel)
 from .sidebar import Sidebar
 from .summary_panel import SummaryPanel
 from .timeblock_panel import TimeBlockPanel
@@ -296,6 +297,7 @@ class MainWindow(tk.Tk):
 
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Export to Jira CSV…", command=self._open_export_dialog)
+        file_menu.add_command(label="Upload to Jira…", command=self._open_jira_upload_dialog)
         file_menu.add_separator()
         file_menu.add_command(label="Backup & Restore…", command=self._open_backup_dialog)
         file_menu.add_separator()
@@ -500,6 +502,11 @@ class MainWindow(tk.Tk):
 
         RoundedButton(tab_row, text="Export to Jira CSV", style="Accent.TButton",
                       command=self._open_export_dialog).pack(side="right")
+        # Packed after Export (both side="right") so it lands just to
+        # Export's left -- the two live together here now that Export
+        # moved out of the header (see the comment above tab_row).
+        RoundedButton(tab_row, text="Upload to Jira", style="Accent.TButton",
+                      command=self._open_jira_upload_dialog).pack(side="right", padx=(0, 8))
 
         self.tab_bar = tk.Frame(tab_row, bg=theme.APP_BG)
         self.tab_bar.pack(side="left", fill="x", expand=True)
@@ -643,6 +650,11 @@ class MainWindow(tk.Tk):
             self.notebook, family=self.family,
             on_close=lambda: self._hide_panel(self.export_panel))
         self._register_panel(self.export_panel, "Export")
+
+        self.jira_upload_panel = JiraUploadPanel(
+            self.notebook, family=self.family,
+            on_close=lambda: self._hide_panel(self.jira_upload_panel))
+        self._register_panel(self.jira_upload_panel, "Upload")
 
         self._refresh_tab_bar()
 
@@ -895,15 +907,45 @@ class MainWindow(tk.Tk):
         current_show_timer_bar = self.show_timer_bar
         current_header_style = self.header_style
 
+        # Defaults (not ""): the first time Settings is ever opened, these
+        # fields come pre-filled with a company-wide Site URL and an
+        # editable "firstname.lastname@..." email template -- see
+        # config.DEFAULT_JIRA_SITE_URL/DEFAULT_JIRA_EMAIL_TEMPLATE for why.
+        # get_setting only falls back to these when nothing has been saved
+        # yet, so a real saved value (even one that matches the default
+        # exactly) is never overridden.
+        current_jira_site_url = self.db.get_setting(
+            "jira_site_url", config.DEFAULT_JIRA_SITE_URL) or ""
+        current_jira_email = self.db.get_setting(
+            "jira_email", config.DEFAULT_JIRA_EMAIL_TEMPLATE) or ""
+
         def on_save(new_display_name, new_theme_id,
                     new_work_start_hour, new_work_end_hour, new_show_weekends,
-                    new_show_timer_bar, new_header_style):
+                    new_show_timer_bar, new_header_style,
+                    new_jira_site_url, new_jira_email, new_jira_api_token):
             self.db.set_setting("jira_display_name", new_display_name)
             self.db.set_setting("work_start_hour", str(new_work_start_hour))
             self.db.set_setting("work_end_hour", str(new_work_end_hour))
             self.db.set_setting("show_weekends", "1" if new_show_weekends else "0")
             self.db.set_setting("show_timer_bar", "1" if new_show_timer_bar else "0")
             self.db.set_setting("header_style", new_header_style)
+            self.db.set_setting("jira_site_url", new_jira_site_url)
+            self.db.set_setting("jira_email", new_jira_email)
+            # A blank API Token field means "leave whatever's already in
+            # the keychain alone" (see SettingsPanel's own comment on that
+            # field) -- only a non-blank entry ever touches the stored
+            # token, so re-saving the rest of Settings never accidentally
+            # wipes it.
+            if new_jira_api_token:
+                try:
+                    jira_client.store_api_token(new_jira_api_token)
+                except jira_client.KeyringUnavailable as exc:
+                    messagebox.showwarning(
+                        "Couldn't reach your OS keychain",
+                        "Everything else in Settings was saved, but the Jira API token "
+                        "could not be stored:\n\n" + str(exc) +
+                        "\n\nSee requirements.txt for what your OS needs for a keychain "
+                        "backend to be available, then try entering the token again.")
 
             # Always persist the Custom palette's current seed colors,
             # whether or not "custom" is the theme actually being saved --
@@ -950,7 +992,8 @@ class MainWindow(tk.Tk):
 
         self.settings_panel.load(display_name, current_theme_id, current_work_start_hour,
                                   current_work_end_hour, current_show_weekends,
-                                  current_show_timer_bar, current_header_style, on_save)
+                                  current_show_timer_bar, current_header_style,
+                                  current_jira_site_url, current_jira_email, on_save)
 
     def _open_settings_dialog(self):
         # Settings is a permanent tab now (see _build_body) -- this just
@@ -1043,6 +1086,79 @@ class MainWindow(tk.Tk):
             if len(skipped) > 10:
                 msg += f"\n  …and {len(skipped) - 10} more."
         messagebox.showinfo("Export complete", msg)
+
+    def _open_jira_upload_dialog(self):
+        def on_upload(start_date, end_date):
+            self._do_jira_upload(start_date, end_date)
+
+        self.jira_upload_panel.load(self.calendar.week_start, on_upload)
+        self._show_panel(self.jira_upload_panel)
+
+    def _do_jira_upload(self, start_date: str, end_date: str):
+        site_url = self.db.get_setting("jira_site_url", "") or ""
+        email = self.db.get_setting("jira_email", "") or ""
+        api_token = jira_client.get_api_token() or ""
+        if not (site_url and email and api_token):
+            messagebox.showwarning(
+                "Jira Cloud not set up",
+                "Enter your Jira Site URL, Email, and API Token in Settings → Jira Cloud "
+                "Upload before using this button. \u201cExport to Jira CSV\u201d doesn't "
+                "need any of this and still works without it.")
+            return
+
+        entries = self.db.list_time_entries_between(start_date, end_date)
+        has_key = [e for e in entries if e.jira_key and e.jira_key.strip()]
+        no_key = [e for e in entries if not (e.jira_key and e.jira_key.strip())]
+        # Duplicate protection: only ever send entries that haven't been
+        # uploaded before (see TimeEntry.jira_uploaded_at's docstring) --
+        # this is what makes re-running this button on the same date range
+        # safe instead of creating a second worklog for something Jira
+        # already has.
+        already_uploaded = [e for e in has_key if e.jira_uploaded_at]
+        pending = [e for e in has_key if not e.jira_uploaded_at]
+
+        if not pending:
+            messagebox.showinfo(
+                "Nothing new to upload",
+                f"Every time block with a Jira Issue Key in that range ({len(already_uploaded)}) "
+                "has already been uploaded to Jira. Nothing to send.")
+            return
+
+        confirm_msg = f"Upload {len(pending)} worklog(s) to Jira?"
+        if already_uploaded:
+            confirm_msg += f"\n\n{len(already_uploaded)} already-uploaded entry(ies) will be skipped."
+        if no_key:
+            confirm_msg += f"\n{len(no_key)} entry(ies) have no Jira Issue Key and will be skipped."
+        if not messagebox.askyesno("Confirm upload", confirm_msg):
+            return
+
+        credentials = jira_client.JiraCredentials(site_url=site_url, email=email, api_token=api_token)
+        try:
+            results = jira_client.upload_entries(credentials, pending)
+        except RuntimeError as exc:
+            messagebox.showerror("Upload failed", str(exc))
+            return
+
+        succeeded = [r.entry for r in results if r.success]
+        failed = [r for r in results if not r.success]
+        if succeeded:
+            self.db.mark_time_entries_jira_uploaded([e.id for e in succeeded if e.id is not None])
+
+        msg = f"Uploaded {len(succeeded)} of {len(pending)} worklog(s) to Jira."
+        if already_uploaded:
+            msg += f"\n{len(already_uploaded)} already-uploaded entry(ies) were skipped."
+        if no_key:
+            msg += f"\n{len(no_key)} entry(ies) with no Jira Issue Key were skipped."
+        if failed:
+            msg += (f"\n\n{len(failed)} failed:\n" +
+                    "\n".join(f"  \u2022 {r.entry.activity_name} ({r.entry.date} "
+                               f"{r.entry.start_time}-{r.entry.end_time}, {r.entry.jira_key}): {r.error}"
+                               for r in failed[:10]))
+            if len(failed) > 10:
+                msg += f"\n  \u2026and {len(failed) - 10} more."
+            messagebox.showwarning("Upload complete, with errors", msg)
+        else:
+            messagebox.showinfo("Upload complete", msg)
 
     def _show_help(self):
         messagebox.showinfo(

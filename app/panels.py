@@ -16,11 +16,12 @@ one of ours, positioned by the OS the same way a file-open dialog is, so it
 isn't affected by the pop-up-window bug this refactor works around.
 """
 import tkinter as tk
+import webbrowser
 from datetime import date, datetime, timedelta
 from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import Callable, Dict, List, Optional, Union
 
-from . import config, theme
+from . import config, jira_client, theme
 from .models import Activity, Project, TemplateEntry, TimeEntry
 from .version import APP_VERSION
 from .widgets import RoundedButton, ScrollArea, show_saved_toast
@@ -47,6 +48,17 @@ _SHORTCUTS = [
     ("Enter (in a form field)", "Save the current Add/Edit Project, QDM, or "
                                  "Time Block form without needing to click Save"),
 ]
+
+# Stand-in shown in Settings' API Token field (see SettingsPanel below)
+# whenever a token is already stored, so a glance at the field itself --
+# not just the status text underneath -- tells you one's set. Any
+# non-empty value here renders as dots either way (the Entry's own
+# show="\u2022" masks every character regardless of what it actually is),
+# so the length here is chosen purely to *look* like a plausible token,
+# not to mean anything. Never sent anywhere as a real value -- see
+# SettingsPanel._save's use of _token_field_is_placeholder for how a
+# left-alone field is told apart from someone actually typing a new token.
+_STORED_TOKEN_MASK = "•" * 24
 
 
 def _scroll_body(master, **kwargs) -> tk.Frame:
@@ -552,9 +564,15 @@ class SettingsPanel(tk.Frame):
         super().__init__(master, bg=theme.PANEL_BG)
         self.family = family
         self.on_close = on_close
-        self.on_save: Optional[Callable[[str, str, int, int, bool], None]] = None
+        self.on_save: Optional[Callable[[str, str, int, int, bool, str, str, str], None]] = None
         self.theme_var = tk.StringVar(value=theme.DEFAULT_THEME_ID)
         self.theme_swatch_canvases: Dict[str, tk.Canvas] = {}
+        # True whenever the API Token field is showing _STORED_TOKEN_MASK
+        # rather than something the person actually typed -- see that
+        # constant's own comment for why this needs tracking separately
+        # from "the field is non-empty" (a masked Entry can't tell those
+        # apart just by looking at its own displayed value).
+        self._token_field_is_placeholder = False
 
         # Custom palette's four seed colors (background, panel, text,
         # accent) -- staged as a plain dict (nothing binds to it via
@@ -730,9 +748,72 @@ class SettingsPanel(tk.Frame):
                      bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY, anchor="nw",
                      justify="left", wraplength=360).grid(row=i, column=1, sticky="nw", pady=5)
 
+        # Jira Cloud Upload -- only needed for the header's "Upload to
+        # Jira" button (app/jira_client.py); "Export to Jira CSV" doesn't
+        # read any of this. Lives in the right column, under Keyboard
+        # Shortcuts, rather than competing with Display Name/Work Hours/
+        # Theme on the left for space above the fold -- this is a one-time
+        # setup step for most people, not something revisited often.
+        ttk.Label(right, text="Jira Cloud Upload", style="Heading.TLabel").grid(
+            row=2, column=0, sticky="w", pady=(28, 6))
+        tk.Label(right, text="Needed only for the \u201cUpload to Jira\u201d button next to "
+                             "\u201cExport to Jira CSV\u201d in the header. Jira Server/Data "
+                             "Center aren't supported -- Jira Cloud only.",
+                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=360,
+                 font=(self.family, 9)).grid(row=3, column=0, sticky="w", pady=(0, 10))
+
+        jira_frame = ttk.Frame(right)
+        jira_frame.grid(row=4, column=0, sticky="new")
+
+        ttk.Label(jira_frame, text="Site URL", style="Big.TLabel").grid(row=0, column=0, sticky="w")
+        self.jira_site_url_var = tk.StringVar()
+        ttk.Entry(jira_frame, textvariable=self.jira_site_url_var, width=34,
+                  style="Big.TEntry").grid(row=1, column=0, sticky="ew", pady=(2, 10))
+
+        ttk.Label(jira_frame, text="Email", style="Big.TLabel").grid(row=2, column=0, sticky="w")
+        self.jira_email_var = tk.StringVar()
+        ttk.Entry(jira_frame, textvariable=self.jira_email_var, width=34,
+                  style="Big.TEntry").grid(row=3, column=0, sticky="ew", pady=(2, 10))
+
+        ttk.Label(jira_frame, text="API Token", style="Big.TLabel").grid(row=4, column=0, sticky="w")
+        self.jira_api_token_var = tk.StringVar()
+        # show="•" (a masked password-style entry) -- this is the one field
+        # here that's a real secret. The real stored value never round-
+        # trips back into a plain Tk widget just to redisplay it; when one
+        # is already stored, load() fills this with _STORED_TOKEN_MASK
+        # instead (a placeholder, not the real token) purely so the field
+        # itself -- not just the status text below -- shows dots at a
+        # glance. Clicking into the field clears that placeholder (see
+        # _on_jira_token_focus_in) so typing starts from empty, the same
+        # as any other "enter a new secret" field.
+        self.jira_api_token_entry = ttk.Entry(
+            jira_frame, textvariable=self.jira_api_token_var, width=34,
+            style="Big.TEntry", show="\u2022")
+        self.jira_api_token_entry.grid(row=5, column=0, sticky="ew", pady=(2, 4))
+        self.jira_api_token_entry.bind("<FocusIn>", self._on_jira_token_focus_in)
+        self.jira_token_status_label = tk.Label(
+            jira_frame, text="", fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left",
+            wraplength=320, font=(self.family, 9))
+        self.jira_token_status_label.grid(row=6, column=0, sticky="w", pady=(0, 6))
+
+        token_btns = tk.Frame(jira_frame, bg=theme.PANEL_BG)
+        token_btns.grid(row=7, column=0, sticky="w", pady=(0, 4))
+        get_token_label = tk.Label(token_btns, text="Get an API token", fg=theme.ACCENT,
+                                    bg=theme.PANEL_BG, cursor="hand2",
+                                    font=(self.family, 9, "underline"))
+        get_token_label.pack(side="left")
+        get_token_label.bind("<Button-1>", lambda e: webbrowser.open(
+            "https://id.atlassian.com/manage-profile/security/api-tokens"))
+        RoundedButton(token_btns, text="Clear stored token", style="Secondary.TButton",
+                      command=self._clear_jira_token).pack(side="left", padx=(16, 0))
+
+        # row=10 (not row=2) so this sits below the Jira Cloud Upload
+        # section above rather than colliding with its row=2 heading --
+        # "right"'s own grid, unrelated to the outer/btns row=20 mentioned
+        # below.
         tk.Label(right, text=f"QUASAR Timesheet Manager v{APP_VERSION}",
                  font=(self.family, 9), bg=theme.PANEL_BG, fg=theme.TEXT_MUTED).grid(
-            row=2, column=0, sticky="w", pady=(20, 0))
+            row=10, column=0, sticky="w", pady=(20, 0))
 
         # row=20 (not row=2) so this stays below Keyboard Shortcuts either
         # way -- beside the settings fields at row=1 (the normal, wide-
@@ -894,7 +975,8 @@ class SettingsPanel(tk.Frame):
 
     def load(self, display_name: str, current_theme_id: str, work_start_hour: int,
               work_end_hour: int, show_weekends: bool, show_timer_bar: bool, header_style: str,
-              on_save: Callable[[str, str, int, int, bool, bool, str], None]):
+              jira_site_url: str, jira_email: str,
+              on_save: Callable[[str, str, int, int, bool, bool, str, str, str, str], None]):
         self.on_save = on_save
         self.display_name_var.set(display_name)
         self.theme_var.set(theme.resolve_theme_id(current_theme_id))
@@ -911,6 +993,10 @@ class SettingsPanel(tk.Frame):
         self.hide_timer_var.set(not show_timer_bar)
         self._select_header_style(header_style if header_style in self.header_style_buttons else "standard")
 
+        self.jira_site_url_var.set(jira_site_url)
+        self.jira_email_var.set(jira_email)
+        self._refresh_jira_token_field()
+
     def _save(self):
         assert self.on_save is not None
         start_idx = self.work_start_combo.current()
@@ -922,6 +1008,17 @@ class SettingsPanel(tk.Frame):
                 "Invalid Work Hours",
                 "The “To” time has to be later than the “From” time.")
             return
+        # A left-alone field is either still showing _STORED_TOKEN_MASK
+        # (never focused) or was cleared by _on_jira_token_focus_in but
+        # never typed into again -- both mean "no change", same as
+        # leaving it blank always has. Only a value the person actually
+        # typed counts as a real new token; see jira_client.store_api_token
+        # / main_window.py's on_save for what happens with each case.
+        raw_token = self.jira_api_token_var.get()
+        if self._token_field_is_placeholder or raw_token == _STORED_TOKEN_MASK:
+            new_token = ""
+        else:
+            new_token = raw_token
         self.on_save(
             self.display_name_var.get().strip(),
             self.theme_var.get(),
@@ -930,7 +1027,11 @@ class SettingsPanel(tk.Frame):
             self.show_weekends_var.get(),
             not self.hide_timer_var.get(),
             self.header_style_choice,
+            self.jira_site_url_var.get().strip(),
+            self.jira_email_var.get().strip(),
+            new_token,  # blank = "keep whatever's already stored"
         )
+        self._refresh_jira_token_field()
         show_saved_toast(self)
         self.on_close()
 
@@ -941,7 +1042,44 @@ class SettingsPanel(tk.Frame):
         # it was never actually applied or persisted.
         if self.custom_seeds != self._custom_seeds_on_load:
             theme.set_custom_seeds(**self._custom_seeds_on_load)
+        self._refresh_jira_token_field()
         self.on_close()
+
+    def _on_jira_token_focus_in(self, event=None):
+        if self._token_field_is_placeholder:
+            self.jira_api_token_var.set("")
+            self._token_field_is_placeholder = False
+
+    def _clear_jira_token(self):
+        if not jira_client.has_stored_api_token():
+            messagebox.showinfo("No token stored", "There's no Jira API token currently stored.")
+            return
+        if not messagebox.askyesno(
+                "Clear stored Jira API token",
+                "This removes the saved API token from your OS keychain. You'll need to "
+                "paste it again (or a new one) before \u201cUpload to Jira\u201d will work. "
+                "Continue?"):
+            return
+        jira_client.delete_api_token()
+        self._refresh_jira_token_field()
+
+    def _refresh_jira_token_field(self):
+        """Syncs both the API Token entry and the status text underneath
+        it to what's actually in the keychain right now -- called after
+        load(), save, cancel, and clearing the stored token, so the field
+        never shows stale state from before any of those. See
+        _STORED_TOKEN_MASK's own comment for why the entry itself (not
+        just this status text) reflects "a token is stored"."""
+        if jira_client.has_stored_api_token():
+            self.jira_api_token_var.set(_STORED_TOKEN_MASK)
+            self._token_field_is_placeholder = True
+            self.jira_token_status_label.config(
+                text="A token is stored in your OS keychain. Click the field and type a new "
+                     "one to replace it, or leave it as-is to keep it.")
+        else:
+            self.jira_api_token_var.set("")
+            self._token_field_is_placeholder = False
+            self.jira_token_status_label.config(text="No token stored yet.")
 
 
 # ---------------------------------------------------------------------------
@@ -1108,6 +1246,108 @@ class ExportPanel(tk.Frame):
                 self.error_label.config(text="'From' date must be before 'To' date.")
                 return
         cb = self.on_export
+        self.on_close()
+        assert cb is not None
+        cb(start, end)
+
+    def _cancel(self):
+        self.on_close()
+
+
+# ---------------------------------------------------------------------------
+# Upload-to-Jira panel (choose date range) -- same date-range picker as
+# ExportPanel above, kept as a separate class rather than a shared base
+# because the two are already this short and their button labels/actions
+# diverge enough (a network call + duplicate-protection summary here vs. a
+# plain file save there) that a shared base would mostly be indirection.
+# ---------------------------------------------------------------------------
+class JiraUploadPanel(tk.Frame):
+    def __init__(self, master, family: str, on_close: Callable[[], None]):
+        super().__init__(master, bg=theme.PANEL_BG)
+        self.family = family
+        self.on_close = on_close
+        self.on_upload: Optional[Callable[[str, str], None]] = None
+        self.week_start: Optional[date] = None
+
+        body = _scroll_body(self)
+        outer = tk.Frame(body, bg=theme.PANEL_BG)
+        outer.pack(fill="both", expand=True, padx=28, pady=24)
+
+        tk.Label(outer, text="Upload to Jira", font=(self.family, 14, "bold"),
+                 bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).pack(anchor="w", pady=(0, 6))
+        tk.Label(outer, text="Sends worklogs straight to Jira over its API -- no CSV file, "
+                             "no manual import. Entries already uploaded before are skipped "
+                             "automatically, so this is always safe to re-run.",
+                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
+                 font=(self.family, 9)).pack(anchor="w", pady=(0, 16))
+
+        frm = ttk.Frame(outer)
+        frm.pack(anchor="w")
+
+        ttk.Label(frm, text="Upload range", font=(self.family, 10, "bold")).grid(
+            row=0, column=0, sticky="w", pady=(0, 8))
+        self.scope_var = tk.StringVar(value="week")
+        self.week_radio = ttk.Radiobutton(frm, text="", variable=self.scope_var, value="week",
+                                           command=self._toggle)
+        self.week_radio.grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Radiobutton(frm, text="Custom date range", variable=self.scope_var, value="custom",
+                        command=self._toggle).grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+        ttk.Label(frm, text="From (YYYY-MM-DD)").grid(row=3, column=0, sticky="w", pady=(10, 0))
+        self.from_var = tk.StringVar()
+        self.from_entry = ttk.Entry(frm, textvariable=self.from_var, width=14, state="disabled")
+        self.from_entry.grid(row=3, column=1, sticky="w", pady=(10, 0))
+
+        ttk.Label(frm, text="To (YYYY-MM-DD)").grid(row=4, column=0, sticky="w")
+        self.to_var = tk.StringVar()
+        self.to_entry = ttk.Entry(frm, textvariable=self.to_var, width=14, state="disabled")
+        self.to_entry.grid(row=4, column=1, sticky="w")
+
+        self.error_label = ttk.Label(frm, text="", foreground=theme.DANGER)
+        self.error_label.grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        RoundedButton(btns, text="Cancel", style="Secondary.TButton", command=self._cancel).pack(side="right")
+        RoundedButton(btns, text="Upload…", style="Accent.TButton", command=self._upload).pack(
+            side="right", padx=6)
+
+    def load(self, week_start: date, on_upload: Callable[[str, str], None]):
+        self.week_start = week_start
+        self.on_upload = on_upload
+        self.scope_var.set("week")
+        week_end = week_start + timedelta(days=config.week_end_offset())
+        self.week_radio.config(text=f"Current week ({week_start.strftime('%b %d')} - "
+                                     f"{week_end.strftime('%b %d, %Y')})")
+        self.from_var.set(week_start.isoformat())
+        self.to_var.set(week_end.isoformat())
+        self.from_entry.config(state="disabled")
+        self.to_entry.config(state="disabled")
+        self.error_label.config(text="")
+
+    def _toggle(self):
+        state = "normal" if self.scope_var.get() == "custom" else "disabled"
+        self.from_entry.config(state=state)
+        self.to_entry.config(state=state)
+
+    def _upload(self):
+        assert self.week_start is not None
+        if self.scope_var.get() == "week":
+            start = self.week_start.isoformat()
+            end = (self.week_start + timedelta(days=config.week_end_offset())).isoformat()
+        else:
+            start = self.from_var.get().strip()
+            end = self.to_var.get().strip()
+            try:
+                date.fromisoformat(start)
+                date.fromisoformat(end)
+            except ValueError:
+                self.error_label.config(text="Dates must be in YYYY-MM-DD format.")
+                return
+            if start > end:
+                self.error_label.config(text="'From' date must be before 'To' date.")
+                return
+        cb = self.on_upload
         self.on_close()
         assert cb is not None
         cb(start, end)
