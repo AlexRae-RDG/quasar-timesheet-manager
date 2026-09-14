@@ -274,9 +274,11 @@ you use for a given week is entirely up to you.
    walkthrough. Once one is saved, the field itself shows a row of dots
    (●●●●●●●●) rather than staying blank, so you can tell at a glance
    that a token is stored — that's a placeholder, not your actual token;
-   click into the field to clear it and type a new one, or leave it
-   alone and click Save to keep what's already stored. "Clear stored
-   token" removes it from your keychain entirely.
+   click into the field to clear it and type a new one. Click **Save API
+   Token** right there to save just the token on its own, or leave it
+   alone and click the regular **Save** below to keep what's already
+   stored (that button saves everything else in Settings too). "Clear
+   stored token" removes it entirely.
 
 Both the Site URL and Email fields only ever pre-fill like this the
 *first* time Settings is opened on a given computer — once you've saved
@@ -299,10 +301,24 @@ to the default.
    it and create a new one.
 5. Paste it into the **API Token** field in the app and click **Save**.
 
-The token is stored in your operating system's own keychain (macOS
-Keychain / Windows Credential Locker / Secret Service or KWallet on
-Linux), never in this app's own settings file. Treat it like a password —
-it acts as your full Jira identity for API calls made on your behalf. To
+The token is stored — encrypted — in this app's own local database,
+right alongside your timesheet data and the rest of Settings, not your
+operating system's keychain. Earlier versions used the OS keychain
+instead, but an unsigned, frequently-rebuilt desktop app isn't a stable
+"identity" as far as a keychain is concerned, so entries could silently
+stop resolving after a rebuild or reinstall, meaning a trip back through
+this whole walkthrough to generate a new one.
+
+The decryption key lives in its own separate file next to the database
+(`.jira_token.key` in the app's data folder) rather than inside it, which
+is what makes **File → Backup & Restore…** safe to use: a backup file is
+a straight copy of the database only, so it carries nothing but
+unreadable ciphertext — the key never travels with it. That protects
+against the realistic risk (a backup shared, emailed, or dropped in a
+synced folder); it doesn't protect against someone with access to both
+files on this same machine, which is the level an OS keychain adds on
+top and this doesn't. Treat the token like a password regardless — it
+acts as your full Jira identity for API calls made on your behalf. To
 revoke one, go back to the same Atlassian page and click **Revoke** next
 to its label, then generate and save a new one in the app.
 

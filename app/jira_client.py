@@ -16,6 +16,7 @@ Jira Project / Issue Type fallback chain, same notes-or-activity-name
 Work Description) so a given time entry produces the same Jira content
 whichever of the two upload paths is used.
 """
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -33,69 +34,141 @@ except ImportError:  # pragma: no cover -- exercised only via a genuinely
     requests = None
 
 try:
-    import keyring
-    import keyring.errors
-except ImportError:  # pragma: no cover -- see requests above
-    keyring = None
+    from cryptography.fernet import Fernet, InvalidToken
+except ImportError:  # pragma: no cover -- see requests above; cryptography
+    # is a hard requirement listed in requirements.txt (and PyInstaller
+    # bundles it via its own built-in hook -- no hiddenimports workaround
+    # needed here, unlike the old keyring dependency this replaced).
+    Fernet = None
+    InvalidToken = Exception  # never actually raised while Fernet is None
 
 # ---------------------------------------------------------------------------
 # API token storage
 # ---------------------------------------------------------------------------
-# The token is a secret (unlike the plain settings this app otherwise keeps
-# in its own SQLite `settings` table -- theme, display name, work hours,
-# etc.), so it goes through the OS keychain via the `keyring` package
-# instead: macOS Keychain, Windows Credential Locker, or the Secret
-# Service/KWallet on Linux, whichever `keyring` finds available. Site URL
-# and email aren't secrets on their own, so those two stay in the regular
-# settings table (see main_window.py's _load_settings_panel) -- only the
-# API token comes through here.
-_KEYRING_SERVICE = "QUASAR Timesheet Manager - Jira Cloud"
-_KEYRING_USERNAME = "jira_api_token"
+# This used to go through the OS keychain (macOS Keychain / Windows
+# Credential Locker / Secret Service or KWallet on Linux) via the
+# `keyring` package, same as a browser's saved-password store. In
+# practice that made the token itself unreliable to hold onto: an
+# unsigned, frequently-rebuilt desktop app isn't a stable "identity" as
+# far as a keychain is concerned, so entries could stop resolving after a
+# rebuild or a reinstall -- and regenerating a token means a full trip
+# back through Atlassian's own token-creation flow (see the README's
+# "Getting a Jira API token" walkthrough), which is exactly the kind of
+# repeat effort this was supposed to avoid.
+#
+# A plain local-database write (the very next version of this) fixed the
+# reliability problem but gave up too much: the token sat in plain text
+# in the same `settings` table as everything else Database stores, which
+# meant Database.backup_to() -- BackupPanel's "Backup & Restore…" -- would
+# happily copy it into a shared/emailed backup file along with it.
+#
+# So the token itself is still a `settings` row (same table, same file --
+# still survives a rebuild/reinstall exactly as reliably as the rest of
+# your data), but now it's a Fernet-encrypted value rather than the raw
+# string, and the *decryption key* lives in its own separate file next to
+# the database (see _key_path) instead of inside it. That's the actual
+# security property this buys: backup_to()/restore_from() only ever touch
+# the database file, so a shared or backed-up copy carries nothing but
+# ciphertext -- useless without the key file, which never leaves the
+# machine that created it. It's still not OS-keychain-strength (anyone
+# with read access to both files on THIS machine can decrypt it -- there's
+# no separate password gate the way a keychain prompts for one), but it
+# closes the "I sent someone my backup file" leak while staying exactly
+# as easy to update as before: Settings' "Save API Token"/"Save"/"Clear
+# stored token" all work unchanged, with the encrypt/decrypt happening
+# transparently in here.
+_TOKEN_SETTING_KEY = "jira_api_token"
+_KEY_FILENAME = ".jira_token.key"
+_ENCRYPTED_PREFIX = "enc:1:"
 
 
-class KeyringUnavailable(Exception):
-    """Raised by store_api_token()/get_api_token() when no OS keychain
-    backend could be found (the `keyring` package failed to import, or it
-    imported but couldn't locate a usable backend -- both real
-    possibilities in a PyInstaller-bundled app; see packaging/
-    free_timesheet.spec's hiddenimports comment for why). Callers should
-    catch this specifically and fall back to telling the user, rather than
-    silently storing the token in plaintext anywhere."""
+class EncryptionUnavailable(Exception):
+    """Raised by store_api_token() when the 'cryptography' package isn't
+    installed -- only reachable running from source without `pip install
+    -r requirements.txt` first; a packaged build always bundles it (see
+    the import block above). Callers should catch this specifically and
+    tell the user, same idea as the old KeyringUnavailable this replaces."""
 
 
-def store_api_token(token: str):
-    if keyring is None:
-        raise KeyringUnavailable("The 'keyring' package is not installed.")
+def _key_path(db) -> str:
+    """Deliberately a sibling of the database file (see db.path) rather
+    than a `settings` row -- see this section's own comment above for why
+    that's the whole point: Database.backup_to()'s snapshot never
+    includes it."""
+    return os.path.join(os.path.dirname(os.path.abspath(db.path)), _KEY_FILENAME)
+
+
+def _get_or_create_key(db) -> bytes:
+    path = _key_path(db)
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return f.read().strip()
+    key = Fernet.generate_key()
+    with open(path, "wb") as f:
+        f.write(key)
     try:
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, token)
-    except keyring.errors.NoKeyringError as exc:
-        raise KeyringUnavailable(str(exc)) from exc
-
-
-def get_api_token() -> Optional[str]:
-    """Returns None both when nothing has been stored yet AND when no
-    keychain backend is available -- callers that need to tell those two
-    cases apart (Settings' "is a token currently set?" indicator) should
-    use has_stored_api_token() instead."""
-    if keyring is None:
-        return None
-    try:
-        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
-    except keyring.errors.KeyringError:
-        return None
-
-
-def has_stored_api_token() -> bool:
-    return bool(get_api_token())
-
-
-def delete_api_token():
-    if keyring is None:
-        return
-    try:
-        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
-    except keyring.errors.KeyringError:
+        # Best-effort owner-only read/write. Windows' ACL model doesn't
+        # map onto Unix permission bits the way chmod expects, but the
+        # file already lives under the user's own profile directory there
+        # either way, which is the normal protection Windows gives it.
+        os.chmod(path, 0o600)
+    except OSError:
         pass
+    return key
+
+
+def store_api_token(db, token: str):
+    if Fernet is None:
+        raise EncryptionUnavailable("The 'cryptography' package is not installed.")
+    key = _get_or_create_key(db)
+    encrypted = Fernet(key).encrypt(token.encode("utf-8")).decode("ascii")
+    db.set_setting(_TOKEN_SETTING_KEY, _ENCRYPTED_PREFIX + encrypted)
+
+
+def get_api_token(db) -> Optional[str]:
+    """Returns None when nothing's been stored yet, and also when what IS
+    stored can't be decrypted with this machine's key -- e.g. a database
+    restored from a backup made on a different machine (see _key_path's
+    comment: the key file itself never travels with a backup). Both read
+    the same as "no token" to callers; a clear "paste it again" beats a
+    confusing Jira auth failure built from garbage ciphertext.
+
+    Also transparently upgrades a plain-text value left over from the
+    version of this app that stored tokens unencrypted -- recognized by
+    the missing _ENCRYPTED_PREFIX -- re-saving it through store_api_token
+    the first time it's read, with no action needed from the user."""
+    raw = db.get_setting(_TOKEN_SETTING_KEY, "") or ""
+    if not raw:
+        return None
+    if not raw.startswith(_ENCRYPTED_PREFIX):
+        if Fernet is not None:
+            try:
+                store_api_token(db, raw)
+            except EncryptionUnavailable:
+                pass
+        return raw
+    if Fernet is None:
+        return None
+    try:
+        key = _get_or_create_key(db)
+        ciphertext = raw[len(_ENCRYPTED_PREFIX):].encode("ascii")
+        return Fernet(key).decrypt(ciphertext).decode("utf-8")
+    except InvalidToken:
+        return None
+
+
+def has_stored_api_token(db) -> bool:
+    return bool(get_api_token(db))
+
+
+def delete_api_token(db):
+    # No real "delete a setting" op on Database -- an empty string reads
+    # back as falsy through get_api_token/has_stored_api_token exactly
+    # like a never-set one would, same convention config.DEFAULT_JIRA_*
+    # relies on elsewhere for "nothing saved yet". The key file is left
+    # in place -- harmless with nothing left to decrypt, and reused as-is
+    # if a new token is saved afterward.
+    db.set_setting(_TOKEN_SETTING_KEY, "")
 
 
 # ---------------------------------------------------------------------------

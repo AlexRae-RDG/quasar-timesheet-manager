@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta
 from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import Callable, Dict, List, Optional, Union
 
-from . import config, jira_client, theme
+from . import config, theme
 from .models import Activity, Project, TemplateEntry, TimeEntry
 from .version import APP_VERSION
 from .widgets import RoundedButton, ScrollArea, show_saved_toast
@@ -560,10 +560,20 @@ class ProjectPanel(tk.Frame):
 # Settings panel (Display Name, work hours, theme)
 # ---------------------------------------------------------------------------
 class SettingsPanel(tk.Frame):
-    def __init__(self, master, family: str, on_close: Callable[[], None]):
+    def __init__(self, master, family: str, on_close: Callable[[], None],
+                 has_stored_token: Callable[[], bool], on_save_token: Callable[[str], bool],
+                 on_clear_token: Callable[[], None]):
         super().__init__(master, bg=theme.PANEL_BG)
         self.family = family
         self.on_close = on_close
+        # The API Token field's three standalone actions (see the "Save
+        # API Token"/"Clear stored token" buttons and _refresh_jira_token_
+        # field below) go straight through these rather than the big
+        # on_save round trip -- same reasoning as BackupPanel's on_backup/
+        # on_restore: this panel never holds a Database reference itself.
+        self.has_stored_token = has_stored_token
+        self.on_save_token = on_save_token
+        self.on_clear_token = on_clear_token
         self.on_save: Optional[Callable[[str, str, int, int, bool, str, str, str], None]] = None
         self.theme_var = tk.StringVar(value=theme.DEFAULT_THEME_ID)
         self.theme_swatch_canvases: Dict[str, tk.Canvas] = {}
@@ -804,8 +814,15 @@ class SettingsPanel(tk.Frame):
         get_token_label.pack(side="left")
         get_token_label.bind("<Button-1>", lambda e: webbrowser.open(
             "https://id.atlassian.com/manage-profile/security/api-tokens"))
+        # A dedicated save just for this one field -- paste a token and
+        # click this without needing the big Save button below (which
+        # also touches Display Name/Work Hours/Theme and rebuilds the
+        # whole window). See _save_jira_token for what counts as "a real
+        # new token was typed" here, same rule the big Save uses.
+        RoundedButton(token_btns, text="Save API Token", style="Secondary.TButton",
+                      command=self._save_jira_token).pack(side="left")
         RoundedButton(token_btns, text="Clear stored token", style="Secondary.TButton",
-                      command=self._clear_jira_token).pack(side="left", padx=(16, 0))
+                      command=self._clear_jira_token).pack(side="left", padx=(8, 0))
 
         # row=10 (not row=2) so this sits below the Jira Cloud Upload
         # section above rather than colliding with its row=2 heading --
@@ -1008,17 +1025,7 @@ class SettingsPanel(tk.Frame):
                 "Invalid Work Hours",
                 "The “To” time has to be later than the “From” time.")
             return
-        # A left-alone field is either still showing _STORED_TOKEN_MASK
-        # (never focused) or was cleared by _on_jira_token_focus_in but
-        # never typed into again -- both mean "no change", same as
-        # leaving it blank always has. Only a value the person actually
-        # typed counts as a real new token; see jira_client.store_api_token
-        # / main_window.py's on_save for what happens with each case.
-        raw_token = self.jira_api_token_var.get()
-        if self._token_field_is_placeholder or raw_token == _STORED_TOKEN_MASK:
-            new_token = ""
-        else:
-            new_token = raw_token
+        new_token = self._resolve_typed_token()
         self.on_save(
             self.display_name_var.get().strip(),
             self.theme_var.get(),
@@ -1050,32 +1057,57 @@ class SettingsPanel(tk.Frame):
             self.jira_api_token_var.set("")
             self._token_field_is_placeholder = False
 
+    def _resolve_typed_token(self) -> str:
+        """A left-alone field is either still showing _STORED_TOKEN_MASK
+        (never focused) or was cleared by _on_jira_token_focus_in but
+        never typed into again -- both mean "no change", same as leaving
+        it blank always has. Only a value the person actually typed
+        counts as a real new token; used by both the big Save (below) and
+        the dedicated "Save API Token" button (_save_jira_token)."""
+        raw_token = self.jira_api_token_var.get()
+        if self._token_field_is_placeholder or raw_token == _STORED_TOKEN_MASK:
+            return ""
+        return raw_token
+
+    def _save_jira_token(self):
+        new_token = self._resolve_typed_token()
+        if not new_token:
+            messagebox.showinfo("Nothing to save", "Paste a token into the field first.")
+            return
+        # on_save_token reports whether it actually saved -- e.g.
+        # main_window.py's _save_jira_api_token returns False (after its
+        # own warning dialog) rather than raising, when the machine can't
+        # encrypt right now. Skip the "saved" toast in that case; it
+        # already told the user what happened.
+        if self.on_save_token(new_token):
+            self._refresh_jira_token_field()
+            show_saved_toast(self)
+
     def _clear_jira_token(self):
-        if not jira_client.has_stored_api_token():
+        if not self.has_stored_token():
             messagebox.showinfo("No token stored", "There's no Jira API token currently stored.")
             return
         if not messagebox.askyesno(
                 "Clear stored Jira API token",
-                "This removes the saved API token from your OS keychain. You'll need to "
-                "paste it again (or a new one) before \u201cUpload to Jira\u201d will work. "
-                "Continue?"):
+                "You'll need to paste it again (or a new one) before \u201cUpload to Jira\u201d "
+                "will work. Continue?"):
             return
-        jira_client.delete_api_token()
+        self.on_clear_token()
         self._refresh_jira_token_field()
 
     def _refresh_jira_token_field(self):
         """Syncs both the API Token entry and the status text underneath
-        it to what's actually in the keychain right now -- called after
-        load(), save, cancel, and clearing the stored token, so the field
-        never shows stale state from before any of those. See
+        it to whether a token is actually stored right now -- called
+        after load(), save, cancel, and clearing the stored token, so the
+        field never shows stale state from before any of those. See
         _STORED_TOKEN_MASK's own comment for why the entry itself (not
         just this status text) reflects "a token is stored"."""
-        if jira_client.has_stored_api_token():
+        if self.has_stored_token():
             self.jira_api_token_var.set(_STORED_TOKEN_MASK)
             self._token_field_is_placeholder = True
             self.jira_token_status_label.config(
-                text="A token is stored in your OS keychain. Click the field and type a new "
-                     "one to replace it, or leave it as-is to keep it.")
+                text="A token is stored. Click the field and type a new one to replace it, "
+                     "or leave it as-is to keep it.")
         else:
             self.jira_api_token_var.set("")
             self._token_field_is_placeholder = False

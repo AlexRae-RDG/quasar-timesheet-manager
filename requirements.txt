@@ -5,20 +5,15 @@
 # every other feature, including the original "Export to Jira CSV" button,
 # still needs nothing beyond the standard library.
 #
-# requests -- makes the actual Jira Cloud REST API calls.
-# keyring  -- stores the Jira API token in the OS's own keychain (macOS
-#             Keychain, Windows Credential Locker, or Secret Service/
-#             KWallet on Linux) rather than in this app's own plaintext
-#             settings database, since unlike theme/display-name/work-hours
-#             it's a real secret. If installing keyring on Linux ever
-#             fails, see https://pypi.org/project/keyring/ for which
-#             system package (e.g. python3-secretstorage, gnome-keyring)
-#             your desktop environment needs for a backend to be available
-#             at all -- without one, Settings' Jira Cloud section will
-#             show a "couldn't reach your OS keychain" message instead of
-#             letting the token be saved.
+# requests     -- makes the actual Jira Cloud REST API calls.
+# cryptography -- encrypts the Jira API token at rest in this app's own
+#                 local database (see jira_client.py's own comment for
+#                 the full reasoning). PyInstaller bundles this one via
+#                 its own built-in hook, unlike the old `keyring`
+#                 dependency this setup used to need -- no hiddenimports
+#                 workaround required in packaging/free_timesheet.spec.
 requests>=2.31
-keyring>=24.0
+cryptography>=42.0
 #
 # On Windows and macOS, Tkinter ships with the standard python.org
 # installer, so there is nothing to install for it.

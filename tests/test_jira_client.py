@@ -1,18 +1,21 @@
 """Standalone tests for app.jira_client -- no Tkinter required. requests
-and keyring calls are mocked throughout; nothing here makes a real network
-call or touches a real OS keychain."""
+calls are mocked throughout; nothing here makes a real network call. Token
+storage (TestApiTokenStorage below) goes through a real temp-file Database,
+same as test_db.py -- see jira_client.py's own comment for why the token
+lives there now instead of the OS keychain."""
 import os
 import re
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import keyring.errors
 import requests
 
 from app import jira_client
+from app.db import Database
 from app.models import TimeEntry
 
 
@@ -125,32 +128,81 @@ class TestUploadEntries(unittest.TestCase):
 
 
 class TestApiTokenStorage(unittest.TestCase):
-    @patch("app.jira_client.keyring.set_password")
-    def test_store_api_token_uses_keyring(self, mock_set):
-        jira_client.store_api_token("secret-token")
-        mock_set.assert_called_once_with(
-            jira_client._KEYRING_SERVICE, jira_client._KEYRING_USERNAME, "secret-token")
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.db = Database(os.path.join(self.tmpdir, "test.db"))
 
-    @patch("app.jira_client.keyring.set_password")
-    def test_store_api_token_raises_keyring_unavailable_when_no_backend(self, mock_set):
-        mock_set.side_effect = keyring.errors.NoKeyringError("no backend")
-        with self.assertRaises(jira_client.KeyringUnavailable):
-            jira_client.store_api_token("secret-token")
+    def tearDown(self):
+        self.db.close()
 
-    @patch("app.jira_client.keyring.get_password", return_value="secret-token")
-    def test_get_api_token_returns_stored_value(self, mock_get):
-        self.assertEqual(jira_client.get_api_token(), "secret-token")
-        self.assertTrue(jira_client.has_stored_api_token())
+    def test_get_api_token_returns_none_when_nothing_stored(self):
+        self.assertIsNone(jira_client.get_api_token(self.db))
+        self.assertFalse(jira_client.has_stored_api_token(self.db))
 
-    @patch("app.jira_client.keyring.get_password", side_effect=keyring.errors.KeyringError("boom"))
-    def test_get_api_token_returns_none_when_backend_errors(self, mock_get):
-        self.assertIsNone(jira_client.get_api_token())
-        self.assertFalse(jira_client.has_stored_api_token())
+    def test_store_and_get_api_token_round_trips(self):
+        jira_client.store_api_token(self.db, "secret-token")
+        self.assertEqual(jira_client.get_api_token(self.db), "secret-token")
+        self.assertTrue(jira_client.has_stored_api_token(self.db))
 
-    @patch("app.jira_client.keyring.delete_password")
-    def test_delete_api_token_swallows_keyring_errors(self, mock_delete):
-        mock_delete.side_effect = keyring.errors.PasswordDeleteError("nothing to delete")
-        jira_client.delete_api_token()  # must not raise
+    def test_store_api_token_encrypts_at_rest(self):
+        # The `settings` row itself never holds the plain token -- only
+        # the tagged, Fernet-encrypted form (see jira_client.py's own
+        # comment for why: Database.backup_to() only ever sees this row,
+        # not the separate key file, so a shared backup stays unreadable).
+        jira_client.store_api_token(self.db, "secret-token")
+        stored = self.db.get_setting("jira_api_token")
+        self.assertTrue(stored.startswith(jira_client._ENCRYPTED_PREFIX))
+        self.assertNotIn("secret-token", stored)
+
+    def test_key_file_lives_next_to_the_database_not_inside_it(self):
+        jira_client.store_api_token(self.db, "secret-token")
+        key_path = jira_client._key_path(self.db)
+        self.assertTrue(os.path.exists(key_path))
+        self.assertEqual(os.path.dirname(key_path), os.path.dirname(self.db.path))
+
+    def test_a_restored_backup_without_the_key_file_cannot_be_decrypted(self):
+        # The whole point (see jira_client.py's comment): backup_to()
+        # snapshots the database only, never the sibling key file, so
+        # restoring that snapshot onto a database with a *different* key
+        # (a different machine, or just a fresh key file) can't recover
+        # the plaintext token -- it should read back as "no token" rather
+        # than garbage passed on to a Jira API call.
+        jira_client.store_api_token(self.db, "secret-token")
+        backup_path = os.path.join(self.tmpdir, "backup.db")
+        self.db.backup_to(backup_path)
+
+        other_dir = tempfile.mkdtemp()
+        restored_path = os.path.join(other_dir, "restored.db")
+        os.rename(backup_path, restored_path)
+        restored_db = Database(restored_path)
+        try:
+            self.assertIsNone(jira_client.get_api_token(restored_db))
+            self.assertFalse(jira_client.has_stored_api_token(restored_db))
+        finally:
+            restored_db.close()
+
+    def test_get_api_token_upgrades_a_legacy_plaintext_value_in_place(self):
+        # A real value from the version of this app that stored tokens
+        # unencrypted -- no _ENCRYPTED_PREFIX -- written directly the way
+        # that version's store_api_token did, to simulate an existing
+        # user's already-saved token rather than going through today's
+        # (encrypting) store_api_token.
+        self.db.set_setting("jira_api_token", "legacy-plaintext-token")
+        self.assertEqual(jira_client.get_api_token(self.db), "legacy-plaintext-token")
+        # And it's upgraded by that read, with no action from the user.
+        stored = self.db.get_setting("jira_api_token")
+        self.assertTrue(stored.startswith(jira_client._ENCRYPTED_PREFIX))
+        self.assertEqual(jira_client.get_api_token(self.db), "legacy-plaintext-token")
+
+    def test_delete_api_token_clears_it(self):
+        jira_client.store_api_token(self.db, "secret-token")
+        jira_client.delete_api_token(self.db)
+        self.assertIsNone(jira_client.get_api_token(self.db))
+        self.assertFalse(jira_client.has_stored_api_token(self.db))
+
+    def test_delete_api_token_is_safe_when_nothing_stored(self):
+        jira_client.delete_api_token(self.db)  # must not raise
+        self.assertFalse(jira_client.has_stored_api_token(self.db))
 
 
 if __name__ == "__main__":

@@ -613,7 +613,18 @@ class MainWindow(tk.Tk):
         # your other work" feel as before, minus actually disappearing.
         self.settings_panel = SettingsPanel(
             self.notebook, family=self.family,
-            on_close=lambda: self.notebook.select(0))
+            on_close=lambda: self.notebook.select(0),
+            # The API Token field's own three actions all touch storage
+            # directly (jira_client.py, backed by self.db -- see its own
+            # comment for why that's an encrypted local-database write now
+            # instead of the OS keychain) without going through the bigger
+            # on_save/_load_settings_panel round trip below: has_stored_token
+            # drives the placeholder-vs-empty display, on_save_token backs
+            # the dedicated "Save API Token" button next to the field, and
+            # on_clear_token backs "Clear stored token".
+            has_stored_token=lambda: jira_client.has_stored_api_token(self.db),
+            on_save_token=self._save_jira_api_token,
+            on_clear_token=lambda: jira_client.delete_api_token(self.db))
         self.notebook.add(self.settings_panel, text="Settings")
         self._all_tabs.append((self.settings_panel, "Settings"))
         self._load_settings_panel()
@@ -931,21 +942,22 @@ class MainWindow(tk.Tk):
             self.db.set_setting("header_style", new_header_style)
             self.db.set_setting("jira_site_url", new_jira_site_url)
             self.db.set_setting("jira_email", new_jira_email)
-            # A blank API Token field means "leave whatever's already in
-            # the keychain alone" (see SettingsPanel's own comment on that
+            # A blank API Token field means "leave whatever's already
+            # stored alone" (see SettingsPanel's own comment on that
             # field) -- only a non-blank entry ever touches the stored
             # token, so re-saving the rest of Settings never accidentally
             # wipes it.
             if new_jira_api_token:
                 try:
-                    jira_client.store_api_token(new_jira_api_token)
-                except jira_client.KeyringUnavailable as exc:
+                    jira_client.store_api_token(self.db, new_jira_api_token)
+                except jira_client.EncryptionUnavailable as exc:
                     messagebox.showwarning(
-                        "Couldn't reach your OS keychain",
+                        "Couldn't save the Jira API token",
                         "Everything else in Settings was saved, but the Jira API token "
                         "could not be stored:\n\n" + str(exc) +
-                        "\n\nSee requirements.txt for what your OS needs for a keychain "
-                        "backend to be available, then try entering the token again.")
+                        "\n\nRun `pip install -r requirements.txt` and try entering the "
+                        "token again -- this only happens running from source with "
+                        "dependencies missing; a packaged build always has this bundled.")
 
             # Always persist the Custom palette's current seed colors,
             # whether or not "custom" is the theme actually being saved --
@@ -994,6 +1006,27 @@ class MainWindow(tk.Tk):
                                   current_work_end_hour, current_show_weekends,
                                   current_show_timer_bar, current_header_style,
                                   current_jira_site_url, current_jira_email, on_save)
+
+    def _save_jira_api_token(self, token: str) -> bool:
+        """Backs the dedicated "Save API Token" button (see
+        _load_settings_panel's SettingsPanel construction) -- a named
+        method rather than an inline lambda so EncryptionUnavailable gets
+        the same messagebox treatment here as it does inside on_save
+        above, instead of surfacing as an unhandled Tk callback error.
+        Returns whether it actually saved, so panels.py's
+        _save_jira_token knows not to show a "saved" toast over a
+        warning dialog when it didn't."""
+        try:
+            jira_client.store_api_token(self.db, token)
+            return True
+        except jira_client.EncryptionUnavailable as exc:
+            messagebox.showwarning(
+                "Couldn't save the Jira API token",
+                "The token could not be stored:\n\n" + str(exc) +
+                "\n\nRun `pip install -r requirements.txt` and try again -- this only "
+                "happens running from source with dependencies missing; a packaged build "
+                "always has this bundled.")
+            return False
 
     def _open_settings_dialog(self):
         # Settings is a permanent tab now (see _build_body) -- this just
@@ -1097,7 +1130,7 @@ class MainWindow(tk.Tk):
     def _do_jira_upload(self, start_date: str, end_date: str):
         site_url = self.db.get_setting("jira_site_url", "") or ""
         email = self.db.get_setting("jira_email", "") or ""
-        api_token = jira_client.get_api_token() or ""
+        api_token = jira_client.get_api_token(self.db) or ""
         if not (site_url and email and api_token):
             messagebox.showwarning(
                 "Jira Cloud not set up",
