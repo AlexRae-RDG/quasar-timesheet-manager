@@ -61,17 +61,6 @@ jobs:
           name: QUASAR-Timesheet-Manager-macOS
           path: QUASAR-Timesheet-Manager-macOS.zip
 
-      - name: Upload to SharePoint (Teams channel file)
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'  # TEMP: also run on manual dispatch for testing -- revert to tag-only once confirmed working
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          SP_SITE_HOSTNAME: ${{ secrets.SP_SITE_HOSTNAME }}
-          SP_SITE_PATH: ${{ secrets.SP_SITE_PATH }}
-          SP_FOLDER_PATH: ${{ secrets.SP_FOLDER_PATH }}
-        run: python3 packaging/upload_to_sharepoint.py QUASAR-Timesheet-Manager-macOS.zip
-
   build-windows:
     runs-on: windows-latest
     steps:
@@ -104,15 +93,3 @@ jobs:
         with:
           name: QUASAR-Timesheet-Manager-Windows
           path: QUASAR-Timesheet-Manager-Windows.zip
-
-      - name: Upload to SharePoint (Teams channel file)
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'  # TEMP: also run on manual dispatch for testing -- revert to tag-only once confirmed working
-        shell: pwsh
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          SP_SITE_HOSTNAME: ${{ secrets.SP_SITE_HOSTNAME }}
-          SP_SITE_PATH: ${{ secrets.SP_SITE_PATH }}
-          SP_FOLDER_PATH: ${{ secrets.SP_FOLDER_PATH }}
-        run: python packaging\upload_to_sharepoint.py QUASAR-Timesheet-Manager-Windows.zip
