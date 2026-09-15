@@ -61,6 +61,20 @@ jobs:
           name: QUASAR-Timesheet-Manager-macOS
           path: QUASAR-Timesheet-Manager-macOS.zip
 
+      - name: Email build to Teams channel
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'  # TEMP: also run on manual dispatch for testing -- revert to tag-only once confirmed working
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: QUASAR Release Bot <${{ secrets.MAIL_USERNAME }}>
+          to: ${{ secrets.TEAMS_CHANNEL_EMAIL }}
+          subject: "QUASAR Timesheet Manager ${{ github.ref_name }} -- macOS build"
+          body: "New release ${{ github.ref_name }} attached (macOS build). Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          attachments: QUASAR-Timesheet-Manager-macOS.zip
+
   build-windows:
     runs-on: windows-latest
     steps:
@@ -93,3 +107,17 @@ jobs:
         with:
           name: QUASAR-Timesheet-Manager-Windows
           path: QUASAR-Timesheet-Manager-Windows.zip
+
+      - name: Email build to Teams channel
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'  # TEMP: also run on manual dispatch for testing -- revert to tag-only once confirmed working
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: QUASAR Release Bot <${{ secrets.MAIL_USERNAME }}>
+          to: ${{ secrets.TEAMS_CHANNEL_EMAIL }}
+          subject: "QUASAR Timesheet Manager ${{ github.ref_name }} -- Windows build"
+          body: "New release ${{ github.ref_name }} attached (Windows build). Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          attachments: QUASAR-Timesheet-Manager-Windows.zip
