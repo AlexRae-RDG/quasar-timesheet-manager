@@ -15,6 +15,7 @@ used from ProjectPanel) -- that's the operating system's own dialog, not
 one of ours, positioned by the OS the same way a file-open dialog is, so it
 isn't affected by the pop-up-window bug this refactor works around.
 """
+import sys
 import tkinter as tk
 import webbrowser
 from datetime import date, datetime, timedelta
@@ -998,14 +999,35 @@ class SettingsPanel(tk.Frame):
                  fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
                  font=(self.family, 9)).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 20))
 
+        # Windows only -- see _disable_windows_dpi_virtualization in
+        # main_window.py for the full story. Off (default, unchecked)
+        # keeps the app pinned to the fixed 100% baseline every screen
+        # here was laid out against, which is what actually fixes the
+        # blurry/oversized rendering on the 125-150%-scaled work laptops.
+        # On lets the app scale up with Windows' own display setting
+        # instead, for anyone who'd rather have that than a fixed size.
+        # Not shown on macOS, where this never applied in the first place.
+        self.match_scaling_var = tk.BooleanVar(value=False)
+        if sys.platform == "win32":
+            ttk.Checkbutton(left, text="Match Windows display scaling",
+                             variable=self.match_scaling_var, style="Big.TCheckbutton").grid(
+                row=9, column=0, columnspan=2, sticky="w", pady=(0, 2))
+            tk.Label(left, text="Off (default) keeps the app a fixed size, matching how it "
+                                "looks at 100% -- recommended, since every screen here was "
+                                "designed against that baseline. Turn on to let it scale up "
+                                "with your Windows display setting instead. Takes effect the "
+                                "next time you open the app.",
+                     fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
+                     font=(self.family, 9)).grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 20))
+
         ttk.Label(left, text="Heading", style="Heading.TLabel").grid(
-            row=9, column=0, columnspan=2, sticky="w", pady=(0, 6))
+            row=11, column=0, columnspan=2, sticky="w", pady=(0, 6))
         tk.Label(left, text="Standard shows the full title bar. Compact shrinks it. Hidden "
                             "removes it -- the calendar gets that space back either way.",
                  fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
-                 font=(self.family, 9)).grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 8))
+                 font=(self.family, 9)).grid(row=12, column=0, columnspan=2, sticky="w", pady=(0, 8))
         self.header_style_row = tk.Frame(left, bg=theme.PANEL_BG)
-        self.header_style_row.grid(row=11, column=0, columnspan=2, sticky="w", pady=(0, 28))
+        self.header_style_row.grid(row=13, column=0, columnspan=2, sticky="w", pady=(0, 28))
         self.header_style_choice = "standard"
         self.header_style_buttons: Dict[str, RoundedButton] = {}
         for key, label in (("standard", "Standard"), ("compact", "Compact"), ("hidden", "Hidden")):
@@ -1015,14 +1037,14 @@ class SettingsPanel(tk.Frame):
             self.header_style_buttons[key] = btn
 
         ttk.Label(left, text="Theme", style="Heading.TLabel").grid(
-            row=12, column=0, columnspan=2, sticky="w", pady=(0, 6))
+            row=14, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self.theme_description_label = tk.Label(
             left, text="", fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left",
             wraplength=480, font=(self.family, 9))
-        self.theme_description_label.grid(row=13, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        self.theme_description_label.grid(row=15, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         self.theme_grid = ttk.Frame(left)
-        self.theme_grid.grid(row=14, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        self.theme_grid.grid(row=16, column=0, columnspan=2, sticky="w", pady=(0, 12))
         self._build_theme_grid()
 
         # Only visible while "Custom" is the selected card above (toggled
@@ -1030,7 +1052,7 @@ class SettingsPanel(tk.Frame):
         # remembers the row/col/sticky/pady for automatically -- no need
         # to repeat them at toggle time).
         self.custom_controls_frame = tk.Frame(left, bg=theme.PANEL_BG)
-        self.custom_controls_frame.grid(row=15, column=0, columnspan=2, sticky="w", pady=(0, 16))
+        self.custom_controls_frame.grid(row=17, column=0, columnspan=2, sticky="w", pady=(0, 16))
         self._build_custom_controls()
 
         ttk.Label(right, text="Keyboard Shortcuts", style="Heading.TLabel").grid(
@@ -1318,8 +1340,8 @@ class SettingsPanel(tk.Frame):
 
     def load(self, display_name: str, current_theme_id: str, work_start_hour: int,
               work_end_hour: int, show_weekends: bool, show_timer_bar: bool, header_style: str,
-              jira_site_url: str, jira_email: str,
-              on_save: Callable[[str, str, int, int, bool, bool, str, str, str, str], None]):
+              jira_site_url: str, jira_email: str, match_windows_scaling: bool,
+              on_save: Callable[[str, str, int, int, bool, bool, str, str, str, str, bool], None]):
         self.on_save = on_save
         self.display_name_var.set(display_name)
         self.theme_var.set(theme.resolve_theme_id(current_theme_id))
@@ -1339,6 +1361,7 @@ class SettingsPanel(tk.Frame):
         self.jira_site_url_var.set(jira_site_url)
         self.jira_email_var.set(jira_email)
         self._refresh_jira_token_field()
+        self.match_scaling_var.set(match_windows_scaling)
 
     def _save(self):
         assert self.on_save is not None
@@ -1363,6 +1386,7 @@ class SettingsPanel(tk.Frame):
             self.jira_site_url_var.get().strip(),
             self.jira_email_var.get().strip(),
             new_token,  # blank = "keep whatever's already stored"
+            self.match_scaling_var.get(),
         )
         self._refresh_jira_token_field()
         show_saved_toast(self)

@@ -140,6 +140,12 @@ class MainWindow(tk.Tk):
         _disable_windows_dpi_virtualization()
         super().__init__()
         self.title("QUASAR Timesheet Manager")
+        # Instantiated here, before the scaling decision just below, so
+        # that decision can read the user's own "Match Windows display
+        # scaling" preference (Settings tab) rather than always forcing
+        # the fixed baseline -- Database.__init__ has no Tk dependency,
+        # so this is safe to do this early.
+        self.db = Database()
         # Pin Tk's own layout scale to a fixed 96-DPI ("100%") baseline,
         # regardless of what the display actually reports -- every
         # geometry()/font size/widget size in this app was designed and
@@ -148,15 +154,16 @@ class MainWindow(tk.Tk):
         # this is needed (in short: without it, Tk auto-scales
         # everything back up to match the monitor's real DPI once
         # Windows itself stops doing that via its own bitmap stretch,
-        # which is the opposite of what this fix is for).
-        if sys.platform == "win32":
+        # which is the opposite of what this fix is for). Skipped when
+        # the user has opted into "Match Windows display scaling" in
+        # Settings (default off, i.e. the fixed baseline applies).
+        match_windows_scaling = self.db.get_setting("match_windows_display_scaling", "") == "1"
+        if sys.platform == "win32" and not match_windows_scaling:
             self.tk.call("tk", "scaling", 96 / 72)
         self.geometry("1240x780")
         self.minsize(1000, 640)
         self._maximize_on_start()
         self._log_startup_diagnostics()
-
-        self.db = Database()
 
         # First-run setup ("Welcome" tab, app/onboarding_panel.py) --
         # shown once, automatically, on a genuinely fresh install: nothing
@@ -1310,11 +1317,14 @@ class MainWindow(tk.Tk):
             "jira_site_url", config.DEFAULT_JIRA_SITE_URL) or ""
         current_jira_email = self.db.get_setting(
             "jira_email", config.DEFAULT_JIRA_EMAIL_TEMPLATE) or ""
+        current_match_windows_scaling = (
+            self.db.get_setting("match_windows_display_scaling", "") == "1")
 
         def on_save(new_display_name, new_theme_id,
                     new_work_start_hour, new_work_end_hour, new_show_weekends,
                     new_show_timer_bar, new_header_style,
-                    new_jira_site_url, new_jira_email, new_jira_api_token):
+                    new_jira_site_url, new_jira_email, new_jira_api_token,
+                    new_match_windows_scaling):
             self.db.set_setting("jira_display_name", new_display_name)
             self.db.set_setting("work_start_hour", str(new_work_start_hour))
             self.db.set_setting("work_end_hour", str(new_work_end_hour))
@@ -1323,6 +1333,8 @@ class MainWindow(tk.Tk):
             self.db.set_setting("header_style", new_header_style)
             self.db.set_setting("jira_site_url", new_jira_site_url)
             self.db.set_setting("jira_email", new_jira_email)
+            self.db.set_setting("match_windows_display_scaling",
+                                 "1" if new_match_windows_scaling else "")
             # A blank API Token field means "leave whatever's already
             # stored alone" (see SettingsPanel's own comment on that
             # field) -- only a non-blank entry ever touches the stored
@@ -1403,7 +1415,8 @@ class MainWindow(tk.Tk):
         self.settings_panel.load(display_name, current_theme_id, current_work_start_hour,
                                   current_work_end_hour, current_show_weekends,
                                   current_show_timer_bar, current_header_style,
-                                  current_jira_site_url, current_jira_email, on_save)
+                                  current_jira_site_url, current_jira_email,
+                                  current_match_windows_scaling, on_save)
 
     def _save_jira_api_token(self, token: str, site_url: str, email: str) -> bool:
         """Backs the dedicated "Save API Token" button (see
