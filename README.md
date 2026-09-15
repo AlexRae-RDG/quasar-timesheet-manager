@@ -48,94 +48,51 @@ single SQLite file on your machine.
    alternatives under Settings → Manual Import need no setup at all.
 
 On Linux, or if you'd rather run it from source, see "Running from
-source" below.
+source" under "For developers" below.
 
-## Updating the app
+### Getting a Jira API token
 
-**If you're using a downloaded build (most people):** the app checks for
-a newer release a few seconds after launch and, if one's out, offers a
-popup with a one-click **Yes** — it downloads the new version, swaps it
-in, and relaunches automatically, no unzipping or dragging required.
-Choosing "No" won't ask again until something newer than that ships;
-"Cancel" asks again next launch.
+The **Welcome** screen prompts for this directly on first launch (see
+above), with a **"Get an API token"** link right there; **Settings →
+Jira Cloud Upload** has the same link if you skipped it then, or need a
+new token later.
 
-If that popup fails for any reason (no internet, a download hiccup),
-it falls back to just opening the Releases page in your browser instead
-of leaving you stuck — at that point, or if you'd rather update by hand
-anyway, go back to the [Releases](../../releases) page, download the
-newest zip, and repeat the install steps above over your old copy. Your
-data isn't touched either way — it lives separately (see below), not
-inside the app itself.
+1. Click **"Get an API token"** — in the **Welcome** screen, or in
+   **Settings → Jira Cloud Upload** (or go straight to
+   `id.atlassian.com/manage-profile/security/api-tokens` in your
+   browser). Log in with your `raildeliverygroup.atlassian.net`
+   credentials if asked.
+2. Click **Create API token**.
+3. Give it a **label** — this is just for your own reference if you ever
+   need to find or revoke it later, e.g. `QUASAR Timesheet Manager`.
+4. Click **Create**. Atlassian shows you the token **once** — copy it
+   immediately; you can't come back and view it again later, only revoke
+   it and create a new one.
+5. Paste it into the **API Token** field and save it — **Connect and
+   import my QDMs** in the **Welcome** screen, or **Save API Token** (or
+   the regular **Save**) in **Settings**. Either way it runs a quick
+   connection test and confirms it worked before you move on.
 
-**If you're working from this source folder (developers):**
-1. `git pull` to get the latest code.
-2. **macOS:** double-click **`Update and Reinstall App.command`** at the
-   repo root — it rebuilds the app from the current source and reinstalls
-   it over the copy in `/Applications`, in one double-click (still opens a
-   Terminal window since a rebuild needs one, but there's nothing to
-   type).
-3. **Windows/Linux:** re-run the matching build script under `packaging/`
-   (see "Packaging as a native app" below) if you're using a packaged
-   build, or just re-launch via `Start Free Timesheet.*` / `python3 app.py`
-   if you're running from source — no rebuild needed for that.
+The token is stored — encrypted — in this app's own local database,
+right alongside your timesheet data and the rest of Settings, not your
+operating system's keychain. Earlier versions used the OS keychain
+instead, but an unsigned, frequently-rebuilt desktop app isn't a stable
+"identity" as far as a keychain is concerned, so entries could silently
+stop resolving after a rebuild or reinstall, meaning a trip back through
+this whole walkthrough to generate a new one.
 
-Your data is stored at `~/.jira_timesheet/timesheet.db` (SQLite) no matter
-how you run the app — updating never touches it. Delete that file to
-reset to a clean slate. An older database — including from before
-Activity/Project existed as separate concepts — is upgraded in place
-automatically the first time you open it with a newer version.
-
-## Running from source
-
-Requires Python 3.8+ (already includes Tkinter on Windows/macOS).
-
-Double-click the launcher for your OS — no terminal, nothing to type:
-
-- **Windows:** `Start Free Timesheet.bat`
-- **macOS:** `Start Free Timesheet.command` — first run only, Gatekeeper
-  blocks it as downloaded-from-the-internet. If double-clicking only
-  offers **Done**/**Move to Bin** with no **Open**, go to **System
-  Settings → Privacy & Security**, click **Open Anyway** next to the
-  blocked-file message, then double-click the file again and confirm
-  **Open**. (Or, one Terminal command instead:
-  `xattr -d com.apple.quarantine "Start Free Timesheet.command"` from the
-  extracted folder — removes the block permanently.)
-- **Linux:** `Start Free Timesheet.sh` (first time, right-click →
-  Properties → Permissions → "Allow executing file as program").
-  `Free Timesheet.desktop` also works as a launcher for file managers that
-  support it.
-
-Each of these runs `python3 app.py`. If a launcher doesn't work, the
-fallback is:
-
-```bash
-python3 app.py
-```
-
-**Linux only:** Tkinter is a separate OS package. If you see
-`ModuleNotFoundError: No module named 'tkinter'`, install it first:
-
-```bash
-sudo apt install python3-tk      # Debian/Ubuntu
-sudo dnf install python3-tkinter # Fedora
-sudo pacman -S tk                # Arch
-```
-
-**Optional, for the "Upload to JIRA via API" and "Import QDM via API"
-buttons only:** everything else in this app (including the CSV-based
-"Export to Jira CSV"/"Export QDMs from JIRA"/"Import QDM's from JIRA…"
-under Settings → Manual Import) runs with just the standard library.
-Those two API-based buttons additionally need the two packages listed
-in `requirements.txt`:
-
-```bash
-pip install -r requirements.txt
-```
-
-Skipping this is fine if you don't use those buttons — the app still
-launches and runs normally; "Upload to JIRA via API" and "Import QDM
-via API" just tell you what's missing if you click them without
-installing these first.
+The decryption key lives in its own separate file next to the database
+(`.jira_token.key` in the app's data folder) rather than inside it, which
+is what makes **File → Backup & Restore…** safe to use: a backup file is
+a straight copy of the database only, so it carries nothing but
+unreadable ciphertext — the key never travels with it. That protects
+against the realistic risk (a backup shared, emailed, or dropped in a
+synced folder); it doesn't protect against someone with access to both
+files on this same machine, which is the level an OS keychain adds on
+top and this doesn't. Treat the token like a password regardless — it
+acts as your full Jira identity for API calls made on your behalf. To
+revoke one, go back to the same Atlassian page and click **Revoke** next
+to its label, then generate and save a new one in the app.
 
 ## Using the app
 
@@ -222,27 +179,6 @@ focus)
   to keep its activities, which move into a catch-all **General**
   project, or delete them too — their time blocks are kept either way).
 
-## Naming: "Activity" vs. "Project" vs. "Jira Project"
-
-Three things could all reasonably be called "project," so to be explicit:
-
-- **Activity** — what you actually pick and log time against (e.g.
-  "Sprint Planning").
-- **Project** — the color-owning group an Activity belongs to (e.g.
-  "Client A"). Recoloring a Project recolors every Activity inside it.
-- **Jira Project** — the real Jira project your time exports *into*,
-  unrelated to either of the above. Fixed at "Quasar Delivery Management"
-  (and "Sub-task" as the Issue Type) for this app — override per-block
-  only in the rare case one genuinely needs to differ.
-
-The exported CSV's column header always reads **"Project"**, matching
-what Jira's importer expects — "Jira Project" is purely this app's
-internal naming, to avoid confusing it with its own Activity/Project
-concepts.
-
-(An older database — even one that named these concepts differently —
-upgrades automatically the first time you open it.)
-
 ## Importing QDMs from Jira
 
 Adding QDMs one at a time (**File → Add QDM**, or "+ Add QDM" in the
@@ -301,39 +237,6 @@ QDMs out of Jira differs.
 3. **Import All** creates them. Color still only ever comes from the
    Project each QDM lands in, same as adding one by hand.
 
-## Exporting to Jira
-
-**Settings → Manual Import → Export to Jira CSV…** opens an "Export" tab
-to pick the current week or a custom date range. Only blocks with a
-**Jira Issue Key** are exported (others are skipped, with a summary
-shown afterward). This is the manual, no-API-token alternative to
-"Uploading directly to Jira" below -- see that section for the
-automatic version, which stays on the main tab row since it doesn't
-need a file picker.
-
-Columns:
-```
-Project,Issue Type,Key,Date Started,Display Name,Time Spent (h),Work Description
-```
-
-Example row:
-```
-Quasar Delivery Management,Sub-task,QDM-5455,2026-07-24 00:00:00,Alex Rae,1h 00m,Photocard test condition analysis
-```
-
-- **Project**/**Issue Type** — from the block's own value if it sets one,
-  else fixed at "Quasar Delivery Management" / "Sub-task" (the only values
-  this app ever needs — no longer Settings-configurable, so there's
-  nothing to mistype).
-- **Key** — the block's Jira Issue Key. **Date Started** — the block's
-  date at midnight. **Display Name** — set in Settings. **Time Spent
-  (h)** — formatted like `1h 30m`. **Work Description** — the block's
-  notes, or its activity name if empty.
-
-Run a test import on a couple of rows first in Jira's CSV importer
-(**System → External System Import → CSV**) — Atlassian recommends this
-since exact behavior can differ slightly by Jira version.
-
 ## Uploading directly to Jira
 
 **File → Upload to JIRA via API…** (or the "Upload to JIRA via API"
@@ -367,8 +270,9 @@ anyone who skipped that screen or wants to change something later.
    stops touching the field, permanently. Either way, double check it
    before saving; it's a starting guess, and the connection test below
    will catch a wrong one.
-3. **API Token** — see "Getting a Jira API token" below for the full
-   walkthrough. Once one is saved, the field itself shows a row of dots
+3. **API Token** — see "Getting a Jira API token" under "Install and
+   get started" above for the full walkthrough. Once one is saved, the
+   field itself shows a row of dots
    (●●●●●●●●) rather than staying blank, so you can tell at a glance
    that a token is stored — that's a placeholder, not your actual token;
    click into the field to clear it and type a new one. Click **Save API
@@ -393,44 +297,6 @@ given computer, or while a field is still blank or unedited — once
 you've saved a real value of your own, whatever you last saved is what
 shows up from then on, never silently reset or overwritten.
 
-### Getting a Jira API token
-
-1. In the app, go to **Settings → Jira Cloud Upload** and click **"Get an
-   API token"** (or go straight to
-   `id.atlassian.com/manage-profile/security/api-tokens` in your
-   browser). Log in with your `raildeliverygroup.atlassian.net`
-   credentials if asked.
-2. Click **Create API token**.
-3. Give it a **label** — this is just for your own reference if you ever
-   need to find or revoke it later, e.g. `QUASAR Timesheet Manager`.
-4. Click **Create**. Atlassian shows you the token **once** — copy it
-   immediately; you can't come back and view it again later, only revoke
-   it and create a new one.
-5. Paste it into the **API Token** field in the app and click **Save API
-   Token** (or the regular **Save**) — either one runs the connection
-   test above and confirms it worked before you leave Settings.
-
-The token is stored — encrypted — in this app's own local database,
-right alongside your timesheet data and the rest of Settings, not your
-operating system's keychain. Earlier versions used the OS keychain
-instead, but an unsigned, frequently-rebuilt desktop app isn't a stable
-"identity" as far as a keychain is concerned, so entries could silently
-stop resolving after a rebuild or reinstall, meaning a trip back through
-this whole walkthrough to generate a new one.
-
-The decryption key lives in its own separate file next to the database
-(`.jira_token.key` in the app's data folder) rather than inside it, which
-is what makes **File → Backup & Restore…** safe to use: a backup file is
-a straight copy of the database only, so it carries nothing but
-unreadable ciphertext — the key never travels with it. That protects
-against the realistic risk (a backup shared, emailed, or dropped in a
-synced folder); it doesn't protect against someone with access to both
-files on this same machine, which is the level an OS keychain adds on
-top and this doesn't. Treat the token like a password regardless — it
-acts as your full Jira identity for API calls made on your behalf. To
-revoke one, go back to the same Atlassian page and click **Revoke** next
-to its label, then generate and save a new one in the app.
-
 **Using it**: pick a date range the same way as the CSV export. Only
 blocks with a Jira Issue Key are sent (others are skipped, same as CSV
 export). Every entry it successfully sends is marked as uploaded, so
@@ -444,11 +310,131 @@ uploaded doesn't automatically re-send it — there's no "update an
 existing Jira worklog" step, only "create a new one", so this app
 deliberately doesn't risk creating a duplicate over a small edit.
 
+## Exporting to Jira
+
+**Settings → Manual Import → Export to Jira CSV…** opens an "Export" tab
+to pick the current week or a custom date range. Only blocks with a
+**Jira Issue Key** are exported (others are skipped, with a summary
+shown afterward). This is the manual, no-API-token alternative to
+"Uploading directly to Jira" above -- see that section for the
+automatic version, which stays on the main tab row since it doesn't
+need a file picker.
+
+Columns:
+```
+Project,Issue Type,Key,Date Started,Display Name,Time Spent (h),Work Description
+```
+
+Example row:
+```
+Quasar Delivery Management,Sub-task,QDM-5455,2026-07-24 00:00:00,Alex Rae,1h 00m,Photocard test condition analysis
+```
+
+- **Project**/**Issue Type** — from the block's own value if it sets one,
+  else fixed at "Quasar Delivery Management" / "Sub-task" (the only values
+  this app ever needs — no longer Settings-configurable, so there's
+  nothing to mistype).
+- **Key** — the block's Jira Issue Key. **Date Started** — the block's
+  date at midnight. **Display Name** — set in Settings. **Time Spent
+  (h)** — formatted like `1h 30m`. **Work Description** — the block's
+  notes, or its activity name if empty.
+
+Run a test import on a couple of rows first in Jira's CSV importer
+(**System → External System Import → CSV**) — Atlassian recommends this
+since exact behavior can differ slightly by Jira version.
+
+## Updating the app
+
+**If you're using a downloaded build (most people):** the app checks for
+a newer release a few seconds after launch and, if one's out, offers a
+popup with a one-click **Yes** — it downloads the new version, swaps it
+in, and relaunches automatically, no unzipping or dragging required.
+Choosing "No" won't ask again until something newer than that ships;
+"Cancel" asks again next launch.
+
+If that popup fails for any reason (no internet, a download hiccup),
+it falls back to just opening the Releases page in your browser instead
+of leaving you stuck — at that point, or if you'd rather update by hand
+anyway, go back to the [Releases](../../releases) page, download the
+newest zip, and repeat the install steps above over your old copy. Your
+data isn't touched either way — it lives separately (see below), not
+inside the app itself.
+
+**If you're working from this source folder (developers):**
+1. `git pull` to get the latest code.
+2. **macOS:** double-click **`Update and Reinstall App.command`** at the
+   repo root — it rebuilds the app from the current source and reinstalls
+   it over the copy in `/Applications`, in one double-click (still opens a
+   Terminal window since a rebuild needs one, but there's nothing to
+   type).
+3. **Windows/Linux:** re-run the matching build script under `packaging/`
+   (see "Packaging as a native app" below) if you're using a packaged
+   build, or just re-launch via `Start Free Timesheet.*` / `python3 app.py`
+   if you're running from source — no rebuild needed for that.
+
+Your data is stored at `~/.jira_timesheet/timesheet.db` (SQLite) no matter
+how you run the app — updating never touches it. Delete that file to
+reset to a clean slate. An older database — including from before
+Activity/Project existed as separate concepts — is upgraded in place
+automatically the first time you open it with a newer version.
+
 ## For developers
 
 Internally, the source folder, launcher scripts, and data folder still
 use the project's original "Free Timesheet"/"jira_timesheet" naming; only
 the packaged app itself is branded "QUASAR Timesheet Manager".
+
+### Running from source
+
+Requires Python 3.8+ (already includes Tkinter on Windows/macOS).
+
+Double-click the launcher for your OS — no terminal, nothing to type:
+
+- **Windows:** `Start Free Timesheet.bat`
+- **macOS:** `Start Free Timesheet.command` — first run only, Gatekeeper
+  blocks it as downloaded-from-the-internet. If double-clicking only
+  offers **Done**/**Move to Bin** with no **Open**, go to **System
+  Settings → Privacy & Security**, click **Open Anyway** next to the
+  blocked-file message, then double-click the file again and confirm
+  **Open**. (Or, one Terminal command instead:
+  `xattr -d com.apple.quarantine "Start Free Timesheet.command"` from the
+  extracted folder — removes the block permanently.)
+- **Linux:** `Start Free Timesheet.sh` (first time, right-click →
+  Properties → Permissions → "Allow executing file as program").
+  `Free Timesheet.desktop` also works as a launcher for file managers that
+  support it.
+
+Each of these runs `python3 app.py`. If a launcher doesn't work, the
+fallback is:
+
+```bash
+python3 app.py
+```
+
+**Linux only:** Tkinter is a separate OS package. If you see
+`ModuleNotFoundError: No module named 'tkinter'`, install it first:
+
+```bash
+sudo apt install python3-tk      # Debian/Ubuntu
+sudo dnf install python3-tkinter # Fedora
+sudo pacman -S tk                # Arch
+```
+
+**Optional, for the "Upload to JIRA via API" and "Import QDM via API"
+buttons only:** everything else in this app (including the CSV-based
+"Export to Jira CSV"/"Export QDMs from JIRA"/"Import QDM's from JIRA…"
+under Settings → Manual Import) runs with just the standard library.
+Those two API-based buttons additionally need the two packages listed
+in `requirements.txt`:
+
+```bash
+pip install -r requirements.txt
+```
+
+Skipping this is fine if you don't use those buttons — the app still
+launches and runs normally; "Upload to JIRA via API" and "Import QDM
+via API" just tell you what's missing if you click them without
+installing these first.
 
 ### Project layout
 
