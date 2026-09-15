@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta
 from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import Callable, Dict, List, Optional, Union
 
-from . import config, theme
+from . import config, jira_csv_import, theme
 from .models import Activity, Project, TemplateEntry, TimeEntry
 from .version import APP_VERSION
 from .widgets import RoundedButton, ScrollArea, show_saved_toast
@@ -218,12 +218,24 @@ _NEW_PROJECT_OPTION = "+ New Project…"
 class ActivityPanel(tk.Frame):
     def __init__(self, master, family: str, on_close: Callable[[], None],
                  get_projects: Callable[[], List[Project]],
-                 create_project: Callable[[str], Project]):
+                 create_project: Callable[[str], Project],
+                 on_import_via_api: Optional[Callable[[], None]] = None):
         super().__init__(master, bg=theme.PANEL_BG)
         self.family = family
         self.on_close = on_close
         self.get_projects = get_projects
         self.create_project = create_project
+        # Optional -- lets the Add QDM screen also be the "fresh install,
+        # zero QDMs yet" starting point (see main_window.py's
+        # _open_jira_api_import) without every other caller needing to
+        # know or care about the Jira import feature. The CSV-based
+        # manual alternatives (export a filtered Jira list in the
+        # browser, then import that CSV) used to live here too, but now
+        # live under Settings -> Manual Import instead -- this screen
+        # only ever shows the one-click, no-file-picker way in, to keep
+        # it to a single obvious action rather than three competing
+        # buttons.
+        self.on_import_via_api = on_import_via_api
         self.on_save: Optional[Callable[[dict], bool]] = None
         self.on_delete: Optional[Callable[[], None]] = None
         self.project_id_by_label: Dict[str, Optional[int]] = {}
@@ -233,9 +245,35 @@ class ActivityPanel(tk.Frame):
         outer.pack(fill="both", expand=True, padx=28, pady=24)
         _configure_half_width_columns(outer)
 
-        self.heading = tk.Label(outer, text="Add QDM", font=(self.family, 20, "bold"),
+        # Row 0 holds the panel heading AND the "Import QDM via API"
+        # shortcut side by side -- this is the fastest way into bulk
+        # import right from the screen that otherwise adds QDMs one at a
+        # time, and it's the entry point a fresh install (no QDMs, no
+        # Projects yet -- see db.py's removed _seed_defaults_if_empty)
+        # leans on instead of a File-menu item. The same button also
+        # sits on the main tab row (see main_window.py's _build_body) so
+        # it's reachable without opening this screen at all -- this copy
+        # stays too since it's still useful mid-review here.
+        header_row = tk.Frame(outer, bg=theme.PANEL_BG)
+        header_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 24))
+        header_row.columnconfigure(0, weight=1)
+
+        self.heading = tk.Label(header_row, text="Add QDM", font=(self.family, 20, "bold"),
                                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY)
-        self.heading.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 24))
+        self.heading.grid(row=0, column=0, sticky="w")
+
+        if self.on_import_via_api is not None:
+            # Accent (not Secondary) -- brighter fill and bigger padding
+            # than a plain Secondary button (see widgets._BUTTON_STYLES),
+            # so this, the only shortcut on an otherwise one-at-a-time
+            # form, actually reads as the standout action on the screen.
+            # Needs a saved Jira API token (Settings -> Jira Cloud
+            # Upload) to work -- clicking without one set up explains
+            # that and points at Settings -> Manual Import as the
+            # no-token-needed alternative (see
+            # main_window.py's _open_jira_api_import).
+            RoundedButton(header_row, text="Import QDM via API", style="Accent.TButton",
+                          command=self.on_import_via_api).grid(row=0, column=1, sticky="e")
 
         frm = ttk.Frame(outer)
         frm.grid(row=1, column=0, sticky="new")
@@ -423,6 +461,233 @@ class ActivityPanel(tk.Frame):
 
 
 # ---------------------------------------------------------------------------
+# Import QDMs from a Jira CSV export -- bulk alternative to ActivityPanel's
+# one-at-a-time "Add QDM" above, for someone with a long backlog of Jira
+# issues assigned to them and none of them in this app yet. See
+# app/jira_csv_import.py for the actual CSV parsing (this panel is purely
+# the review UI: main_window.py's _open_jira_csv_import_dialog does the
+# file picking + parsing + dedup-against-existing-Activities, and hands
+# this panel the resulting candidates to review before anything is
+# created) and the README's "Importing QDMs from Jira" section for the
+# JQL/export walkthrough this whole feature is meant to consume.
+# ---------------------------------------------------------------------------
+class ImportQdmPanel(tk.Frame):
+    def __init__(self, master, family: str, on_close: Callable[[], None],
+                 get_projects: Callable[[], List[Project]],
+                 create_project: Callable[[str], Project]):
+        super().__init__(master, bg=theme.PANEL_BG)
+        self.family = family
+        self.on_close = on_close
+        self.get_projects = get_projects
+        self.create_project = create_project
+        # Callable[[List[Tuple[name, jira_key, project_id]]], None] --
+        # set fresh by every load(), same convention as ActivityPanel's
+        # on_save/on_delete.
+        self.on_import: Optional[Callable[[list], None]] = None
+        # One dict per candidate row, built fresh by load() -- each row
+        # is otherwise an independent copy of ActivityPanel's own
+        # Project-dropdown block (project_var/combo/id-by-label plus the
+        # hideable "+ New Project..." fields), just keyed by row instead
+        # of held directly on self, since there can be any number of them.
+        self.rows: List[dict] = []
+
+        body = _scroll_body(self)
+        outer = tk.Frame(body, bg=theme.PANEL_BG)
+        outer.pack(fill="both", expand=True, padx=28, pady=24)
+
+        tk.Label(outer, text="Import QDMs from Jira", font=(self.family, 20, "bold"),
+                 bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).pack(anchor="w", pady=(0, 6))
+
+        self.summary_label = tk.Label(outer, text="", font=(self.family, 10), justify="left",
+                                       wraplength=520, bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY)
+        self.summary_label.pack(anchor="w", pady=(0, 14))
+
+        quick_row = ttk.Frame(outer)
+        quick_row.pack(anchor="w", pady=(0, 10))
+        RoundedButton(quick_row, text="Select all", style="Secondary.TButton",
+                      command=self._select_all).pack(side="left")
+        RoundedButton(quick_row, text="Select none", style="Secondary.TButton",
+                      command=self._select_none).pack(side="left", padx=6)
+
+        self.rows_frame = ttk.Frame(outer)
+        self.rows_frame.pack(fill="x", anchor="w")
+
+        self.error_label = ttk.Label(outer, text="", foreground=theme.DANGER, style="Big.TLabel")
+        self.error_label.pack(anchor="w", pady=(10, 0))
+
+        self.btns = ttk.Frame(outer)
+        self.btns.pack(anchor="w", fill="x", pady=(16, 0))
+
+    def load(self, candidates: List[jira_csv_import.ImportCandidate],
+              skipped_duplicate: int, skipped_not_a_qdm_key: int, skipped_blank_key: int,
+              on_import: Callable[[list], None]):
+        self.on_import = on_import
+
+        parts = [f"{len(candidates)} new QDM(s) found."]
+        if skipped_duplicate:
+            parts.append(f"{skipped_duplicate} already in your QDMs (skipped).")
+        if skipped_not_a_qdm_key:
+            parts.append(f"{skipped_not_a_qdm_key} row(s) didn’t look like a "
+                          f"{config.JIRA_KEY_PREFIX}<number> issue key (skipped).")
+        if skipped_blank_key:
+            parts.append(f"{skipped_blank_key} row(s) had no Issue Key at all (skipped).")
+        parts.append("Pick a Project for each one below, then Import All -- untick any you "
+                      "don’t want to add yet.")
+        self.summary_label.config(text=" ".join(parts))
+
+        projects = self.get_projects()
+        labels = [p.name for p in projects]
+        project_id_by_label: Dict[str, Optional[int]] = {p.name: p.id for p in projects}
+        default_label = labels[0] if labels else _NEW_PROJECT_OPTION
+
+        for child in self.rows_frame.winfo_children():
+            child.destroy()
+        self.rows = []
+
+        for i, candidate in enumerate(candidates):
+            if i > 0:
+                # Between this row and the previous one -- packed before
+                # row_frame below, not after, so it lands between them
+                # rather than one row late (with a stray extra line
+                # trailing the last row).
+                tk.Frame(self.rows_frame, bg=theme.BORDER, height=1).pack(fill="x", pady=(14, 14))
+            row_frame = ttk.Frame(self.rows_frame)
+            row_frame.pack(fill="x")
+            row_frame.columnconfigure(1, weight=1)
+
+            include_var = tk.BooleanVar(value=True)
+            head = ttk.Frame(row_frame)
+            head.grid(row=0, column=0, columnspan=2, sticky="ew")
+            head.columnconfigure(0, weight=1)
+            tk.Label(head, text=candidate.jira_key, font=(self.family, 12, "bold"),
+                     bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).grid(row=0, column=0, sticky="w")
+            ttk.Checkbutton(head, text="Include", variable=include_var).grid(row=0, column=1, sticky="e")
+
+            ttk.Label(row_frame, text="Name", style="Big.TLabel").grid(
+                row=1, column=0, sticky="w", pady=6)
+            name_var = tk.StringVar(value=candidate.name)
+            ttk.Entry(row_frame, textvariable=name_var, width=32, style="Big.TEntry").grid(
+                row=1, column=1, sticky="ew", pady=6)
+
+            ttk.Label(row_frame, text="Project", style="Big.TLabel").grid(
+                row=2, column=0, sticky="w", pady=6)
+            project_var = tk.StringVar(value=default_label)
+            project_combo = ttk.Combobox(row_frame, textvariable=project_var, state="readonly",
+                                          width=30, style="Big.TCombobox")
+            project_combo.config(values=labels + [_NEW_PROJECT_OPTION])
+            project_combo.grid(row=2, column=1, sticky="ew", pady=6)
+
+            new_project_label = ttk.Label(row_frame, text="New Project Name", style="Big.TLabel")
+            new_project_label.grid(row=3, column=0, sticky="w", pady=6)
+            new_project_name_var = tk.StringVar()
+            new_project_entry = ttk.Entry(row_frame, textvariable=new_project_name_var, width=32,
+                                           style="Big.TEntry")
+            new_project_entry.grid(row=3, column=1, sticky="ew", pady=6)
+
+            row = {
+                "jira_key": candidate.jira_key,
+                "include_var": include_var,
+                "name_var": name_var,
+                "project_var": project_var,
+                "project_id_by_label": project_id_by_label,
+                "new_project_label": new_project_label,
+                "new_project_entry": new_project_entry,
+                "new_project_name_var": new_project_name_var,
+            }
+            self._set_row_new_project_visible(row, default_label == _NEW_PROJECT_OPTION)
+            project_combo.bind("<<ComboboxSelected>>", lambda e, r=row: self._on_row_project_changed(r))
+            self.rows.append(row)
+
+        _rebind_wheel(self.rows_frame)
+
+        self.error_label.config(text="")
+        for child in self.btns.winfo_children():
+            child.destroy()
+        RoundedButton(self.btns, text="Cancel", style="Secondary.TButton",
+                      command=self._cancel).pack(side="right")
+        RoundedButton(self.btns, text="Import All", style="Accent.TButton",
+                      command=self._import_all).pack(side="right", padx=6)
+        _rebind_wheel(self.btns)
+
+    def _select_all(self):
+        for row in self.rows:
+            row["include_var"].set(True)
+
+    def _select_none(self):
+        for row in self.rows:
+            row["include_var"].set(False)
+
+    @staticmethod
+    def _set_row_new_project_visible(row: dict, visible: bool):
+        if visible:
+            row["new_project_label"].grid()
+            row["new_project_entry"].grid()
+        else:
+            row["new_project_label"].grid_remove()
+            row["new_project_entry"].grid_remove()
+
+    def _on_row_project_changed(self, row: dict):
+        self._set_row_new_project_visible(row, row["project_var"].get() == _NEW_PROJECT_OPTION)
+
+    def _import_all(self):
+        # Validated in two passes on purpose, rather than creating each
+        # row's Project as its own row is checked: if row 3 of 5 fails
+        # validation after rows 1-2 already created a "+ New Project..."
+        # entry, fixing row 3 and clicking Import All again would create
+        # rows 1-2's projects a SECOND time (create_project has no
+        # "already exists" check of its own -- see
+        # Database.add_project_with_default_color). Checking every
+        # included row first, and only creating anything once the whole
+        # batch is known-good, means a validation failure never leaves a
+        # half-applied import behind to retry into duplicates.
+        included = [row for row in self.rows if row["include_var"].get()]
+        if not included:
+            self.error_label.config(text="Nothing ticked to import -- tick at least one QDM, "
+                                          "or Cancel.")
+            return
+
+        for row in included:
+            selected = row["project_var"].get()
+            if selected == _NEW_PROJECT_OPTION:
+                if not row["new_project_name_var"].get().strip():
+                    self.error_label.config(
+                        text=f"Enter a project name for {row['jira_key']}, or untick it.")
+                    return
+            elif row["project_id_by_label"].get(selected) is None:
+                self.error_label.config(text=f"Choose a project for {row['jira_key']}.")
+                return
+
+        # Two rows both choosing "+ New Project..." with the same typed
+        # name create that project once, not twice -- same "don't leave
+        # someone with two identically-named Projects" concern
+        # ActivityPanel's single-row version doesn't need to worry about,
+        # since it only ever creates at most one project per Save.
+        created_project_ids_by_name: Dict[str, Optional[int]] = {}
+        to_import = []
+        for row in included:
+            selected = row["project_var"].get()
+            if selected == _NEW_PROJECT_OPTION:
+                new_name = row["new_project_name_var"].get().strip()
+                if new_name in created_project_ids_by_name:
+                    project_id = created_project_ids_by_name[new_name]
+                else:
+                    project_id = self.create_project(new_name).id
+                    created_project_ids_by_name[new_name] = project_id
+            else:
+                project_id = row["project_id_by_label"].get(selected)
+            name = row["name_var"].get().strip() or row["jira_key"]
+            to_import.append((name, row["jira_key"], project_id))
+
+        cb = self.on_import
+        self.on_close()
+        assert cb is not None
+        cb(to_import)
+
+    def _cancel(self):
+        self.on_close()
+
+
+# ---------------------------------------------------------------------------
 # Project add/edit panel (collapsible groups in the sidebar; owns color)
 # ---------------------------------------------------------------------------
 class ProjectPanel(tk.Frame):
@@ -561,8 +826,12 @@ class ProjectPanel(tk.Frame):
 # ---------------------------------------------------------------------------
 class SettingsPanel(tk.Frame):
     def __init__(self, master, family: str, on_close: Callable[[], None],
-                 has_stored_token: Callable[[], bool], on_save_token: Callable[[str], bool],
-                 on_clear_token: Callable[[], None]):
+                 has_stored_token: Callable[[], bool],
+                 on_save_token: Callable[[str, str, str], bool],
+                 on_clear_token: Callable[[], None],
+                 on_export_worklog_csv: Optional[Callable[[], None]] = None,
+                 on_export_qdms_from_jira: Optional[Callable[[], None]] = None,
+                 on_import_qdms_from_csv: Optional[Callable[[], None]] = None):
         super().__init__(master, bg=theme.PANEL_BG)
         self.family = family
         self.on_close = on_close
@@ -574,6 +843,19 @@ class SettingsPanel(tk.Frame):
         self.has_stored_token = has_stored_token
         self.on_save_token = on_save_token
         self.on_clear_token = on_clear_token
+        # "Manual Import" section (below, in the right column) -- the
+        # CSV-based ways to move data between this app and Jira, kept
+        # separate from the automatic API buttons on the main screens
+        # (the tab row's "Upload to JIRA via API"/"Import QDM via API")
+        # so those stay the only Jira-related buttons someone sees day to
+        # day, with the manual fallbacks tucked away here for anyone who
+        # hasn't set up (or doesn't want) a saved API token. All three
+        # are just entry points into panels/actions main_window.py
+        # already owns -- same "this panel never touches the database or
+        # Jira itself" separation as the token callbacks above.
+        self.on_export_worklog_csv = on_export_worklog_csv
+        self.on_export_qdms_from_jira = on_export_qdms_from_jira
+        self.on_import_qdms_from_csv = on_import_qdms_from_csv
         self.on_save: Optional[Callable[[str, str, int, int, bool, str, str, str], None]] = None
         self.theme_var = tk.StringVar(value=theme.DEFAULT_THEME_ID)
         self.theme_swatch_canvases: Dict[str, tk.Canvas] = {}
@@ -655,8 +937,14 @@ class SettingsPanel(tk.Frame):
                  fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=420,
                  font=(self.family, 9)).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
         self.display_name_var = tk.StringVar()
-        ttk.Entry(left, textvariable=self.display_name_var, width=36, style="Big.TEntry").grid(
-            row=2, column=0, sticky="ew", pady=(0, 28))
+        display_name_entry = ttk.Entry(left, textvariable=self.display_name_var, width=36,
+                                        style="Big.TEntry")
+        display_name_entry.grid(row=2, column=0, sticky="ew", pady=(0, 28))
+        # Fires once someone tabs/clicks away from Display Name (not on every
+        # keystroke -- a partial name like "Alex R" mid-type would otherwise
+        # get guessed at and then "lock in" before "Rae" is even typed; see
+        # _maybe_derive_jira_email's own docstring for the full guard logic).
+        display_name_entry.bind("<FocusOut>", self._maybe_derive_jira_email)
 
         ttk.Label(left, text="Work Hours", style="Heading.TLabel").grid(
             row=3, column=0, columnspan=2, sticky="w", pady=(0, 6))
@@ -758,16 +1046,18 @@ class SettingsPanel(tk.Frame):
                      bg=theme.PANEL_BG, fg=theme.TEXT_SECONDARY, anchor="nw",
                      justify="left", wraplength=360).grid(row=i, column=1, sticky="nw", pady=5)
 
-        # Jira Cloud Upload -- only needed for the header's "Upload to
-        # Jira" button (app/jira_client.py); "Export to Jira CSV" doesn't
-        # read any of this. Lives in the right column, under Keyboard
-        # Shortcuts, rather than competing with Display Name/Work Hours/
-        # Theme on the left for space above the fold -- this is a one-time
-        # setup step for most people, not something revisited often.
+        # Jira Cloud Upload -- only needed for the two automatic API
+        # buttons on the tab row (app/jira_client.py): "Upload to JIRA
+        # via API" and "Import QDM via API". The manual, CSV-based
+        # alternatives under Settings -> Manual Import don't read any of
+        # this. Lives in the right column, under Keyboard Shortcuts,
+        # rather than competing with Display Name/Work Hours/Theme on the
+        # left for space above the fold -- this is a one-time setup step
+        # for most people, not something revisited often.
         ttk.Label(right, text="Jira Cloud Upload", style="Heading.TLabel").grid(
             row=2, column=0, sticky="w", pady=(28, 6))
-        tk.Label(right, text="Needed only for the \u201cUpload to Jira\u201d button next to "
-                             "\u201cExport to Jira CSV\u201d in the header. Jira Server/Data "
+        tk.Label(right, text="Needed for the \u201cUpload to JIRA via API\u201d and \u201cImport "
+                             "QDM via API\u201d buttons on the tab row. Jira Server/Data "
                              "Center aren't supported -- Jira Cloud only.",
                  fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=360,
                  font=(self.family, 9)).grid(row=3, column=0, sticky="w", pady=(0, 10))
@@ -824,10 +1114,46 @@ class SettingsPanel(tk.Frame):
         RoundedButton(token_btns, text="Clear stored token", style="Secondary.TButton",
                       command=self._clear_jira_token).pack(side="left", padx=(8, 0))
 
-        # row=10 (not row=2) so this sits below the Jira Cloud Upload
-        # section above rather than colliding with its row=2 heading --
-        # "right"'s own grid, unrelated to the outer/btns row=20 mentioned
-        # below.
+        # Manual Import -- row=5/6/7 (below jira_frame's row=4) so this
+        # sits under Jira Cloud Upload rather than colliding with it.
+        # The CSV-based fallbacks for anyone who hasn't set up (or
+        # doesn't want) a saved API token above: exporting a worklog CSV
+        # for Jira's own importer, and the two-step "open a filtered
+        # Jira list in the browser, then import the CSV you export from
+        # it" way of bulk-adding QDMs. The automatic, no-file-picker
+        # versions of both jobs ("Upload to JIRA via API" and "Import QDM
+        # via API", both on the tab row) are what most people should
+        # reach for day to day -- these three only show up here, not on
+        # those main screens, so they don't compete for attention with
+        # the one-click option once a token's saved.
+        ttk.Label(right, text="Manual Import", style="Heading.TLabel").grid(
+            row=5, column=0, sticky="w", pady=(28, 6))
+        tk.Label(right, text="CSV-based alternatives that don’t need a Jira API "
+                             "token — useful before you’ve set one up above, or if "
+                             "you’d rather not.",
+                 fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, justify="left", wraplength=360,
+                 font=(self.family, 9)).grid(row=6, column=0, sticky="w", pady=(0, 10))
+
+        manual_frame = ttk.Frame(right)
+        manual_frame.grid(row=7, column=0, sticky="new")
+
+        if self.on_export_worklog_csv is not None:
+            RoundedButton(manual_frame, text="Export to Jira CSV…", style="Secondary.TButton",
+                          command=self.on_export_worklog_csv).pack(anchor="w", pady=(0, 8))
+
+        if self.on_export_qdms_from_jira is not None:
+            RoundedButton(manual_frame, text="Export QDMs from JIRA", style="Secondary.TButton",
+                          command=self.on_export_qdms_from_jira).pack(anchor="w", pady=(0, 8))
+
+        if self.on_import_qdms_from_csv is not None:
+            RoundedButton(manual_frame, text="Import QDM’s from JIRA…",
+                          style="Secondary.TButton",
+                          command=self.on_import_qdms_from_csv).pack(anchor="w")
+
+        # row=10 (not row=2) so this sits below the Jira Cloud Upload/
+        # Manual Import sections above rather than colliding with the
+        # row=2 heading -- "right"'s own grid, unrelated to the
+        # outer/btns row=20 mentioned below.
         tk.Label(right, text=f"QUASAR Timesheet Manager v{APP_VERSION}",
                  font=(self.family, 9), bg=theme.PANEL_BG, fg=theme.TEXT_MUTED).grid(
             row=10, column=0, sticky="w", pady=(20, 0))
@@ -1057,6 +1383,41 @@ class SettingsPanel(tk.Frame):
             self.jira_api_token_var.set("")
             self._token_field_is_placeholder = False
 
+    def _maybe_derive_jira_email(self, event=None):
+        """Auto-fills Email from Display Name (e.g. "Alex Rae" ->
+        "alex.rae@<company domain>") once someone tabs/clicks away from
+        Display Name having typed a two-word name -- so most people never
+        have to type their Jira email by hand at all. Deliberately
+        conservative about when it kicks in:
+
+        - Only touches Email while it's still blank or still showing the
+          unedited "firstname.lastname@..." default template (see
+          config.DEFAULT_JIRA_EMAIL_TEMPLATE / _load_settings_panel's
+          get_setting fallback in main_window.py). The moment someone has
+          typed or saved a real email of their own, this stops touching the
+          field for good -- a saved value is never that exact default
+          string, so this one check is enough; no separate "has the user
+          edited this" flag is needed.
+        - Only fires for a Display Name that splits into exactly two
+          alphabetic words ("Alex Rae") -- one name, three names, a
+          hyphenated or accented name, a nickname in quotes, and so on all
+          just leave Email alone rather than guess wrong.
+
+        A wrong guess is still only ever a starting point, never silently
+        trusted: the connection test that runs when "Save API Token" is
+        clicked (see main_window.py's _verify_jira_connection_and_report)
+        is what actually catches a wrong email before it causes a confusing
+        failure later, the same way it catches a wrong Site URL or token."""
+        current_email = self.jira_email_var.get().strip()
+        if current_email and current_email != config.DEFAULT_JIRA_EMAIL_TEMPLATE:
+            return
+        words = self.display_name_var.get().strip().split()
+        if len(words) != 2 or not all(w.isalpha() for w in words):
+            return
+        first, last = words
+        domain = config.DEFAULT_JIRA_EMAIL_TEMPLATE.split("@")[-1]
+        self.jira_email_var.set(f"{first.lower()}.{last.lower()}@{domain}")
+
     def _resolve_typed_token(self) -> str:
         """A left-alone field is either still showing _STORED_TOKEN_MASK
         (never focused) or was cleared by _on_jira_token_focus_in but
@@ -1074,12 +1435,23 @@ class SettingsPanel(tk.Frame):
         if not new_token:
             messagebox.showinfo("Nothing to save", "Paste a token into the field first.")
             return
+        site_url = self.jira_site_url_var.get().strip()
+        email = self.jira_email_var.get().strip()
+        if not site_url or not email:
+            messagebox.showwarning(
+                "Site URL and Email needed",
+                "Enter your Jira Site URL and Email above first -- both are needed, "
+                "together with the API Token, to connect to Jira and verify it works.")
+            return
         # on_save_token reports whether it actually saved -- e.g.
         # main_window.py's _save_jira_api_token returns False (after its
         # own warning dialog) rather than raising, when the machine can't
         # encrypt right now. Skip the "saved" toast in that case; it
-        # already told the user what happened.
-        if self.on_save_token(new_token):
+        # already told the user what happened. main_window.py also runs an
+        # immediate Jira connection test against these same three values and
+        # reports the result in its own messagebox, so a new user finds out
+        # right here whether the credentials actually work.
+        if self.on_save_token(new_token, site_url, email):
             self._refresh_jira_token_field()
             show_saved_toast(self)
 
@@ -1089,8 +1461,8 @@ class SettingsPanel(tk.Frame):
             return
         if not messagebox.askyesno(
                 "Clear stored Jira API token",
-                "You'll need to paste it again (or a new one) before \u201cUpload to Jira\u201d "
-                "will work. Continue?"):
+                "You'll need to paste it again (or a new one) before \u201cUpload to JIRA "
+                "via API\u201d or \u201cImport QDM via API\u201d will work. Continue?"):
             return
         self.on_clear_token()
         self._refresh_jira_token_field()
@@ -1305,7 +1677,7 @@ class JiraUploadPanel(tk.Frame):
         outer = tk.Frame(body, bg=theme.PANEL_BG)
         outer.pack(fill="both", expand=True, padx=28, pady=24)
 
-        tk.Label(outer, text="Upload to Jira", font=(self.family, 14, "bold"),
+        tk.Label(outer, text="Upload to JIRA via API", font=(self.family, 14, "bold"),
                  bg=theme.PANEL_BG, fg=theme.TEXT_PRIMARY).pack(anchor="w", pady=(0, 6))
         tk.Label(outer, text="Sends worklogs straight to Jira over its API -- no CSV file, "
                              "no manual import. Entries already uploaded before are skipped "

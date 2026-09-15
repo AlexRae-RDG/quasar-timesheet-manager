@@ -31,6 +31,16 @@ python3 -m venv --system-site-packages packaging/.build-venv
 # needs to see the system's tkinter rather than trying to reinstall it.
 source packaging/.build-venv/bin/activate
 pip install --upgrade pip >/dev/null
+# This app's own runtime dependencies (requests, cryptography -- see
+# requirements.txt) have to be installed in THIS venv before PyInstaller
+# runs, not just on whatever Python you normally use: PyInstaller only
+# bundles a package if it can actually import it from the environment
+# it's running in. Skipping this doesn't fail the build -- it just
+# silently ships an app where "Upload to Jira"/"Import via Jira API"
+# and the encrypted API token storage are all broken, since jira_client.py
+# swallows the missing import and reports "not installed" at runtime
+# instead of crashing at build time.
+pip install -r requirements.txt
 pip install pyinstaller
 
 if [ ! -f packaging/icons/icon.png ]; then

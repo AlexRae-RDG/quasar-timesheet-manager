@@ -2,9 +2,13 @@
 
 A free, self-hosted desktop timesheet app inspired by Toggl Track's weekly
 timeline view — click-and-drag time blocking, activities grouped into
-color-coded projects, and a one-click Jira CSV export. Everything runs
-locally, with no account, server, or internet connection required; all
-data lives in a single SQLite file on your machine.
+color-coded projects, and one-click Jira integration both ways: import
+your assigned QDMs straight from Jira, and send worklogs straight back,
+with no CSV file to find and pick. Manual CSV-based versions of both
+stay available too, for anyone who'd rather not set up API access.
+Everything runs locally, with no account, server, or internet connection
+required beyond the Jira API calls themselves; all data lives in a
+single SQLite file on your machine.
 
 ## Install and get started
 
@@ -31,6 +35,17 @@ data lives in a single SQLite file on your machine.
 4. Open it. Your data is stored locally on your own machine (see
    "Updating the app" below for exactly where) — nothing is shared between
    colleagues, each person's timesheet is entirely their own.
+5. **First launch only:** a **Welcome** screen asks for your name, Jira
+   email and Site URL (the last two pre-filled with a guess/default —
+   check them, don't just skip past), plus a Jira API Token (see
+   "Getting a Jira API token" below for that part — it takes under a
+   minute), then drops you straight into importing your QDMs. This is
+   what makes **Import QDM via API** and **Upload to JIRA via API** work
+   — the two buttons on the tab row, and the fastest way to use this
+   app day to day. "Skip for now" is right there too: the app is fully
+   usable without it, the same setup is always available afterwards in
+   **Settings → Jira Cloud Upload**, and the CSV-based manual
+   alternatives under Settings → Manual Import need no setup at all.
 
 On Linux, or if you'd rather run it from source, see "Running from
 source" below.
@@ -106,18 +121,21 @@ sudo dnf install python3-tkinter # Fedora
 sudo pacman -S tk                # Arch
 ```
 
-**Optional, for the "Upload to Jira" button only:** everything else in
-this app (including "Export to Jira CSV") runs with just the standard
-library. That one button additionally needs the two packages listed in
-`requirements.txt`:
+**Optional, for the "Upload to JIRA via API" and "Import QDM via API"
+buttons only:** everything else in this app (including the CSV-based
+"Export to Jira CSV"/"Export QDMs from JIRA"/"Import QDM's from JIRA…"
+under Settings → Manual Import) runs with just the standard library.
+Those two API-based buttons additionally need the two packages listed
+in `requirements.txt`:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Skipping this is fine if you don't use that button — the app still
-launches and runs normally; "Upload to Jira" just tells you what's
-missing if you click it without installing them first.
+Skipping this is fine if you don't use those buttons — the app still
+launches and runs normally; "Upload to JIRA via API" and "Import QDM
+via API" just tell you what's missing if you click them without
+installing these first.
 
 ## Using the app
 
@@ -189,6 +207,10 @@ focus)
   click an empty slot to drop in a block instantly. **Double-click**/
   right-click **Edit** to change it; existing blocks update to match.
   **Right-click Delete** asks whether to keep or remove its time blocks.
+- Adding QDMs one at a time this way is fine for a few, but **Import QDM
+  via API** (tab row, or the prompt shown right here when the list is
+  completely empty) bulk-imports every QDM assigned to you straight from
+  Jira in one click — see "Importing QDMs from Jira" below.
 - The list scrolls (wheel, drag the scrollbar, or the arrow buttons) once
   it overflows — the same scrolling works on every tab in the app.
 
@@ -221,11 +243,73 @@ concepts.
 (An older database — even one that named these concepts differently —
 upgrades automatically the first time you open it.)
 
+## Importing QDMs from Jira
+
+Adding QDMs one at a time (**File → Add QDM**, or "+ Add QDM" in the
+sidebar) works fine for a handful, but if you've got a real backlog of
+Jira issues assigned to you and none of them in this app yet, there's a
+faster way in -- also the fastest way to get started on a fresh
+install, which starts with no Projects or QDMs at all.
+
+**The main way -- direct from Jira's API (needs a saved API token):**
+
+Click **Import QDM via API** on the tab row (it also sits on the "+
+Add QDM" screen, and -- on a fresh install with nothing added yet -- as
+the prompt shown right in the empty sidebar) -- this is the main,
+one-click way in. It needs **Settings → Jira Cloud Upload** set up
+first (Jira Site URL, Email, API Token -- see "Uploading directly to
+Jira" below); once that's saved, clicking it fetches every matching
+QDM straight from Jira over the network, with no browser step and no
+CSV file to find and pick. Without a token saved there, it just tells
+you to set one up, or to use the manual route below instead.
+
+**The manual fallback -- CSV export (no Jira API token needed):**
+
+Under **Settings → Manual Import**, three buttons cover the no-token
+path:
+
+1. **Export QDMs from JIRA** -- opens your Jira site in the browser,
+   already filtered to the right issues (only this app's Jira project,
+   assigned to you, still in an active status). You need to be signed
+   into Jira in your browser for this, nothing more.
+2. In Jira: **Export → Export CSV (all fields)** (look for an Export
+   button above the results, or in the ••• menu). "All fields" is the
+   safe choice — it guarantees the two columns this app actually reads
+   ("Issue key" and "Summary") are present no matter which columns your
+   saved view happens to show; every other column in the file is
+   ignored.
+3. Back in **Settings → Manual Import**, click **Import QDM's from
+   JIRA…** and pick the CSV you just exported.
+
+Both routes land on the exact same review screen; only how you get the
+QDMs out of Jira differs.
+
+**Either way, once QDMs are found:**
+
+1. Rows are filtered and deduplicated automatically, before you see
+   anything: any row whose Issue Key isn't `QDM-<number>` is skipped (so
+   a broad "assigned to me" search across other teams' projects doesn't
+   drag unrelated issues in), and any row that's already a QDM in this
+   app — active or archived — is skipped too, so re-running an import
+   (or one that overlaps a previous export) is always safe and never
+   creates a duplicate.
+2. What's left is a review list, one row per new QDM: its Jira Key, an
+   editable Name (pre-filled from the Jira Summary), and a Project picker
+   — the same "+ New Project…" option the regular Add QDM form has, so
+   you don't need to create Projects ahead of time. Untick anything you'd
+   rather not add yet.
+3. **Import All** creates them. Color still only ever comes from the
+   Project each QDM lands in, same as adding one by hand.
+
 ## Exporting to Jira
 
-**File → Export to Jira CSV…** opens an "Export" tab to pick the current
-week or a custom date range. Only blocks with a **Jira Issue Key** are
-exported (others are skipped, with a summary shown afterward).
+**Settings → Manual Import → Export to Jira CSV…** opens an "Export" tab
+to pick the current week or a custom date range. Only blocks with a
+**Jira Issue Key** are exported (others are skipped, with a summary
+shown afterward). This is the manual, no-API-token alternative to
+"Uploading directly to Jira" below -- see that section for the
+automatic version, which stays on the main tab row since it doesn't
+need a file picker.
 
 Columns:
 ```
@@ -252,13 +336,20 @@ since exact behavior can differ slightly by Jira version.
 
 ## Uploading directly to Jira
 
-**File → Upload to Jira…** (or the "Upload to Jira" button in the header,
-next to "Export to Jira CSV") sends worklogs straight to Jira over its
-REST API — no CSV file, no manual import step. It's an alternative to the
-CSV export above, not a replacement: both stay available, and which one
-you use for a given week is entirely up to you.
+**File → Upload to JIRA via API…** (or the "Upload to JIRA via API"
+button on the tab row) sends worklogs straight to Jira over its REST
+API — no CSV file, no manual import step. It's an alternative to the
+CSV export above, not a replacement: both stay available (the CSV
+route under Settings → Manual Import), and which one you use for a
+given week is entirely up to you.
 
 **Jira Cloud only** — this doesn't support Jira Server/Data Center.
+
+A brand-new install walks you through this automatically on first launch
+(the **Welcome** screen — see "Install and get started" above), with Site
+URL and Email already pre-filled with a guess/default so most people can
+leave them as-is. What follows is the same setup, field by field, for
+anyone who skipped that screen or wants to change something later.
 
 **One-time setup**, in **Settings → Jira Cloud Upload**:
 1. **Site URL** — your Jira Cloud address. Pre-filled with
@@ -268,23 +359,39 @@ you use for a given week is entirely up to you.
    way.)
 2. **Email** — the email address you log into Jira with. Pre-filled with
    `firstname.lastname@raildeliverygroup.com` as a template the first
-   time you open Settings — replace `firstname.lastname` with your own
-   name, keeping the same dot-separated pattern and domain.
+   time you open Settings, and auto-fills itself from **Display Name**
+   as soon as you tab or click away from that field — type `Alex Rae` in
+   Display Name and this becomes `alex.rae@raildeliverygroup.com` on its
+   own. That only happens while Email is still blank or still showing
+   the unedited template — type anything of your own into Email and it
+   stops touching the field, permanently. Either way, double check it
+   before saving; it's a starting guess, and the connection test below
+   will catch a wrong one.
 3. **API Token** — see "Getting a Jira API token" below for the full
    walkthrough. Once one is saved, the field itself shows a row of dots
    (●●●●●●●●) rather than staying blank, so you can tell at a glance
    that a token is stored — that's a placeholder, not your actual token;
    click into the field to clear it and type a new one. Click **Save API
-   Token** right there to save just the token on its own, or leave it
-   alone and click the regular **Save** below to keep what's already
-   stored (that button saves everything else in Settings too). "Clear
-   stored token" removes it entirely.
+   Token** right there to save just the token on its own (Site URL and
+   Email need to be filled in first), or leave it alone and click the
+   regular **Save** below to keep what's already stored (that button
+   saves everything else in Settings too). "Clear stored token" removes
+   it entirely.
 
-Both the Site URL and Email fields only ever pre-fill like this the
-*first* time Settings is opened on a given computer — once you've saved
-Settings even once (for anything, not just these two fields), whatever
-you last saved is what shows up from then on, never silently reset back
-to the default.
+Either **Save** button — **Save API Token**, or the regular **Save**
+below it when Site URL, Email or the token actually changed — runs an
+immediate connection test against Jira (a harmless "who am I" check, not
+a real upload) and tells you straight away whether it worked: either
+"Connected to Jira as ‹your name›", or exactly what's wrong (bad
+credentials, a bad Site URL, or no network) so you can fix it on the
+spot instead of finding out the first time you click "Upload to JIRA via
+API" or "Import QDM via API".
+
+The Site URL and Email fields only ever *pre-fill* like this (defaults or
+auto-fill from Display Name) the *first* time Settings is opened on a
+given computer, or while a field is still blank or unedited — once
+you've saved a real value of your own, whatever you last saved is what
+shows up from then on, never silently reset or overwritten.
 
 ### Getting a Jira API token
 
@@ -299,7 +406,9 @@ to the default.
 4. Click **Create**. Atlassian shows you the token **once** — copy it
    immediately; you can't come back and view it again later, only revoke
    it and create a new one.
-5. Paste it into the **API Token** field in the app and click **Save**.
+5. Paste it into the **API Token** field in the app and click **Save API
+   Token** (or the regular **Save**) — either one runs the connection
+   test above and confirms it worked before you leave Settings.
 
 The token is stored — encrypted — in this app's own local database,
 right alongside your timesheet data and the rest of Settings, not your
@@ -355,10 +464,11 @@ app/widgets.py                shared building blocks: RoundedButton, RoundedCard
 app/models.py                Activity / Project / TimeEntry / TemplateEntry data classes
 app/db.py                     SQLite layer (auto-migrates older DBs; backup_to/restore_from)
 app/export_csv.py              Jira-matching CSV export
+app/jira_csv_import.py          parses a Jira CSV export into candidate QDMs (see app/panels.py's ImportQdmPanel)
 app/calendar_view.py            the weekly grid: drag/resize/move/duplicate, selection, undo/redo
 app/timeblock_panel.py           embedded Add/Edit Time Block tab
 app/summary_panel.py              the Summary tab
-app/panels.py                      Duplicate/Activity/Project/Settings/Backup & Restore/Export tabs
+app/panels.py                      Duplicate/Activity/Import QDMs/Project/Settings/Backup & Restore/Export tabs
 app/sidebar.py                      activities list, grouped into collapsible projects
 app/time_rounding.py                 minute-rounding helper (unit-testable, no Tkinter)
 app/timer_bar.py                      the Timer bar

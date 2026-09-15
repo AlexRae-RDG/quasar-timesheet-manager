@@ -127,6 +127,147 @@ class TestUploadEntries(unittest.TestCase):
         self.assertEqual(seen, [(1, 2), (2, 2)])
 
 
+class TestSearchIssues(unittest.TestCase):
+    def setUp(self):
+        self.creds = jira_client.JiraCredentials(
+            site_url="https://yourteam.atlassian.net", email="alex@example.com", api_token="tok")
+
+    @patch("app.jira_client.requests.post")
+    def test_single_page_returns_key_summary_pairs(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, json=lambda: {
+            "issues": [
+                {"key": "QDM-1", "fields": {"summary": "Fix the thing"}},
+                {"key": "QDM-2", "fields": {"summary": "Other thing"}},
+            ]
+        })
+        results = jira_client.search_issues(self.creds, "project = QDM")
+        self.assertEqual(results, [("QDM-1", "Fix the thing"), ("QDM-2", "Other thing")])
+        self.assertEqual(mock_post.call_count, 1)
+        # The current (not the deprecated /rest/api/3/search) endpoint.
+        self.assertEqual(mock_post.call_args.args[0],
+                          "https://yourteam.atlassian.net/rest/api/3/search/jql")
+        # Basic Auth uses the account email + API token, same as upload_entries.
+        self.assertEqual(mock_post.call_args.kwargs["auth"], ("alex@example.com", "tok"))
+        self.assertEqual(mock_post.call_args.kwargs["json"]["jql"], "project = QDM")
+
+    @patch("app.jira_client.requests.post")
+    def test_pagination_follows_next_page_token_until_absent(self, mock_post):
+        mock_post.side_effect = [
+            MagicMock(status_code=200, json=lambda: {
+                "issues": [{"key": "QDM-1", "fields": {"summary": "First"}}],
+                "nextPageToken": "page-2",
+            }),
+            MagicMock(status_code=200, json=lambda: {
+                "issues": [{"key": "QDM-2", "fields": {"summary": "Second"}}],
+                # No nextPageToken here -- this is what signals the last page
+                # (this endpoint has no isLast flag).
+            }),
+        ]
+        results = jira_client.search_issues(self.creds, "project = QDM")
+        self.assertEqual(results, [("QDM-1", "First"), ("QDM-2", "Second")])
+        self.assertEqual(mock_post.call_count, 2)
+        # Second call carries the token the first response returned.
+        self.assertEqual(mock_post.call_args_list[1].kwargs["json"]["nextPageToken"], "page-2")
+        # First call has no token to send yet.
+        self.assertNotIn("nextPageToken", mock_post.call_args_list[0].kwargs["json"])
+
+    @patch("app.jira_client.requests.post")
+    def test_missing_summary_field_becomes_empty_string_not_a_crash(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, json=lambda: {
+            "issues": [{"key": "QDM-1", "fields": {}}]
+        })
+        results = jira_client.search_issues(self.creds, "project = QDM")
+        self.assertEqual(results, [("QDM-1", "")])
+
+    @patch("app.jira_client.requests.post")
+    def test_http_error_raises_jira_search_error(self, mock_post):
+        mock_post.return_value = MagicMock(
+            status_code=400, text="Invalid JQL", reason="Bad Request")
+        with self.assertRaises(jira_client.JiraSearchError) as ctx:
+            jira_client.search_issues(self.creds, "not valid jql")
+        self.assertIn("400", str(ctx.exception))
+
+    @patch("app.jira_client.requests.post")
+    def test_network_exception_raises_jira_search_error(self, mock_post):
+        mock_post.side_effect = requests.ConnectionError("no route to host")
+        with self.assertRaises(jira_client.JiraSearchError) as ctx:
+            jira_client.search_issues(self.creds, "project = QDM")
+        self.assertIn("no route to host", str(ctx.exception))
+
+
+class TestVerifyCredentials(unittest.TestCase):
+    def setUp(self):
+        self.creds = jira_client.JiraCredentials(
+            site_url="https://yourteam.atlassian.net", email="alex@example.com", api_token="tok")
+
+    @patch("app.jira_client.requests.get")
+    def test_success_returns_display_name(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=200, json=lambda: {"displayName": "Alex Rae"})
+        result = jira_client.verify_credentials(self.creds)
+        self.assertEqual(result, "Alex Rae")
+        # Hits the "who am I" endpoint, not search or upload.
+        self.assertEqual(mock_get.call_args.args[0],
+                          "https://yourteam.atlassian.net/rest/api/3/myself")
+        self.assertEqual(mock_get.call_args.kwargs["auth"], ("alex@example.com", "tok"))
+
+    @patch("app.jira_client.requests.get")
+    def test_missing_display_name_falls_back_to_email(self, mock_get):
+        mock_get.return_value = MagicMock(status_code=200, json=lambda: {})
+        result = jira_client.verify_credentials(self.creds)
+        self.assertEqual(result, "alex@example.com")
+
+    @patch("app.jira_client.requests.get")
+    def test_401_raises_jira_connection_error_about_credentials(self, mock_get):
+        mock_get.return_value = MagicMock(status_code=401, text="", reason="Unauthorized")
+        with self.assertRaises(jira_client.JiraConnectionError) as ctx:
+            jira_client.verify_credentials(self.creds)
+        self.assertIn("credentials", str(ctx.exception).lower())
+
+    @patch("app.jira_client.requests.get")
+    def test_403_raises_jira_connection_error_about_credentials(self, mock_get):
+        mock_get.return_value = MagicMock(status_code=403, text="", reason="Forbidden")
+        with self.assertRaises(jira_client.JiraConnectionError) as ctx:
+            jira_client.verify_credentials(self.creds)
+        self.assertIn("credentials", str(ctx.exception).lower())
+
+    @patch("app.jira_client.requests.get")
+    def test_other_http_error_raises_jira_connection_error_about_site_url(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=404, text="Not Found", reason="Not Found")
+        with self.assertRaises(jira_client.JiraConnectionError) as ctx:
+            jira_client.verify_credentials(self.creds)
+        self.assertIn("Site URL", str(ctx.exception))
+        self.assertIn("404", str(ctx.exception))
+
+    @patch("app.jira_client.requests.get")
+    def test_network_exception_raises_jira_connection_error(self, mock_get):
+        mock_get.side_effect = requests.ConnectionError("no route to host")
+        with self.assertRaises(jira_client.JiraConnectionError) as ctx:
+            jira_client.verify_credentials(self.creds)
+        self.assertIn("no route to host", str(ctx.exception))
+
+    def test_blank_site_url_raises_before_any_request(self):
+        creds = jira_client.JiraCredentials(site_url="", email="alex@example.com", api_token="tok")
+        with self.assertRaises(jira_client.JiraConnectionError) as ctx:
+            jira_client.verify_credentials(creds)
+        self.assertIn("Site URL", str(ctx.exception))
+
+    def test_blank_email_raises_before_any_request(self):
+        creds = jira_client.JiraCredentials(
+            site_url="https://yourteam.atlassian.net", email="", api_token="tok")
+        with self.assertRaises(jira_client.JiraConnectionError) as ctx:
+            jira_client.verify_credentials(creds)
+        self.assertIn("Email", str(ctx.exception))
+
+    def test_blank_api_token_raises_before_any_request(self):
+        creds = jira_client.JiraCredentials(
+            site_url="https://yourteam.atlassian.net", email="alex@example.com", api_token="")
+        with self.assertRaises(jira_client.JiraConnectionError) as ctx:
+            jira_client.verify_credentials(creds)
+        self.assertIn("API Token", str(ctx.exception))
+
+
 class TestApiTokenStorage(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()

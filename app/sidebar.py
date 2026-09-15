@@ -17,7 +17,8 @@ class Sidebar(tk.Frame):
                  open_activity_panel: Callable[..., None],
                  open_project_panel: Callable[..., None],
                  collapsed: bool = False,
-                 on_toggle_collapse: Optional[Callable[[], None]] = None, **kwargs):
+                 on_toggle_collapse: Optional[Callable[[], None]] = None,
+                 on_import_via_api: Optional[Callable[[], None]] = None, **kwargs):
         kwargs.setdefault("bg", theme.APP_BG)
         kwargs.setdefault("highlightthickness", 0)
         super().__init__(master, **kwargs)
@@ -25,6 +26,12 @@ class Sidebar(tk.Frame):
         self.on_change = on_change  # called whenever armed activity or list/project state changes
         self.open_activity_panel = open_activity_panel
         self.open_project_panel = open_project_panel
+        # Optional -- lets the empty-list state below ("No QDM's yet")
+        # offer the same one-click "Import QDM via API" shortcut the tab
+        # row and Add QDM screen already have, right at the exact moment
+        # (a genuinely empty, fresh-install sidebar) someone most needs
+        # pointing at it instead of just seeing a blank list.
+        self.on_import_via_api = on_import_via_api
         # Collapsed is fixed for this instance's whole lifetime -- toggling
         # it (see on_toggle_collapse, called from main_window.py) triggers
         # a full window rebuild rather than switching this Sidebar between
@@ -175,9 +182,20 @@ class Sidebar(tk.Frame):
             return
 
         if not self._activities and not self._projects:
-            tk.Label(self.list_frame, text="No QDM's yet. Click “+ QDM”.",
-                      fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, wraplength=200,
-                      font=(self.family, 9)).pack(pady=14, padx=8)
+            tk.Label(self.list_frame, text="No QDM's yet.",
+                      fg=theme.TEXT_PRIMARY, bg=theme.PANEL_BG, wraplength=200,
+                      font=(self.family, 10, "bold")).pack(pady=(14, 2), padx=8)
+            if self.on_import_via_api is not None:
+                tk.Label(self.list_frame, text="Import them straight from Jira, or add "
+                                               "one by hand with “+ QDM” above.",
+                          fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, wraplength=200,
+                          font=(self.family, 9), justify="left").pack(pady=(0, 10), padx=8)
+                RoundedButton(self.list_frame, text="Import QDM via API", style="Accent.TButton",
+                              command=self.on_import_via_api).pack(pady=(0, 14))
+            else:
+                tk.Label(self.list_frame, text="Click “+ QDM”.",
+                          fg=theme.TEXT_MUTED, bg=theme.PANEL_BG, wraplength=200,
+                          font=(self.family, 9)).pack(pady=(0, 14), padx=8)
             self.list_container.bind_wheel_recursive(self.list_frame)
             return
 
@@ -342,10 +360,14 @@ class Sidebar(tk.Frame):
     def _add_activity(self):
         if not self._projects:
             # ActivityPanel's Project dropdown needs at least one option --
-            # this only happens if every Project was ever deleted along
-            # with its Activities, since a fresh install always seeds a
-            # couple and deleting a Project otherwise falls back to
-            # "General" rather than leaving zero.
+            # a fresh install starts with zero Projects (see
+            # main_window.py's _open_jira_api_import -- the "Import QDM
+            # via API" button on the tab row and again on the Add QDM
+            # screen -- for the intended first step instead, or
+            # Settings -> Manual Import for the CSV-based fallback), and
+            # deleting every Project otherwise falls back to "General"
+            # rather than leaving zero, so this only ever needs to create
+            # one, never more than one.
             self.db.get_or_create_general_project()
             self._projects = self.db.list_projects()
 

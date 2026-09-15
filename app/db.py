@@ -111,9 +111,10 @@ _MIGRATIONS = {
         ("jira_project", "TEXT"),
         ("issue_type", "TEXT"),
         # ISO timestamp set once this entry has been successfully sent to
-        # Jira via app.jira_client's "Upload to Jira" button -- NULL means
-        # "not yet uploaded". See TimeEntry.jira_uploaded_at's docstring
-        # for why this only ever gets set once, not cleared on edit.
+        # Jira via app.jira_client's "Upload to JIRA via API" button --
+        # NULL means "not yet uploaded". See TimeEntry.jira_uploaded_at's
+        # docstring for why this only ever gets set once, not cleared on
+        # edit.
         ("jira_uploaded_at", "TEXT"),
     ],
     "template_entries": [
@@ -178,7 +179,6 @@ class Database:
         self._migrate_schema()
         self._backfill_project_colors_from_legacy_activities()
         self._ensure_activities_have_projects()
-        self._seed_defaults_if_empty()
 
     def _migrate_legacy_activity_naming(self):
         """Step 1 -> step 2: the original "Activities"/"Activity Folders"
@@ -425,26 +425,6 @@ class Database:
         finally:
             src_conn.close()
         self._init_schema()
-
-    # ------------------------------------------------------------------
-    # Seed data (first run only)
-    # ------------------------------------------------------------------
-    def _seed_defaults_if_empty(self):
-        with self._cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS c FROM activities")
-            count = cur.fetchone()["c"]
-        if count > 0:
-            return
-        general_id = self.add_project(Project(None, "General", config.DEFAULT_PROJECT_COLORS[0]))
-        client_id = self.add_project(Project(None, "Client Alpha", config.DEFAULT_PROJECT_COLORS[3]))
-        defaults = [
-            ("Sprint Planning", None, 60, general_id),
-            ("Team Standup", None, 15, general_id),
-            ("Code Review", None, 30, general_id),
-            ("Development", "PROJ-100", 120, client_id),
-        ]
-        for name, jira_key, dur, project_id in defaults:
-            self.add_activity(Activity(None, name, jira_key, dur, project_id=project_id))
 
     # ------------------------------------------------------------------
     # Projects (collapsible groups in the sidebar; every Activity belongs

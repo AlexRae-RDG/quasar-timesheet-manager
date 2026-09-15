@@ -23,6 +23,16 @@ echo Setting up a throwaway build environment (packaging\.build-venv)...
 python -m venv packaging\.build-venv
 call packaging\.build-venv\Scripts\activate.bat
 python -m pip install --upgrade pip >nul
+REM This app's own runtime dependencies (requests, cryptography -- see
+REM requirements.txt) have to be installed in THIS venv before PyInstaller
+REM runs, not just on whatever Python you normally use: PyInstaller only
+REM bundles a package if it can actually import it from the environment
+REM it's running in. Skipping this doesn't fail the build -- it just
+REM silently ships an app where "Upload to Jira"/"Import via Jira API"
+REM and the encrypted API token storage are all broken, since
+REM jira_client.py swallows the missing import and reports "not
+REM installed" at runtime instead of crashing at build time.
+pip install -r requirements.txt
 pip install pyinstaller
 
 if not exist packaging\icons\icon.ico (

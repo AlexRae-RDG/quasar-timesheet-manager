@@ -5,16 +5,20 @@ import sys
 import threading
 import time
 import tkinter as tk
+import urllib.parse
 import webbrowser
 from tkinter import messagebox, ttk
+from typing import Callable, Optional, Tuple
 
-from . import auto_update, config, jira_client, theme, update_check
+from . import auto_update, config, jira_client, jira_csv_import, theme, update_check
 from .calendar_view import CalendarGrid
 from .db import Database
 from .export_csv import export_entries
-from .models import Project
-from .panels import (ActivityPanel, BackupPanel, DuplicatePanel, ExportPanel, JiraUploadPanel,
-                      ProjectPanel, SettingsPanel)
+from .models import Activity, Project
+from .onboarding_panel import OnboardingPanel
+from .tour import TourCard
+from .panels import (ActivityPanel, BackupPanel, DuplicatePanel, ExportPanel, ImportQdmPanel,
+                      JiraUploadPanel, ProjectPanel, SettingsPanel)
 from .sidebar import Sidebar
 from .summary_panel import SummaryPanel
 from .timeblock_panel import TimeBlockPanel
@@ -24,6 +28,47 @@ from .widgets import RoundedButton
 
 
 class MainWindow(tk.Tk):
+    # The guided tour (app/tour.py's TourCard), started once from
+    # _on_onboarding_complete -- see _start_tour/_tour_show_current_step
+    # below. Each entry is (step text, name of a _tour_prepare_* method);
+    # the method name is resolved via getattr at tour time (not a bound
+    # method reference here) since methods aren't bound yet at class-
+    # body evaluation time. A _tour_prepare_* method does whatever
+    # tab-switching that step needs and returns the widget (or None) to
+    # draw a highlight ring around -- see each one's own comment for why
+    # it does or doesn't point at something specific.
+    _TOUR_STEPS = [
+        ("These are the QDMs you just imported. Click one to select it, "
+         "then click on a timeslot on the calendar to log time against it.",
+         "_tour_prepare_sidebar"),
+        ("Click and drag to create a time block, drag its edges to resize, "
+         "or drag the middle to move it to another day.",
+         "_tour_prepare_calendar"),
+        ("Prefer to log as you go? Pick a QDM here and hit Start Timer -- "
+         "Stop Timer fills in the block automatically. If you don't use "
+         "this feature you can hide it in settings.",
+         "_tour_prepare_timer"),
+        ("Right-click any block to edit, duplicate, or delete it. "
+         "Ctrl+click duplicates it instantly into the same slot. "
+         "Double-click instantly opens the edit page.",
+         "_tour_prepare_calendar"),
+        ("Add a note to each block describing what you actually worked "
+         "on -- this is what Jira sees as the Work Description when you "
+         "upload. Leave it blank and Jira just gets the QDM name instead.",
+         "_tour_prepare_calendar"),
+        ("Do you have recurring daily stand-ups? Set up a typical week "
+         "once here, then apply it to any week instead of re-entering it.",
+         "_tour_prepare_template"),
+        ("Check your totals by QDM or by week here before exporting or "
+         "uploading.",
+         "_tour_prepare_summary"),
+        ("Once your week's logged, this sends it straight to Jira.",
+         "_tour_prepare_upload_button"),
+        ("Your Jira connection, theme, and manual CSV fallbacks all live "
+         "here if you ever need to change something.",
+         "_tour_prepare_settings"),
+    ]
+
     def __init__(self):
         super().__init__()
         self.title("QUASAR Timesheet Manager")
@@ -33,6 +78,35 @@ class MainWindow(tk.Tk):
         self._log_startup_diagnostics()
 
         self.db = Database()
+
+        # First-run setup ("Welcome" tab, app/onboarding_panel.py) --
+        # shown once, automatically, on a genuinely fresh install: nothing
+        # saved yet means onboarding_completed defaults to "" here, which
+        # is anything but "1". Gated by this flag (checked once, at
+        # startup) rather than by re-checking Display Name/token presence
+        # on every launch, EXCEPT for one retroactive case: an existing
+        # install upgrading straight into this version already has a
+        # Display Name or a stored token saved from long before onboarding
+        # existed -- that counts as already set up, and marks itself done
+        # immediately so onboarding is never sprung on someone after the
+        # fact. See _build_body's OnboardingPanel construction (which
+        # actually shows it) and _on_onboarding_complete/_skip_onboarding
+        # below (which mark it done).
+        self._show_onboarding = (self.db.get_setting("onboarding_completed", "") or "") != "1"
+        if self._show_onboarding:
+            already_set_up = (bool(self.db.get_setting("jira_display_name", ""))
+                               or jira_client.has_stored_api_token(self.db))
+            if already_set_up:
+                self.db.set_setting("onboarding_completed", "1")
+                self._show_onboarding = False
+
+        # Guided tour (app/tour.py's TourCard) -- state lives here so
+        # _apply_theme_and_rebuild can reset it safely (see its own
+        # comment) even before _build_body has run for the first time.
+        self._tour_card = None
+        self._tour_step_index = 0
+        self._tour_current_widget = None
+        self._tour_configure_binding = None
 
         # The user's own "Custom" palette seeds -- loaded before
         # set_theme() below so that, if theme_mode is "custom", it
@@ -296,8 +370,7 @@ class MainWindow(tk.Tk):
         menubar = tk.Menu(self)
 
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Export to Jira CSV…", command=self._open_export_dialog)
-        file_menu.add_command(label="Upload to Jira…", command=self._open_jira_upload_dialog)
+        file_menu.add_command(label="Upload to JIRA via API…", command=self._open_jira_upload_dialog)
         file_menu.add_separator()
         file_menu.add_command(label="Backup & Restore…", command=self._open_backup_dialog)
         file_menu.add_separator()
@@ -321,6 +394,7 @@ class MainWindow(tk.Tk):
 
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="How to use", command=self._show_help)
+        help_menu.add_command(label="Take the tour again", command=self._start_tour)
         menubar.add_cascade(label="Help", menu=help_menu)
 
         self.config(menu=menubar)
@@ -338,9 +412,10 @@ class MainWindow(tk.Tk):
 
     def _build_header(self):
         # "Hidden" removes the header row (and its separator) entirely --
-        # the Export to Jira CSV button that used to live here now always
-        # lives in the tab row instead (see _build_body), so nothing here
-        # is load-bearing for reaching Export once the heading is hidden.
+        # nothing here is load-bearing for reaching any Jira action, all
+        # of which live in the tab row ("Import QDM via API"/"Upload to
+        # JIRA via API", see _build_body) or under Settings -> Manual
+        # Import (the CSV-based alternatives) once the heading is hidden.
         if self.header_style == "hidden":
             return
 
@@ -500,13 +575,22 @@ class MainWindow(tk.Tk):
         # crowded against the Timer section and lopsided against the card.
         tab_row.pack(fill="x", padx=16, pady=(10, 10))
 
-        RoundedButton(tab_row, text="Export to Jira CSV", style="Accent.TButton",
-                      command=self._open_export_dialog).pack(side="right")
-        # Packed after Export (both side="right") so it lands just to
-        # Export's left -- the two live together here now that Export
-        # moved out of the header (see the comment above tab_row).
-        RoundedButton(tab_row, text="Upload to Jira", style="Accent.TButton",
-                      command=self._open_jira_upload_dialog).pack(side="right", padx=(0, 8))
+        # These two are the automatic, no-file-picker actions -- the
+        # manual CSV-based alternatives ("Export to Jira CSV", "Export
+        # QDMs from JIRA", "Import QDM's from JIRA...") live under
+        # Settings -> Manual Import instead, so this main-screen bar only
+        # ever shows the two everyday, one-click ways to move data
+        # between this app and Jira: QDMs in, worklogs out. Packed in
+        # that reading order (left to right) -- Upload is packed first
+        # (side="right" lands it rightmost), then Import right before it.
+        self.upload_jira_button = RoundedButton(
+            tab_row, text="Upload to JIRA via API", style="Accent.TButton",
+            command=self._open_jira_upload_dialog)
+        self.upload_jira_button.pack(side="right")
+        self.import_qdm_api_button = RoundedButton(
+            tab_row, text="Import QDM via API", style="Accent.TButton",
+            command=self._open_jira_api_import)
+        self.import_qdm_api_button.pack(side="right", padx=(0, 8))
 
         self.tab_bar = tk.Frame(tab_row, bg=theme.APP_BG)
         self.tab_bar.pack(side="left", fill="x", expand=True)
@@ -542,7 +626,8 @@ class MainWindow(tk.Tk):
                                 open_activity_panel=self._open_activity_panel,
                                 open_project_panel=self._open_project_panel,
                                 collapsed=self.sidebar_collapsed,
-                                on_toggle_collapse=self._toggle_sidebar_collapsed)
+                                on_toggle_collapse=self._toggle_sidebar_collapsed,
+                                on_import_via_api=self._open_jira_api_import)
         # The 14px gap between sidebar and calendar is taken out of the
         # calendar's side (padx on the calendar below), not the sidebar's:
         # the sidebar's ScrollArea draws its rounded card via place(), which
@@ -584,7 +669,8 @@ class MainWindow(tk.Tk):
                                          open_activity_panel=self._open_activity_panel,
                                          open_project_panel=self._open_project_panel,
                                          collapsed=self.sidebar_collapsed,
-                                         on_toggle_collapse=self._toggle_sidebar_collapsed)
+                                         on_toggle_collapse=self._toggle_sidebar_collapsed,
+                                         on_import_via_api=self._open_jira_api_import)
         self.template_sidebar.grid(row=0, column=0, sticky="nsew")
 
         self.template_calendar = CalendarGrid(
@@ -624,7 +710,10 @@ class MainWindow(tk.Tk):
             # on_clear_token backs "Clear stored token".
             has_stored_token=lambda: jira_client.has_stored_api_token(self.db),
             on_save_token=self._save_jira_api_token,
-            on_clear_token=lambda: jira_client.delete_api_token(self.db))
+            on_clear_token=lambda: jira_client.delete_api_token(self.db),
+            on_export_worklog_csv=self._open_export_dialog,
+            on_export_qdms_from_jira=self._open_jira_export_page,
+            on_import_qdms_from_csv=self._open_jira_csv_import_dialog)
         self.notebook.add(self.settings_panel, text="Settings")
         self._all_tabs.append((self.settings_panel, "Settings"))
         self._load_settings_panel()
@@ -643,8 +732,16 @@ class MainWindow(tk.Tk):
             self.notebook, family=self.family,
             on_close=lambda: self._hide_panel(self.activity_panel),
             get_projects=lambda: self.db.list_projects(),
-            create_project=self._create_project_inline)
+            create_project=self._create_project_inline,
+            on_import_via_api=self._open_jira_api_import)
         self._register_panel(self.activity_panel, "Add QDM")
+
+        self.import_qdm_panel = ImportQdmPanel(
+            self.notebook, family=self.family,
+            on_close=lambda: self._hide_panel(self.import_qdm_panel),
+            get_projects=lambda: self.db.list_projects(),
+            create_project=self._create_project_inline)
+        self._register_panel(self.import_qdm_panel, "Import QDMs")
 
         self.project_panel = ProjectPanel(
             self.notebook, family=self.family,
@@ -667,7 +764,27 @@ class MainWindow(tk.Tk):
             on_close=lambda: self._hide_panel(self.jira_upload_panel))
         self._register_panel(self.jira_upload_panel, "Upload")
 
+        self.onboarding_panel = OnboardingPanel(
+            self.notebook, family=self.family,
+            default_site_url=self.db.get_setting(
+                "jira_site_url", config.DEFAULT_JIRA_SITE_URL) or config.DEFAULT_JIRA_SITE_URL,
+            email_domain=config.DEFAULT_JIRA_EMAIL_TEMPLATE.split("@")[-1],
+            on_complete=self._on_onboarding_complete, on_skip=self._skip_onboarding)
+        self._register_panel(self.onboarding_panel, "Welcome")
+
         self._refresh_tab_bar()
+
+        # Auto-select it, but only the first time this window is ever
+        # built -- _select_theme/_apply_theme_and_rebuild tears down and
+        # calls _build_body again on a theme/hours/chrome change, and if
+        # someone hasn't finished (or skipped) onboarding yet by the time
+        # they trigger one of those from the Settings tab, re-forcing this
+        # tab back to the front on every subsequent rebuild would be more
+        # surprising than helpful -- see this flag's own comment in
+        # __init__ for the rest of the gating logic.
+        if self._show_onboarding:
+            self._show_panel(self.onboarding_panel)
+            self._show_onboarding = False
 
     def _on_sidebar_change(self):
         # Both tabs share the same activities/projects tables, so an
@@ -863,6 +980,173 @@ class MainWindow(tk.Tk):
         self.project_panel.load(project, on_save, on_delete)
         self._show_panel(self.project_panel)
 
+    # The exact JQL this app's QDMs need: only this project, only issues
+    # assigned to whoever's signed into Jira in the browser, only the two
+    # "still live" statuses (so a stale Done/Backlog item doesn't get
+    # re-imported), Sub-task only (QDMs are always Sub-tasks in this
+    # project -- see config.JIRA_KEY_PREFIX), sorted by the same custom
+    # field ("cf[10116]") this team already sorts its board by. Kept as
+    # one literal string rather than building it up from parts, since it
+    # has to match exactly what a user pastes into Jira's own search bar
+    # and reproducing it piecemeal is just more places for a stray typo
+    # to hide.
+    _QDM_EXPORT_JQL = (
+        "project = QDM\n"
+        "AND assignee = currentUser()\n"
+        "AND type = Sub-task\n"
+        "AND status IN (\"In Progress\", Pipeline)\n"
+        "ORDER BY cf[10116] ASC"
+    )
+
+    def _open_jira_export_page(self):
+        """"Export QDMs from JIRA" (Settings -> Manual Import) -- opens
+        this user's Jira site, pre-filtered to exactly the QDMs they'd
+        want to bring into this app (see _QDM_EXPORT_JQL above), in their
+        default browser so the only thing left to do there is
+        Export -> CSV. Uses whatever Jira site they've configured in
+        Settings (falling back to config.DEFAULT_JIRA_SITE_URL the same
+        way the direct-upload feature does), not a hardcoded site, so
+        this keeps working if this app is ever pointed at a different
+        Jira instance."""
+        site_url = self.db.get_setting("jira_site_url", config.DEFAULT_JIRA_SITE_URL) or \
+            config.DEFAULT_JIRA_SITE_URL
+        base = jira_client.normalize_site_url(site_url)
+        url = (f"{base}/jira/software/c/projects/QDM/list"
+               f"?jql={urllib.parse.quote(self._QDM_EXPORT_JQL)}")
+        webbrowser.open(url)
+
+    def _open_jira_csv_import_dialog(self):
+        """"Import QDM's from JIRA" (Settings -> Manual Import) -- picks a
+        CSV (see the README's "Importing QDMs from Jira" section for how
+        to produce one: a JQL search like `assignee = currentUser()`,
+        then Jira's own Issue Navigator -> Export -> CSV), parses it
+        (app/jira_csv_import.py), and opens the review panel for whatever
+        it found -- or tells you why there's nothing to review, without
+        opening an empty panel for no reason."""
+        from tkinter import filedialog
+        filepath = filedialog.askopenfilename(
+            title="Import QDMs from Jira CSV export",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not filepath:
+            return
+
+        # Archived counts as "already have this one" same as active --
+        # see jira_csv_import.parse's own comment on existing_jira_keys.
+        existing_jira_keys = {
+            a.jira_key.strip().upper()
+            for a in self.db.list_activities(include_archived=True)
+            if a.jira_key
+        }
+        try:
+            result = jira_csv_import.parse(filepath, existing_jira_keys)
+        except jira_csv_import.NotAJiraExport as exc:
+            messagebox.showerror("Couldn't read that file", str(exc))
+            return
+
+        self._show_import_review(result)
+
+    def _open_jira_api_import(self, on_done: Optional[Callable[[], None]] = None):
+        """"Import QDM via API" (tab row, and again on the Add QDM
+        screen) -- the direct-API sibling of _open_jira_csv_import_dialog
+        above: same JQL as _open_jira_export_page (_QDM_EXPORT_JQL), same
+        review screen and dedup rules (jira_csv_import.from_api_results),
+        but calls Jira's search endpoint directly (jira_client.
+        search_issues) instead of asking for a CSV someone exported by
+        hand. Needs the same Jira Cloud credentials "Upload to JIRA via
+        API" already uses (Settings -> Jira Cloud Upload) -- unlike the
+        CSV/browser route under Settings -> Manual Import, which only
+        needs you signed into Jira in your browser, never a saved API
+        token, this one can't work without it.
+
+        on_done, when given, runs once the whole import flow has actually
+        concluded -- after a real import, or after "nothing new to
+        import" (see _show_import_review) -- but NOT on an early failure
+        here (Jira not set up, or the search itself fails), since neither
+        of those actually gets anyone to a QDM list worth doing anything
+        with next. _on_onboarding_complete is the one caller that passes
+        this, to start the guided tour (app/tour.py) right as someone
+        lands back on a sidebar that actually has their QDMs in it."""
+        site_url = self.db.get_setting("jira_site_url", "") or ""
+        email = self.db.get_setting("jira_email", "") or ""
+        api_token = jira_client.get_api_token(self.db) or ""
+        if not (site_url and email and api_token):
+            messagebox.showwarning(
+                "Jira Cloud not set up",
+                "Enter your Jira Site URL, Email, and API Token in Settings → Jira "
+                "Cloud Upload before using this button. Settings → Manual "
+                "Import has CSV-based alternatives that don't need any of "
+                "this and still work without it.")
+            return
+
+        credentials = jira_client.JiraCredentials(
+            site_url=site_url, email=email, api_token=api_token)
+        try:
+            found = jira_client.search_issues(credentials, self._QDM_EXPORT_JQL)
+        except jira_client.JiraSearchError as exc:
+            messagebox.showerror("Jira search failed", str(exc))
+            return
+
+        # Archived counts as "already have this one" same as active --
+        # see jira_csv_import.parse's own comment on existing_jira_keys.
+        existing_jira_keys = {
+            a.jira_key.strip().upper()
+            for a in self.db.list_activities(include_archived=True)
+            if a.jira_key
+        }
+        result = jira_csv_import.from_api_results(found, existing_jira_keys)
+        self._show_import_review(result, on_done=on_done)
+
+    def _show_import_review(self, result: jira_csv_import.ImportResult,
+                             on_done: Optional[Callable[[], None]] = None):
+        """Shared tail for both import entry points above (a CSV file or a
+        direct Jira API search) -- once either one has produced a
+        jira_csv_import.ImportResult, what happens next (tell the user
+        there's nothing new, or open the review panel) is identical, so
+        this is the one place that decides it. on_done (see
+        _open_jira_api_import's own comment) fires either way once this
+        flow is actually done -- immediately, for "nothing new"; after a
+        real import completes, otherwise."""
+        if not result.candidates:
+            reasons = []
+            if result.skipped_duplicate:
+                reasons.append(f"{result.skipped_duplicate} already in your QDMs")
+            if result.skipped_not_a_qdm_key:
+                reasons.append(f"{result.skipped_not_a_qdm_key} didn’t look like a "
+                                f"{config.JIRA_KEY_PREFIX}<number> issue key")
+            if result.skipped_blank_key:
+                reasons.append(f"{result.skipped_blank_key} had no Issue Key")
+            detail = (" (" + ", ".join(reasons) + ")") if reasons else ""
+            messagebox.showinfo("Nothing new to import", f"Nothing new to add{detail}.")
+            if on_done is not None:
+                on_done()
+            return
+
+        def _on_import(to_import):
+            self._import_qdms(to_import)
+            if on_done is not None:
+                on_done()
+
+        self.import_qdm_panel.load(
+            result.candidates, result.skipped_duplicate, result.skipped_not_a_qdm_key,
+            result.skipped_blank_key, on_import=_on_import)
+        self._show_panel(self.import_qdm_panel)
+
+    def _import_qdms(self, to_import):
+        """on_import callback for ImportQdmPanel -- to_import is a list of
+        (name, jira_key, project_id) tuples, already resolved (including
+        any "+ New Project..." rows, created by the panel itself via
+        self._create_project_inline before this ever runs -- see
+        ImportQdmPanel._import_all). Plain INSERTs from here, same as
+        _create_project_inline does for a single Project; no separate
+        undo for a bulk import beyond deleting the unwanted ones by hand
+        afterward, same as any other Add QDM."""
+        for name, jira_key, project_id in to_import:
+            self.db.add_activity(Activity(
+                id=None, name=name, jira_key=jira_key, project_id=project_id))
+        self._on_sidebar_change()
+        messagebox.showinfo("Import complete", f"Added {len(to_import)} QDM(s).")
+
     # ------------------------------------------------------------------
     # Theme (see app/theme.py's THEMES for the twenty curated choices, plus
     # the "custom" id built live from the user's own picked colors)
@@ -878,6 +1162,24 @@ class MainWindow(tk.Tk):
         self._apply_theme_and_rebuild(theme_id)
 
     def _apply_theme_and_rebuild(self, theme_id: str):
+        # A live guided tour (app/tour.py's TourCard) is placed directly
+        # on self, so it's among the widgets the destroy loop below tears
+        # down -- reset every bit of tour state up front so nothing later
+        # (a queued <Configure> callback, a stray Next/Back click that
+        # slipped in first) touches a reference to a widget that no
+        # longer exists. A tour interrupted by a theme/hours/chrome
+        # change simply doesn't resume -- same as the "Welcome" tab
+        # itself not resuming across this same rebuild (see __init__'s
+        # _show_onboarding comment).
+        if self._tour_configure_binding is not None:
+            try:
+                self.unbind("<Configure>", self._tour_configure_binding)
+            except tk.TclError:
+                pass
+        self._tour_card = None
+        self._tour_current_widget = None
+        self._tour_configure_binding = None
+
         theme.set_theme(theme_id)
         self.family = theme.apply_theme(self)
         self.configure(bg=theme.APP_BG)
@@ -959,6 +1261,23 @@ class MainWindow(tk.Tk):
                         "token again -- this only happens running from source with "
                         "dependencies missing; a packaged build always has this bundled.")
 
+            # Only run the Jira connection test here when something about
+            # the Jira setup actually changed this save -- a plain re-save
+            # of, say, the Theme shouldn't make a network call and pop a
+            # dialog over Jira credentials that never changed. "Changed"
+            # covers a newly-typed token, or an edited Site URL/Email; the
+            # test itself always uses the freshest values (the token just
+            # stored above, or -- if only Site URL/Email changed -- whatever
+            # token is already on file).
+            jira_changed = (new_jira_site_url != current_jira_site_url
+                            or new_jira_email != current_jira_email
+                            or bool(new_jira_api_token))
+            if jira_changed:
+                token_for_test = new_jira_api_token or (jira_client.get_api_token(self.db) or "")
+                if new_jira_site_url and new_jira_email and token_for_test:
+                    self._verify_jira_connection_and_report(
+                        new_jira_site_url, new_jira_email, token_for_test)
+
             # Always persist the Custom palette's current seed colors,
             # whether or not "custom" is the theme actually being saved --
             # SettingsPanel keeps theme.get_custom_seeds() in sync with
@@ -1007,18 +1326,29 @@ class MainWindow(tk.Tk):
                                   current_show_timer_bar, current_header_style,
                                   current_jira_site_url, current_jira_email, on_save)
 
-    def _save_jira_api_token(self, token: str) -> bool:
+    def _save_jira_api_token(self, token: str, site_url: str, email: str) -> bool:
         """Backs the dedicated "Save API Token" button (see
         _load_settings_panel's SettingsPanel construction) -- a named
         method rather than an inline lambda so EncryptionUnavailable gets
         the same messagebox treatment here as it does inside on_save
         above, instead of surfacing as an unhandled Tk callback error.
-        Returns whether it actually saved, so panels.py's
-        _save_jira_token knows not to show a "saved" toast over a
-        warning dialog when it didn't."""
+
+        Also persists Site URL/Email alongside the token (all three are
+        needed to verify anything, and panels.py's _save_jira_token
+        already refuses to call this without both filled in) and then
+        runs an immediate Jira connection test against them -- see
+        _verify_jira_connection_and_report -- so a new user finds out
+        right here, right away, whether "Upload to JIRA via API"/"Import
+        QDM via API" will actually work, instead of only discovering a
+        typo the first time they click one of those buttons.
+
+        Returns whether the token itself actually saved (independent of
+        whether the connection test passed -- a wrong Site URL or a
+        network hiccup shouldn't make the app pretend the token wasn't
+        stored), so panels.py's _save_jira_token knows not to show a
+        "saved" toast over a warning dialog when it didn't."""
         try:
             jira_client.store_api_token(self.db, token)
-            return True
         except jira_client.EncryptionUnavailable as exc:
             messagebox.showwarning(
                 "Couldn't save the Jira API token",
@@ -1027,6 +1357,222 @@ class MainWindow(tk.Tk):
                 "happens running from source with dependencies missing; a packaged build "
                 "always has this bundled.")
             return False
+
+        self.db.set_setting("jira_site_url", site_url)
+        self.db.set_setting("jira_email", email)
+        self._verify_jira_connection_and_report(site_url, email, token)
+        return True
+
+    def _verify_jira_connection_and_report(self, site_url: str, email: str, token: str) -> None:
+        """Runs jira_client.verify_credentials() against a just-saved Site
+        URL/Email/API Token and reports the result in a messagebox --
+        shared by the dedicated "Save API Token" button (_save_jira_api_token
+        above) and the big Settings Save button (_load_settings_panel's
+        on_save, only when the Jira fields actually changed -- see its own
+        comment). A side-effect-free GET to Jira's "who am I" endpoint
+        (jira_client.verify_credentials), not a real upload/import, so it's
+        safe to run every time these values are saved."""
+        credentials = jira_client.JiraCredentials(
+            site_url=site_url, email=email, api_token=token)
+        try:
+            display_name = jira_client.verify_credentials(credentials)
+        except jira_client.JiraConnectionError as exc:
+            messagebox.showwarning(
+                "Jira connection test failed",
+                "Everything was saved, but the Jira connection test failed:\n\n"
+                f"{exc}\n\n\u201cUpload to JIRA via API\u201d and \u201cImport QDM via "
+                "API\u201d won't work until this succeeds -- double check the Site URL, "
+                "Email and API Token in Settings.")
+            return
+        messagebox.showinfo(
+            "Jira connection verified",
+            f"Connected to Jira as {display_name}. \u201cUpload to JIRA via API\u201d and "
+            "\u201cImport QDM via API\u201d are ready to use.")
+
+    def _on_onboarding_complete(self, name: str, site_url: str, email: str,
+                                 token: str) -> Tuple[bool, bool, str]:
+        """on_complete for the "Welcome" first-run tab (app/onboarding_panel.py).
+        Saves Display Name/Site URL/Email/API Token exactly like the regular
+        Settings Save path does, then verifies the connection the same way
+        _save_jira_api_token does -- but reports the outcome back to the
+        panel itself as a return value (it shows its own inline status text)
+        rather than via a messagebox, since this is someone's very first
+        impression of the app and a modal dialog on top of a half-finished
+        setup screen would be a worse start than an inline message.
+
+        Returns (saved, verified, message): saved is whether the token
+        itself made it into storage; verified is whether the connection
+        test actually passed. On full success (both True) this also marks
+        onboarding done, hides this tab for good, and jumps straight into
+        "Import QDM via API" -- the whole point of asking for a name and a
+        token up front is landing someone directly in their QDMs, not back
+        on an empty Timesheet tab."""
+        self.db.set_setting("jira_display_name", name)
+        self.db.set_setting("jira_site_url", site_url)
+        self.db.set_setting("jira_email", email)
+        try:
+            jira_client.store_api_token(self.db, token)
+        except jira_client.EncryptionUnavailable as exc:
+            return False, False, (
+                f"Couldn't save the API token: {exc}\n\nRun `pip install -r "
+                "requirements.txt` and try again -- this only happens running "
+                "from source with dependencies missing; a packaged build always "
+                "has this bundled.")
+
+        credentials = jira_client.JiraCredentials(
+            site_url=site_url, email=email, api_token=token)
+        try:
+            verified_name = jira_client.verify_credentials(credentials)
+        except jira_client.JiraConnectionError as exc:
+            return True, False, str(exc)
+
+        self.db.set_setting("onboarding_completed", "1")
+        self.notebook.tab(self.onboarding_panel, state="hidden")
+        # Settings was already built (and loaded) before this ran -- refresh
+        # it so opening Settings later shows what was just saved here,
+        # instead of the blank fields it loaded with at startup.
+        self._load_settings_panel()
+        # on_done=self._start_tour, not a bare call -- the guided tour
+        # (app/tour.py) should only start once QDMs actually land in the
+        # sidebar (or this import concludes with genuinely nothing new to
+        # add), never before the review screen even opens, and never at
+        # all if the search itself fails -- see _open_jira_api_import's
+        # own comment on exactly when on_done does and doesn't fire. This
+        # is also, deliberately, the ONLY call site that ever passes
+        # on_done here -- a normal "Import QDM via API" click later
+        # (tab row, or Add QDM) never re-triggers the tour.
+        self._open_jira_api_import(on_done=self._start_tour)
+        return True, True, f"Connected to Jira as {verified_name}."
+
+    def _skip_onboarding(self):
+        """on_skip for the "Welcome" tab -- marks onboarding done (so it
+        never comes back) without saving anything, and drops back to
+        Timesheet. Settings -> Jira Cloud Upload always has the same three
+        fields for anyone who skips now and wants to set it up later.
+        Deliberately does NOT start the guided tour -- see
+        _on_onboarding_complete's own on_done comment; skipping the
+        Welcome screen means skipping the tour too."""
+        self.db.set_setting("onboarding_completed", "1")
+        self.notebook.tab(self.onboarding_panel, state="hidden")
+        self.notebook.select(0)
+
+    # ------------------------------------------------------------------
+    # Guided tour (app/tour.py) -- started once from _on_onboarding_complete
+    # above, and replayable any time from Help -> "Take the tour again".
+    # ------------------------------------------------------------------
+    def _start_tour(self):
+        if self._tour_card is not None:
+            return
+        self._tour_step_index = 0
+        self._tour_card = TourCard(
+            self, family=self.family, on_next=self._tour_next,
+            on_back=self._tour_back, on_skip=self._end_tour)
+        # add="+" (not a plain bind) so this never clobbers whatever else
+        # is already bound to <Configure> on self elsewhere in this file;
+        # the returned funcid is what lets _apply_theme_and_rebuild/
+        # _end_tour remove just this one binding later, not every
+        # <Configure> handler on the window.
+        self._tour_configure_binding = self.bind(
+            "<Configure>", self._tour_on_configure, add="+")
+        self._tour_show_current_step()
+
+    def _tour_show_current_step(self):
+        text, prepare_name = self._TOUR_STEPS[self._tour_step_index]
+        widget = getattr(self, prepare_name)()
+        self._tour_current_widget = widget
+        # A _tour_prepare_* method above may have just switched notebook
+        # tabs (self.notebook.select(...)) -- winfo_rootx/y/width/height
+        # on whatever it returned won't reflect that until pending
+        # geometry work actually runs.
+        self.update_idletasks()
+        self._tour_card.show_step(self._tour_step_index, len(self._TOUR_STEPS), text)
+        self._tour_card.place_near(self, widget)
+        self._tour_card.highlight(self, widget)
+
+    def _tour_next(self):
+        if self._tour_step_index >= len(self._TOUR_STEPS) - 1:
+            self._end_tour()
+            return
+        self._tour_step_index += 1
+        self._tour_show_current_step()
+
+    def _tour_back(self):
+        if self._tour_step_index <= 0:
+            return
+        self._tour_step_index -= 1
+        self._tour_show_current_step()
+
+    def _end_tour(self):
+        if self._tour_configure_binding is not None:
+            try:
+                self.unbind("<Configure>", self._tour_configure_binding)
+            except tk.TclError:
+                pass
+            self._tour_configure_binding = None
+        if self._tour_card is not None:
+            self._tour_card.destroy()
+            self._tour_card = None
+        self._tour_current_widget = None
+
+    def _tour_on_configure(self, event=None):
+        # Fires on every <Configure> on self (a resize, a maximize/
+        # restore, ...), including ones bubbling up from unrelated
+        # descendant widgets -- only actually reposition on one that's
+        # really about the window itself, and only while a tour is
+        # actually showing (self._tour_card is None the rest of the
+        # time, including right after _apply_theme_and_rebuild has torn
+        # one down -- see that method's own comment).
+        if event is not None and event.widget is not self:
+            return
+        if self._tour_card is None:
+            return
+        self._tour_card.place_near(self, self._tour_current_widget)
+        self._tour_card.highlight(self, self._tour_current_widget)
+
+    # Each of these does whatever tab-switching a step needs and returns
+    # the widget (or None) for _tour_show_current_step to draw a
+    # highlight ring around -- see app/tour.py's TourCard.highlight/
+    # place_near for how gracefully a None (or a widget that turns out
+    # not to be on screen) is handled.
+    def _tour_prepare_sidebar(self):
+        self.notebook.select(self.timesheet_tab)
+        return self.sidebar
+
+    def _tour_prepare_calendar(self):
+        # Shared by three steps (creating/editing a block, and the Notes
+        # field) -- none of them have a real time block on screen to
+        # point at (the tour doesn't create one just to have something
+        # to highlight), so all three just point at the calendar grid
+        # itself, where that block would be.
+        self.notebook.select(self.timesheet_tab)
+        return self.calendar.canvas
+
+    def _tour_prepare_timer(self):
+        self.notebook.select(self.timesheet_tab)
+        # Hidden via the Settings "Hide the Timer bar" toggle -- still
+        # constructed either way (see _build_timer_bar's own comment),
+        # just not packed, so winfo_ismapped() is the right check rather
+        # than a None/exists check.
+        return self.timer_bar if self.timer_bar.winfo_ismapped() else None
+
+    def _tour_prepare_template(self):
+        self.notebook.select(self.template_tab)
+        return self.template_calendar.canvas
+
+    def _tour_prepare_summary(self):
+        # The whole tab is the point here, not one control on it -- no
+        # widget to ring, just switch to it.
+        self.notebook.select(self.summary_panel)
+        return None
+
+    def _tour_prepare_upload_button(self):
+        # Lives in tab_row, outside the notebook -- visible regardless
+        # of which tab is currently selected, so no tab switch needed.
+        return self.upload_jira_button
+
+    def _tour_prepare_settings(self):
+        self.notebook.select(self.settings_panel)
+        return None
 
     def _open_settings_dialog(self):
         # Settings is a permanent tab now (see _build_body) -- this just
@@ -1135,8 +1681,9 @@ class MainWindow(tk.Tk):
             messagebox.showwarning(
                 "Jira Cloud not set up",
                 "Enter your Jira Site URL, Email, and API Token in Settings → Jira Cloud "
-                "Upload before using this button. \u201cExport to Jira CSV\u201d doesn't "
-                "need any of this and still works without it.")
+                "Upload before using this button. Settings → Manual Import → "
+                "\u201cExport to Jira CSV\u201d doesn't need any of this and still "
+                "works without it.")
             return
 
         entries = self.db.list_time_entries_between(start_date, end_date)
@@ -1214,8 +1761,9 @@ class MainWindow(tk.Tk):
             "which sets the color every one of its activities' time blocks "
             "shows -- click the arrow to collapse/expand, or right-click a "
             "project to edit/delete it.\n"
-            "• File → Export to Jira CSV… to generate a worklog CSV for Jira's "
-            "CSV importer. Only blocks with a Jira Issue Key are exported.\n\n"
+            "• Settings → Manual Import → Export to Jira CSV… to generate a "
+            "worklog CSV for Jira's own CSV importer. Only blocks with a Jira "
+            "Issue Key are exported.\n\n"
             "Keyboard shortcuts (click the calendar first so it has focus):\n"
             "• Click a block (without dragging) to select it -- it gets a "
             "highlighted outline.\n"

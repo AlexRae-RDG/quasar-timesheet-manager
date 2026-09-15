@@ -15,12 +15,23 @@ Mirrors export_csv.py's own field-mapping/fallback rules on purpose (same
 Jira Project / Issue Type fallback chain, same notes-or-activity-name
 Work Description) so a given time entry produces the same Jira content
 whichever of the two upload paths is used.
+
+Also holds search_issues() -- the direct-API sibling of
+app/jira_csv_import.py's CSV-based import, fetching QDMs straight from
+
+    POST https://<site>.atlassian.net/rest/api/3/search/jql
+
+instead of asking someone to export a CSV from Jira's UI by hand first.
+That's the *current* Jira Cloud search endpoint -- Atlassian fully
+removed the older `/rest/api/3/search` endpoint, and this one paginates
+with a `nextPageToken` (absent once you've hit the last page) instead of
+the old `startAt`/`total` scheme.
 """
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from .models import TimeEntry
 
@@ -299,3 +310,144 @@ def upload_entries(credentials: JiraCredentials, entries: List[TimeEntry],
             on_progress(i + 1, len(entries))
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Search (direct-API alternative to the CSV export/import round trip)
+# ---------------------------------------------------------------------------
+def _search_url(site_url: str) -> str:
+    return f"{normalize_site_url(site_url)}/rest/api/3/search/jql"
+
+
+class JiraSearchError(Exception):
+    """Raised by search_issues() for anything that stops the search short
+    of a full result set -- a missing 'requests' install, a non-200
+    response (bad JQL, an expired/invalid API token, ...), or a network
+    error. One exception type rather than upload_entries()'s per-item
+    JiraUploadResult list, because a search is a single logical operation
+    (you either get the matching QDMs or you don't) rather than a batch
+    where some items can succeed while others fail."""
+
+
+def search_issues(credentials: JiraCredentials, jql: str, max_results: int = 100,
+                   timeout: float = 15.0) -> List[Tuple[str, str]]:
+    """Returns every (issue_key, summary) pair the given JQL matches,
+    handling pagination transparently -- callers get one flat list, same
+    shape jira_csv_import.from_api_results() expects.
+
+    Uses the same email + API token Basic auth as upload_entries() (a
+    Jira API token authenticates both reading and writing), so this only
+    works once someone has saved a token in Settings -> Jira Cloud
+    Upload -- unlike main_window.py's _open_jira_csv_import_dialog/
+    _open_jira_export_page route, which only needs the browser signed
+    into Jira, never a saved token. That's a real trade-off, not a bug:
+    this is the faster path for anyone who's already set up direct
+    upload, not a replacement for the no-setup-required CSV route.
+
+    POST (not GET) even though this JQL easily fits in a URL -- the
+    request body form is what Atlassian's own migration guidance for
+    this endpoint recommends to sidestep URL-length/encoding edge cases
+    entirely, and it costs nothing here since this is already a JSON
+    API call."""
+    if requests is None:
+        raise JiraSearchError("The 'requests' package is not installed.")
+
+    auth = (credentials.email, credentials.api_token)
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    issues: List[Tuple[str, str]] = []
+    next_page_token: Optional[str] = None
+
+    while True:
+        body = {"jql": jql, "maxResults": max_results, "fields": ["summary"]}
+        if next_page_token:
+            body["nextPageToken"] = next_page_token
+        try:
+            resp = requests.post(_search_url(credentials.site_url), json=body,
+                                  auth=auth, headers=headers, timeout=timeout)
+        except requests.RequestException as exc:
+            raise JiraSearchError(str(exc)) from exc
+
+        if resp.status_code != 200:
+            detail = (resp.text or "").strip()
+            if len(detail) > 300:
+                detail = detail[:300] + "…"
+            raise JiraSearchError(f"HTTP {resp.status_code}: {detail or resp.reason}")
+
+        data = resp.json()
+        for issue in data.get("issues", []):
+            key = (issue.get("key") or "").strip()
+            if not key:
+                continue
+            summary = ((issue.get("fields") or {}).get("summary") or "").strip()
+            issues.append((key, summary))
+
+        # No isLast flag on this endpoint (Atlassian's own migration notes
+        # for it) -- the absence of nextPageToken IS the "last page"
+        # signal.
+        next_page_token = data.get("nextPageToken")
+        if not next_page_token:
+            break
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Credential verification (instant feedback when Settings -> Save is clicked)
+# ---------------------------------------------------------------------------
+class JiraConnectionError(Exception):
+    """Raised by verify_credentials() when Jira rejects the credentials, or
+    can't be reached at all -- distinct from JiraSearchError/JiraUploadResult
+    because this always means "the credentials themselves are the problem",
+    never "some items failed"."""
+
+
+def verify_credentials(credentials: JiraCredentials, timeout: float = 10.0) -> str:
+    """Calls Jira Cloud's GET /rest/api/3/myself -- the standard, side-effect
+    -free "who am I" endpoint -- to confirm the Site URL / Email / API Token
+    combination actually works, and returns the authenticated user's display
+    name on success (so Settings can show "Connected as Alex Rae" rather than
+    a bare "it worked").
+
+    Used from main_window.py's _save_jira_api_token() to give new users
+    instant, specific feedback right when they click Save in Settings,
+    instead of only finding out their token/email/site is wrong the first
+    time they click "Upload to JIRA via API" or "Import QDM via API" --
+    the actual goal being that these buttons work first time.
+
+    Raises JiraConnectionError with a message meant to be shown directly
+    in the UI -- distinguishing "bad credentials" (401/403) from "bad site
+    URL / network problem" (anything else) since those need different
+    fixes from the user."""
+    if requests is None:
+        raise JiraConnectionError("The 'requests' package is not installed.")
+
+    site_url = normalize_site_url(credentials.site_url)
+    if not site_url:
+        raise JiraConnectionError("Enter a Jira Site URL first.")
+    if not credentials.email:
+        raise JiraConnectionError("Enter your Jira account Email first.")
+    if not credentials.api_token:
+        raise JiraConnectionError("Enter an API Token first.")
+
+    auth = (credentials.email, credentials.api_token)
+    headers = {"Accept": "application/json"}
+    url = f"{site_url}/rest/api/3/myself"
+    try:
+        resp = requests.get(url, auth=auth, headers=headers, timeout=timeout)
+    except requests.RequestException as exc:
+        raise JiraConnectionError(
+            f"Couldn't reach {credentials.site_url or '(no site set)'} -- {exc}") from exc
+
+    if resp.status_code == 200:
+        data = resp.json()
+        return (data.get("displayName") or credentials.email or "").strip()
+
+    if resp.status_code in (401, 403):
+        raise JiraConnectionError(
+            "Jira rejected these credentials -- check your Email and API Token.")
+
+    detail = (resp.text or "").strip()
+    if len(detail) > 200:
+        detail = detail[:200] + "…"
+    raise JiraConnectionError(
+        f"HTTP {resp.status_code} from Jira -- check your Site URL. {detail or resp.reason}")

@@ -20,22 +20,15 @@ class TestDatabase(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def test_seed_defaults(self):
-        activities = self.db.list_activities()
-        self.assertEqual(len(activities), 4)
-        names = {a.name for a in activities}
-        self.assertIn("Sprint Planning", names)
-
-        projects = self.db.list_projects()
-        project_names = {p.name for p in projects}
-        self.assertIn("General", project_names)
-        self.assertIn("Client Alpha", project_names)
-
-        # Every seeded activity belongs to a real project and inherits its
-        # color -- there's no "ungrouped" state.
-        for a in activities:
-            self.assertIsNotNone(a.project_id)
-            self.assertIsNotNone(a.color)
+    def test_a_fresh_database_starts_with_no_projects_or_activities(self):
+        # No demo/seed data any more -- a brand new install starts
+        # completely empty on purpose, so the first real thing a person
+        # does is either Add QDM or Import QDMs from Jira (see
+        # app/panels.py's ActivityPanel/ImportQdmPanel), not delete a
+        # handful of fake "Sprint Planning"/"Client Alpha" placeholders
+        # before getting to their own data.
+        self.assertEqual(self.db.list_activities(), [])
+        self.assertEqual(self.db.list_projects(), [])
 
     def test_list_known_jira_projects_always_includes_the_fixed_default(self):
         # A fresh database has no time blocks yet, but the fixed default
@@ -45,7 +38,9 @@ class TestDatabase(unittest.TestCase):
         self.assertEqual(self.db.list_known_jira_projects(), [config.DEFAULT_JIRA_PROJECT])
 
     def test_list_known_jira_projects_includes_projects_actually_used(self):
-        act = self.db.list_activities()[0]
+        general_id = self.db.add_project(Project(None, "General", config.DEFAULT_PROJECT_COLORS[0]))
+        act_id = self.db.add_activity(Activity(None, "Sprint Planning", "PROJ-1", project_id=general_id))
+        act = self.db.get_activity(act_id)
         self.db.add_time_entry(TimeEntry(
             None, act.id, act.name, act.jira_key, act.color,
             "2026-08-24", "09:00", "10:00", "", jira_project="Other Client Project"))
@@ -66,9 +61,15 @@ class TestDatabase(unittest.TestCase):
         # Used by the Add QDM tab's inline "+ New Project..." flow (see
         # ActivityPanel.create_project in app/panels.py), which only asks
         # for a name -- a color is auto-picked so the user isn't stopped
-        # to choose one.
+        # to choose one. A fresh database starts with no Projects at all
+        # (see test_a_fresh_database_starts_with_no_projects_or_activities),
+        # so this adds one itself first to actually exercise the "skip
+        # colors already in use" branch rather than the "nothing's used
+        # yet" one -- test_project_crud_and_collapse_toggle-adjacent tests
+        # cover the from-empty case implicitly via this same method.
+        self.db.add_project(Project(None, "Existing Client", config.DEFAULT_PROJECT_COLORS[0]))
         used = {p.color for p in self.db.list_projects()}
-        self.assertTrue(used, "seed data should already have used colors")
+        self.assertTrue(used, "should have at least one used color by now")
 
         project = self.db.add_project_with_default_color("New Client")
         self.assertIsNotNone(project.id)
@@ -810,6 +811,9 @@ class TestDatabase(unittest.TestCase):
     def test_restore_from_rejects_an_unrelated_sqlite_file(self):
         import sqlite3
 
+        general_id = self.db.add_project(Project(None, "General", config.DEFAULT_PROJECT_COLORS[0]))
+        self.db.add_activity(Activity(None, "Real Activity", "PROJ-1", project_id=general_id))
+
         unrelated_path = os.path.join(self.tmpdir, "unrelated.db")
         conn = sqlite3.connect(unrelated_path)
         conn.execute("CREATE TABLE totally_unrelated_thing (id INTEGER PRIMARY KEY)")
@@ -820,8 +824,8 @@ class TestDatabase(unittest.TestCase):
             self.db.restore_from(unrelated_path)
 
         # The rejection should happen before anything is touched -- the
-        # seeded defaults from setUp() are still there.
-        self.assertEqual(len(self.db.list_activities()), 4)
+        # real activity added above is still there.
+        self.assertEqual(len(self.db.list_activities()), 1)
 
 
 if __name__ == "__main__":

@@ -64,7 +64,7 @@ class TimeEntry:
     # successfully uploaded to Jira via app.jira_client -- None means
     # "never uploaded" (or uploaded-then-reset, which nothing in this app
     # currently does). This is the entire duplicate-protection mechanism
-    # for the "Upload to Jira" button: re-running it only ever sends
+    # for the "Upload to JIRA via API" button: re-running it only ever sends
     # entries where this is still None, rather than re-posting a worklog
     # Jira already has. Editing an already-uploaded entry does NOT clear
     # this (see Database.update_time_entry) -- there's no "update an
