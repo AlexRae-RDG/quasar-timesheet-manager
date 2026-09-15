@@ -47,6 +47,13 @@ jobs:
           ditto -c -k --keepParent "QUASAR Timesheet Manager.app" \
             "../QUASAR-Timesheet-Manager-macOS.zip"
 
+      - name: Create password-protected zip for email
+        run: |
+          cd dist
+          zip -P "${{ secrets.ZIP_PASSWORD }}" -r \
+            "../QUASAR-Timesheet-Manager-macOS-protected.zip" \
+            "QUASAR Timesheet Manager.app"
+
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -72,8 +79,8 @@ jobs:
           from: QUASAR Release Bot <${{ secrets.MAIL_USERNAME }}>
           to: ${{ secrets.TEAMS_CHANNEL_EMAIL }}
           subject: "QUASAR Timesheet Manager ${{ github.ref_name }} -- macOS build"
-          body: "New release ${{ github.ref_name }} attached (macOS build). Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
-          attachments: QUASAR-Timesheet-Manager-macOS.zip
+          body: "New release ${{ github.ref_name }} attached (macOS build). Zip password: ${{ secrets.ZIP_PASSWORD }} -- Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          attachments: QUASAR-Timesheet-Manager-macOS-protected.zip
 
   build-windows:
     runs-on: windows-latest
@@ -93,6 +100,14 @@ jobs:
         run: |
           Compress-Archive -Path "dist\QUASAR Timesheet Manager" `
             -DestinationPath "QUASAR-Timesheet-Manager-Windows.zip"
+
+      - name: Create password-protected zip for email
+        shell: pwsh
+        run: |
+          & "C:\Program Files\7-Zip\7z.exe" a -tzip -mem=AES256 `
+            -p"${{ secrets.ZIP_PASSWORD }}" `
+            "QUASAR-Timesheet-Manager-Windows-protected.zip" `
+            "dist\QUASAR Timesheet Manager"
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
@@ -119,5 +134,5 @@ jobs:
           from: QUASAR Release Bot <${{ secrets.MAIL_USERNAME }}>
           to: ${{ secrets.TEAMS_CHANNEL_EMAIL }}
           subject: "QUASAR Timesheet Manager ${{ github.ref_name }} -- Windows build"
-          body: "New release ${{ github.ref_name }} attached (Windows build). Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
-          attachments: QUASAR-Timesheet-Manager-Windows.zip
+          body: "New release ${{ github.ref_name }} attached (Windows build). Zip password: ${{ secrets.ZIP_PASSWORD }} -- Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          attachments: QUASAR-Timesheet-Manager-Windows-protected.zip
