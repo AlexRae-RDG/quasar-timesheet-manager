@@ -47,13 +47,6 @@ jobs:
           ditto -c -k --keepParent "QUASAR Timesheet Manager.app" \
             "../QUASAR-Timesheet-Manager-macOS.zip"
 
-      - name: Create password-protected zip for email
-        run: |
-          cd dist
-          zip -P "${{ secrets.ZIP_PASSWORD }}" -r \
-            "../QUASAR-Timesheet-Manager-macOS-protected.zip" \
-            "QUASAR Timesheet Manager.app"
-
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -68,7 +61,21 @@ jobs:
           name: QUASAR-Timesheet-Manager-macOS
           path: QUASAR-Timesheet-Manager-macOS.zip
 
-      - name: Email build to Teams channel
+      - name: Upload to SharePoint (Teams channel file)
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'  # TEMP: also run on manual dispatch for testing -- revert to tag-only once confirmed working
+        id: sp_upload
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SP_SITE_HOSTNAME: ${{ secrets.SP_SITE_HOSTNAME }}
+          SP_SITE_PATH: ${{ secrets.SP_SITE_PATH }}
+          SP_FOLDER_PATH: ${{ secrets.SP_FOLDER_PATH }}
+        run: |
+          URL=$(python3 packaging/upload_to_sharepoint.py QUASAR-Timesheet-Manager-macOS.zip)
+          echo "web_url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Teams channel (link only, no attachment)
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'  # TEMP: also run on manual dispatch for testing -- revert to tag-only once confirmed working
         uses: dawidd6/action-send-mail@v4
         with:
@@ -79,8 +86,7 @@ jobs:
           from: QUASAR Release Bot <${{ secrets.MAIL_USERNAME }}>
           to: ${{ secrets.TEAMS_CHANNEL_EMAIL }}
           subject: "QUASAR Timesheet Manager ${{ github.ref_name }} -- macOS build"
-          body: "New release ${{ github.ref_name }} attached (macOS build). Zip password: ${{ secrets.ZIP_PASSWORD }} -- Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
-          attachments: QUASAR-Timesheet-Manager-macOS-protected.zip
+          body: "New release ${{ github.ref_name }} (macOS build) is on SharePoint: ${{ steps.sp_upload.outputs.web_url }} -- Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
 
   build-windows:
     runs-on: windows-latest
@@ -101,14 +107,6 @@ jobs:
           Compress-Archive -Path "dist\QUASAR Timesheet Manager" `
             -DestinationPath "QUASAR-Timesheet-Manager-Windows.zip"
 
-      - name: Create password-protected zip for email
-        shell: pwsh
-        run: |
-          & "C:\Program Files\7-Zip\7z.exe" a -tzip -mem=AES256 `
-            -p"${{ secrets.ZIP_PASSWORD }}" `
-            "QUASAR-Timesheet-Manager-Windows-protected.zip" `
-            "dist\QUASAR Timesheet Manager"
-
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -123,7 +121,22 @@ jobs:
           name: QUASAR-Timesheet-Manager-Windows
           path: QUASAR-Timesheet-Manager-Windows.zip
 
-      - name: Email build to Teams channel
+      - name: Upload to SharePoint (Teams channel file)
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'  # TEMP: also run on manual dispatch for testing -- revert to tag-only once confirmed working
+        id: sp_upload
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SP_SITE_HOSTNAME: ${{ secrets.SP_SITE_HOSTNAME }}
+          SP_SITE_PATH: ${{ secrets.SP_SITE_PATH }}
+          SP_FOLDER_PATH: ${{ secrets.SP_FOLDER_PATH }}
+        run: |
+          $url = python packaging\upload_to_sharepoint.py QUASAR-Timesheet-Manager-Windows.zip
+          "web_url=$url" >> $env:GITHUB_OUTPUT
+
+      - name: Notify Teams channel (link only, no attachment)
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'  # TEMP: also run on manual dispatch for testing -- revert to tag-only once confirmed working
         uses: dawidd6/action-send-mail@v4
         with:
@@ -134,5 +147,4 @@ jobs:
           from: QUASAR Release Bot <${{ secrets.MAIL_USERNAME }}>
           to: ${{ secrets.TEAMS_CHANNEL_EMAIL }}
           subject: "QUASAR Timesheet Manager ${{ github.ref_name }} -- Windows build"
-          body: "New release ${{ github.ref_name }} attached (Windows build). Zip password: ${{ secrets.ZIP_PASSWORD }} -- Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
-          attachments: QUASAR-Timesheet-Manager-Windows-protected.zip
+          body: "New release ${{ github.ref_name }} (Windows build) is on SharePoint: ${{ steps.sp_upload.outputs.web_url }} -- Full release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
