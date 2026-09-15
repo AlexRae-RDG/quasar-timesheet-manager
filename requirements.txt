@@ -1,9 +1,10 @@
 # Tkinter, sqlite3, csv, and dataclasses (used everywhere else in this app)
 # are all part of the Python standard library -- nothing to install for
-# those. The two entries below are the only real third-party dependencies,
-# both needed only for the "Upload to Jira" button (app/jira_client.py);
-# every other feature, including the original "Export to Jira CSV" button,
-# still needs nothing beyond the standard library.
+# those. The three entries below are the only real third-party
+# dependencies, all needed only for the "Upload to Jira" / "Import via
+# Jira API" buttons (app/jira_client.py); every other feature, including
+# the original "Export to Jira CSV" button, still needs nothing beyond the
+# standard library.
 #
 # requests     -- makes the actual Jira Cloud REST API calls.
 # cryptography -- encrypts the Jira API token at rest in this app's own
@@ -12,8 +13,20 @@
 #                 its own built-in hook, unlike the old `keyring`
 #                 dependency this setup used to need -- no hiddenimports
 #                 workaround required in packaging/free_timesheet.spec.
+# truststore   -- makes `requests` verify HTTPS certificates against the
+#                 operating system's own trust store instead of the
+#                 `certifi` package's bundled public-CA list (see app.py's
+#                 own comment for the full reasoning -- this is the fix
+#                 for "unable to get local issuer certificate" on the
+#                 Jira connection test on corporate networks). Needs
+#                 Python 3.10+; the marker below makes pip just skip
+#                 installing it on an older interpreter instead of
+#                 failing the whole install -- app.py already treats it
+#                 as optional and falls back to certifi's default
+#                 behaviour if it's missing.
 requests>=2.31
 cryptography>=42.0
+truststore>=0.9; python_version >= "3.10"
 #
 # On Windows and macOS, Tkinter ships with the standard python.org
 # installer, so there is nothing to install for it.
