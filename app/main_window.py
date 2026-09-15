@@ -27,6 +27,73 @@ from .version import APP_VERSION
 from .widgets import RoundedButton
 
 
+def _disable_windows_dpi_virtualization() -> None:
+    """Work laptops here commonly ship with Windows display scaling set to
+    125%-150% rather than the "100%" this app was designed and laid out
+    against (fixed pixel geometry() calls throughout, e.g. "1240x780" in
+    __init__ below) -- left alone, that makes the whole window render
+    oversized, blurry, and often too big for the screen, to the point of
+    being unusable.
+
+    Two separate things stack to cause that, and both need fixing:
+
+    1. Windows treats a process as "DPI unaware" unless it explicitly says
+       otherwise. For an unaware process, Windows renders its window at
+       the traditional 96-DPI baseline internally, then *bitmap-stretches*
+       that rendered image up to match the monitor's actual scale factor
+       (150% -> a blurry 1.5x scale-up of a lower-resolution image) --
+       a compatibility shim for old apps that never expected high-DPI
+       screens to exist. Calling SetProcessDpiAwareness here tells
+       Windows this app handles its own layout at the real DPI instead,
+       which turns that automatic stretching off.
+
+    2. Once Windows stops stretching the bitmap, Tk itself separately
+       queries the monitor's real DPI and scales up its own idea of how
+       many pixels a "point" is (its `tk scaling` setting) to compensate
+       -- which independently blows up every font and point-sized widget
+       in this app right back up again, just without the blur.
+       __init__ below pins `tk scaling` back to its fixed 96-DPI value
+       after the window is created, cancelling that out, so the app
+       always lays out exactly like it does on an unscaled 100% display,
+       no matter what the actual Windows scaling setting is.
+
+    Windows only -- macOS's own Retina/HiDPI handling already renders
+    everything crisp at whatever the real pixel density is without this
+    app doing anything (see update_check.py's build_ssl_context for the
+    one macOS-specific quirk that *does* need handling, which is
+    unrelated: a missing CA bundle in a frozen build, not scaling).
+    Best-effort: every call here is wrapped so a missing API (very old
+    Windows, or Wine, or anything unexpected) just leaves Windows' own
+    default DPI behaviour in place instead of crashing the app on
+    startup.
+    """
+    if sys.platform != "win32":
+        return
+    import ctypes
+    # Try newest-to-oldest: Per-Monitor v2 (Windows 10 1703+) also
+    # handles a window being dragged between two differently-scaled
+    # monitors correctly; System DPI Aware (Windows 8.1+) doesn't, but
+    # still stops the blurry bitmap stretch; SetProcessDPIAware (Vista+)
+    # is the last-resort fallback for anything older. Each raises
+    # (AttributeError if the function doesn't exist on this Windows
+    # version, OSError if the call itself fails) rather than returning a
+    # code Python would need to check, so this just tries each in turn.
+    try:
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(-4)  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        return
+    except (AttributeError, OSError):
+        pass
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # PROCESS_SYSTEM_DPI_AWARE
+        return
+    except (AttributeError, OSError):
+        pass
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except (AttributeError, OSError):
+        pass
+
+
 class MainWindow(tk.Tk):
     # The guided tour (app/tour.py's TourCard), started once from
     # _on_onboarding_complete -- see _start_tour/_tour_show_current_step
@@ -70,8 +137,20 @@ class MainWindow(tk.Tk):
     ]
 
     def __init__(self):
+        _disable_windows_dpi_virtualization()
         super().__init__()
         self.title("QUASAR Timesheet Manager")
+        # Pin Tk's own layout scale to a fixed 96-DPI ("100%") baseline,
+        # regardless of what the display actually reports -- every
+        # geometry()/font size/widget size in this app was designed and
+        # tested against that baseline. See
+        # _disable_windows_dpi_virtualization's docstring above for why
+        # this is needed (in short: without it, Tk auto-scales
+        # everything back up to match the monitor's real DPI once
+        # Windows itself stops doing that via its own bitmap stretch,
+        # which is the opposite of what this fix is for).
+        if sys.platform == "win32":
+            self.tk.call("tk", "scaling", 96 / 72)
         self.geometry("1240x780")
         self.minsize(1000, 640)
         self._maximize_on_start()
