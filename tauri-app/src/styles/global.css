@@ -34,6 +34,22 @@ body {
   color: var(--text-primary);
   font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* App-wide default: no native text selection. Without this, a click on
+     any text-containing button/row can be interpreted as the start of a
+     text-selection drag if there's even a pixel of movement between
+     mousedown and mouseup (routine on a trackpad, not just automation) --
+     the click event then never fires because the browser treats it as a
+     drag-select instead. This first surfaced as the calendar's
+     create-drag silently failing; same root cause here for the Activities
+     list rows. Inputs/textareas opt back into normal text editing below. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .shell {
@@ -75,6 +91,63 @@ body {
   align-items: center;
   text-align: center;
   padding: 48px 24px;
+}
+
+/* Activities screen */
+.project-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.project-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.activity-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.activity-list-row:hover {
+  background: var(--surface);
+}
+
+.activity-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.badge {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .placeholder-title {

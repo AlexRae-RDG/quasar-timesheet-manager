@@ -1,3 +1,4 @@
+mod activities;
 mod calendar;
 mod commands;
 mod db;
@@ -29,6 +30,12 @@ pub fn run() {
             commands::clear_jira_token,
             commands::list_projects,
             commands::list_activities,
+            commands::create_project,
+            commands::update_project,
+            commands::delete_project,
+            commands::create_activity,
+            commands::update_activity,
+            commands::archive_activity,
             commands::list_time_entries,
             commands::create_time_entry,
             commands::update_time_entry,

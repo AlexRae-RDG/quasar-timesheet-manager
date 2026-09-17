@@ -1,21 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export interface Project {
-  id: number;
-  name: string;
-  color: string;
-  sortOrder: number;
-}
-
-export interface Activity {
-  id: number;
-  name: string;
-  jiraKey: string | null;
-  defaultDurationMinutes: number | null;
-  projectId: number | null;
-  color: string;
-}
-
 export interface TimeEntry {
   id: number;
   activityId: number | null;
@@ -49,14 +33,6 @@ export interface UpdateTimeEntry {
   startTime: string;
   endTime: string;
   notes: string;
-}
-
-export function listProjects(): Promise<Project[]> {
-  return invoke("list_projects");
-}
-
-export function listActivities(): Promise<Activity[]> {
-  return invoke("list_activities");
 }
 
 export function listTimeEntries(startDate: string, endDate: string): Promise<TimeEntry[]> {

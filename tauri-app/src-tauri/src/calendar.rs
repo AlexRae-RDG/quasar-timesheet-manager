@@ -1,33 +1,9 @@
-//! Projects/Activities/TimeEntries data access for the Timesheet (weekly
-//! calendar) screen. Mirrors the read shape of the Python app's db.py:
-//! Activity.color is never stored on the activity row -- it's always
-//! joined in from the parent Project (see models.py's docstring: "a time
-//! block's color always comes from its Activity's Project, never set on
-//! the Activity itself").
+//! TimeEntries data access for the Timesheet (weekly calendar) screen.
+//! Project/Activity CRUD lives in activities.rs; this module only reads
+//! them (to snapshot onto a TimeEntry -- see resolve_activity_snapshot).
 
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Project {
-    pub id: i64,
-    pub name: String,
-    pub color: String,
-    pub sort_order: i64,
-}
-
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Activity {
-    pub id: i64,
-    pub name: String,
-    pub jira_key: Option<String>,
-    pub default_duration_minutes: Option<i64>,
-    pub project_id: Option<i64>,
-    /// Denormalized from the parent Project -- see module docs.
-    pub color: String,
-}
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -76,51 +52,6 @@ pub struct UpdateTimeEntry {
     pub start_time: String,
     pub end_time: String,
     pub notes: String,
-}
-
-const PROJECT_COLUMNS: &str = "id, name, color, sort_order";
-
-fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
-    Ok(Project {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        color: row.get(2)?,
-        sort_order: row.get(3)?,
-    })
-}
-
-pub fn list_projects(conn: &Connection) -> rusqlite::Result<Vec<Project>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {PROJECT_COLUMNS} FROM projects ORDER BY sort_order, name"
-    ))?;
-    let rows = stmt.query_map([], row_to_project)?;
-    rows.collect()
-}
-
-fn row_to_activity(row: &rusqlite::Row) -> rusqlite::Result<Activity> {
-    Ok(Activity {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        jira_key: row.get(2)?,
-        default_duration_minutes: row.get(3)?,
-        project_id: row.get(4)?,
-        color: row.get(5)?,
-    })
-}
-
-const ACTIVITY_QUERY: &str = "
-    SELECT a.id, a.name, a.jira_key, a.default_duration_minutes, a.project_id,
-           COALESCE(p.color, '#4C6EF5') AS color
-    FROM activities a
-    LEFT JOIN projects p ON p.id = a.project_id
-    WHERE a.archived = 0
-    ORDER BY a.name
-";
-
-pub fn list_activities(conn: &Connection) -> rusqlite::Result<Vec<Activity>> {
-    let mut stmt = conn.prepare(ACTIVITY_QUERY)?;
-    let rows = stmt.query_map([], row_to_activity)?;
-    rows.collect()
 }
 
 const TIME_ENTRY_COLUMNS: &str = "id, activity_id, activity_name, jira_key, color, date, \

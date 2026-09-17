@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  createTimeEntry,
-  deleteTimeEntry,
-  listActivities,
-  listProjects,
-  listTimeEntries,
-  updateTimeEntry,
-  type Activity,
-  type Project,
-  type TimeEntry,
-} from "../api/calendar";
+import { createTimeEntry, deleteTimeEntry, listTimeEntries, updateTimeEntry, type TimeEntry } from "../api/calendar";
+import { listActivities, listProjects, type Activity, type Project } from "../api/activities";
 import { ActivitySidebar } from "../components/ActivitySidebar";
 import { CalendarGrid } from "../components/CalendarGrid";
 import { EditEntryModal } from "../components/EditEntryModal";

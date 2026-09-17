@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Activity, Project } from "../api/calendar";
+import type { Activity, Project } from "../api/activities";
 
 export function ActivitySidebar({
   projects,

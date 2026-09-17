@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Activity, TimeEntry } from "../api/calendar";
+import type { TimeEntry } from "../api/calendar";
+import type { Activity } from "../api/activities";
 
 export function EditEntryModal({
   entry,

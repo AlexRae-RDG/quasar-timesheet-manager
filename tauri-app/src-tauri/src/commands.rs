@@ -1,6 +1,7 @@
 //! Tauri commands exposed to the frontend.
 
-use crate::calendar::{self, Activity, NewTimeEntry, Project, TimeEntry, UpdateTimeEntry};
+use crate::activities::{self, Activity, NewActivity, NewProject, Project, UpdateActivity, UpdateProject};
+use crate::calendar::{self, NewTimeEntry, TimeEntry, UpdateTimeEntry};
 use crate::keychain;
 use crate::settings::{self, AppSettings, SaveSettingsInput};
 use crate::AppState;
@@ -48,13 +49,49 @@ pub fn clear_jira_token() -> Result<(), String> {
 #[tauri::command]
 pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    calendar::list_projects(&conn).map_err(|e| e.to_string())
+    activities::list_projects(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn list_activities(state: State<AppState>) -> Result<Vec<Activity>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    calendar::list_activities(&conn).map_err(|e| e.to_string())
+    activities::list_activities(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_project(state: State<AppState>, input: NewProject) -> Result<Project, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    activities::create_project(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_project(state: State<AppState>, input: UpdateProject) -> Result<Project, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    activities::update_project(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_project(state: State<AppState>, id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    activities::delete_project(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_activity(state: State<AppState>, input: NewActivity) -> Result<Activity, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    activities::create_activity(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_activity(state: State<AppState>, input: UpdateActivity) -> Result<Activity, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    activities::update_activity(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn archive_activity(state: State<AppState>, id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    activities::archive_activity(&conn, id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

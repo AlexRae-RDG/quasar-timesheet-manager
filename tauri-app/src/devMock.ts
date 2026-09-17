@@ -48,9 +48,34 @@ export function installDevMockIfRequested() {
     },
   ];
 
-  const activities = [
-    { id: 1, name: "Sprint Planning", jiraKey: "QDM-1", defaultDurationMinutes: 30, projectId: 1, color: "#4C6EF5" },
-    { id: 2, name: "Code Review", jiraKey: "QDM-2", defaultDurationMinutes: 30, projectId: 2, color: "#12B886" },
+  let nextProjectId = 100;
+  let projects: Record<string, unknown>[] = [
+    { id: 1, name: "Project Alpha", color: "#4C6EF5", sortOrder: 0 },
+    { id: 2, name: "Project Beta", color: "#12B886", sortOrder: 1 },
+  ];
+
+  let nextActivityId = 100;
+  let activities: Record<string, unknown>[] = [
+    {
+      id: 1,
+      name: "Sprint Planning",
+      jiraKey: "QDM-1",
+      defaultDurationMinutes: 30,
+      projectId: 1,
+      color: "#4C6EF5",
+      jiraProject: null,
+      issueType: null,
+    },
+    {
+      id: 2,
+      name: "Code Review",
+      jiraKey: "QDM-2",
+      defaultDurationMinutes: 30,
+      projectId: 2,
+      color: "#12B886",
+      jiraProject: null,
+      issueType: null,
+    },
   ];
 
   async function invoke(cmd: string, args: Record<string, unknown> = {}) {
@@ -72,12 +97,74 @@ export function installDevMockIfRequested() {
           hasJiraToken: false,
         };
       case "list_projects":
-        return [
-          { id: 1, name: "Project Alpha", color: "#4C6EF5", sortOrder: 0 },
-          { id: 2, name: "Project Beta", color: "#12B886", sortOrder: 1 },
-        ];
+        return projects;
       case "list_activities":
-        return activities;
+        return activities.filter((a) => !a.archived);
+      case "create_project": {
+        const input = args.input as Record<string, unknown>;
+        const p = { id: nextProjectId++, name: input.name, color: input.color, sortOrder: projects.length };
+        projects.push(p);
+        return p;
+      }
+      case "update_project": {
+        const input = args.input as Record<string, unknown>;
+        const p = projects.find((x) => x.id === input.id);
+        if (p) {
+          p.name = input.name;
+          p.color = input.color;
+        }
+        return p;
+      }
+      case "delete_project": {
+        let general = projects.find((p) => p.name === "General");
+        if (!general) {
+          general = { id: nextProjectId++, name: "General", color: "#495057", sortOrder: projects.length };
+          projects.push(general);
+        }
+        if (general.id !== args.id) {
+          for (const a of activities) {
+            if (a.projectId === args.id) a.projectId = general.id;
+          }
+        }
+        projects = projects.filter((p) => p.id !== args.id);
+        return null;
+      }
+      case "create_activity": {
+        const input = args.input as Record<string, unknown>;
+        const project = projects.find((p) => p.id === input.projectId);
+        const a = {
+          id: nextActivityId++,
+          name: input.name,
+          jiraKey: input.jiraKey ?? null,
+          defaultDurationMinutes: input.defaultDurationMinutes ?? null,
+          projectId: input.projectId,
+          color: project?.color ?? "#4C6EF5",
+          jiraProject: input.jiraProject ?? null,
+          issueType: input.issueType ?? null,
+        };
+        activities.push(a);
+        return a;
+      }
+      case "update_activity": {
+        const input = args.input as Record<string, unknown>;
+        const a = activities.find((x) => x.id === input.id);
+        if (a) {
+          const project = projects.find((p) => p.id === input.projectId);
+          a.name = input.name;
+          a.jiraKey = input.jiraKey ?? null;
+          a.defaultDurationMinutes = input.defaultDurationMinutes ?? null;
+          a.projectId = input.projectId;
+          a.color = project?.color ?? a.color;
+          a.jiraProject = input.jiraProject ?? null;
+          a.issueType = input.issueType ?? null;
+        }
+        return a;
+      }
+      case "archive_activity": {
+        const a = activities.find((x) => x.id === args.id);
+        if (a) a.archived = true;
+        return null;
+      }
       case "list_time_entries":
         return entries.filter(
           (e) => (e.date as string) >= (args.startDate as string) && (e.date as string) <= (args.endDate as string),
