@@ -1,3 +1,4 @@
+mod calendar;
 mod commands;
 mod db;
 mod jira;
@@ -26,6 +27,12 @@ pub fn run() {
             commands::verify_jira_credentials,
             commands::save_jira_token,
             commands::clear_jira_token,
+            commands::list_projects,
+            commands::list_activities,
+            commands::list_time_entries,
+            commands::create_time_entry,
+            commands::update_time_entry,
+            commands::delete_time_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

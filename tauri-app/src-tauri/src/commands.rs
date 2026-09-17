@@ -1,5 +1,6 @@
-//! Tauri commands exposed to the frontend for the Settings vertical slice.
+//! Tauri commands exposed to the frontend.
 
+use crate::calendar::{self, Activity, NewTimeEntry, Project, TimeEntry, UpdateTimeEntry};
 use crate::keychain;
 use crate::settings::{self, AppSettings, SaveSettingsInput};
 use crate::AppState;
@@ -42,4 +43,44 @@ pub fn save_jira_token(token: String) -> Result<(), String> {
 #[tauri::command]
 pub fn clear_jira_token() -> Result<(), String> {
     keychain::delete_token()
+}
+
+#[tauri::command]
+pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    calendar::list_projects(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_activities(state: State<AppState>) -> Result<Vec<Activity>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    calendar::list_activities(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_time_entries(
+    state: State<AppState>,
+    start_date: String,
+    end_date: String,
+) -> Result<Vec<TimeEntry>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    calendar::list_time_entries(&conn, &start_date, &end_date).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_time_entry(state: State<AppState>, input: NewTimeEntry) -> Result<TimeEntry, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    calendar::create_time_entry(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_time_entry(state: State<AppState>, input: UpdateTimeEntry) -> Result<TimeEntry, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    calendar::update_time_entry(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_time_entry(state: State<AppState>, id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    calendar::delete_time_entry(&conn, id).map_err(|e| e.to_string())
 }
