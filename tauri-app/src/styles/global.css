@@ -1,0 +1,241 @@
+:root {
+  /* Fallback values (Cobalt Rush) until ThemeProvider applies the saved
+     theme on first render -- see theme/ThemeProvider.tsx. */
+  --app-bg: #05070f;
+  --panel-bg: #0b1020;
+  --border: #1a2036;
+  --border-strong: #262c46;
+  --text-primary: #eaf0ff;
+  --text-secondary: #97a2c2;
+  --text-muted: #616a89;
+  --accent: #2f6fed;
+  --accent-hover: #2759c4;
+  --accent-soft: #16234a;
+  --danger: #ff3b5c;
+  --danger-soft: #1c1327;
+  --danger-soft-active: #2a1a34;
+  --field-bg: #10162c;
+  --surface: #10162c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--text-primary);
+  font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-shell {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page-header h1 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.field input[type="text"],
+.field input[type="password"],
+.field select {
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.field input[type="text"]:focus,
+.field input[type="password"]:focus,
+.field select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.field-inline {
+  flex: 1;
+}
+
+.field-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.field-color {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.field-color input[type="color"] {
+  width: 44px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.swatch-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.swatch-category {
+  display: contents;
+}
+
+.custom-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  padding-top: 4px;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.segment {
+  background: var(--field-bg);
+  color: var(--text-secondary);
+  border: none;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.segment + .segment {
+  border-left: 1px solid var(--border-strong);
+}
+
+.segment-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-accent:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+}
+
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: var(--danger-soft-active);
+}
+
+.status {
+  font-size: 13px;
+  margin: 0;
+}
+
+.status-success {
+  color: #4ade80;
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.error-banner {
+  color: var(--danger);
+}
