@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { createTimeEntry, deleteTimeEntry, listTimeEntries, updateTimeEntry, type TimeEntry } from "../api/calendar";
-import { listActivities, listProjects, type Activity, type Project } from "../api/activities";
+import {
+  createActivity,
+  listActivities,
+  listProjects,
+  setProjectCollapsed,
+  type Activity,
+  type Project,
+} from "../api/activities";
 import { ActivitySidebar } from "../components/ActivitySidebar";
 import { CalendarGrid } from "../components/CalendarGrid";
+import { CreateEntryModal } from "../components/CreateEntryModal";
 import { EditEntryModal } from "../components/EditEntryModal";
 import { addDays, minutesToTime, timeToMinutes, toISODate, weekStart } from "../lib/date";
 import type { AppSettings } from "../api/settings";
@@ -13,6 +22,10 @@ const ZOOM_MIN = 0.7;
 const ZOOM_MAX = 1.3;
 const ZOOM_STEP = 0.1;
 const UNDO_LIMIT = 50;
+const DEFAULT_SIDEBAR_WIDTH = 210;
+const MIN_SIDEBAR_WIDTH = 160;
+const MAX_SIDEBAR_WIDTH = 420;
+const SIDEBAR_TOGGLE_DRAG_THRESHOLD_PX = 4;
 
 interface EntryFields {
   // API-ready, not just descriptive: null means "leave this entry's
@@ -40,8 +53,14 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
   const [armedActivityId, setArmedActivityId] = useState<number | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  const [creatingEntry, setCreatingEntry] = useState<{ date: string; startTime: string; endTime: string } | null>(
+    null,
+  );
   const [zoom, setZoom] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [resizingSidebar, setResizingSidebar] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
 
   const entriesRef = useRef<TimeEntry[]>([]);
   entriesRef.current = entries;
@@ -73,6 +92,74 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
 
   const armedActivity = activities.find((a) => a.id === armedActivityId) ?? null;
 
+  function handleToggleCollapse(projectId: number) {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return;
+    const collapsed = !project.collapsed;
+    // Optimistic: flips instantly, persists in the background. Worth doing
+    // here since this fires on every sidebar click and a round trip before
+    // the chevron responds would feel laggy for something this small.
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, collapsed } : p)));
+    setProjectCollapsed(projectId, collapsed).catch((e) => setError(String(e)));
+  }
+
+  function handleSidebarResizeStart(e: ReactPointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    setResizingSidebar(true);
+
+    function onMove(ev: PointerEvent) {
+      const next = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)));
+      setSidebarWidth(next);
+    }
+    function onUp() {
+      setResizingSidebar(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  }
+
+  // The toggle button itself: a plain click (released before crossing the
+  // threshold) toggles visibility, same as before; holding and moving past
+  // it resizes instead, same gesture as the bare handle strip. Collapsed,
+  // there's nothing to resize, so any press there just re-expands.
+  function handleToggleButtonPointerDown(e: ReactPointerEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!sidebarVisible) {
+      setSidebarVisible(true);
+      return;
+    }
+
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    let moved = false;
+
+    function onMove(ev: PointerEvent) {
+      const dx = ev.clientX - startX;
+      if (!moved && Math.abs(dx) > SIDEBAR_TOGGLE_DRAG_THRESHOLD_PX) {
+        moved = true;
+        setResizingSidebar(true);
+      }
+      if (moved) {
+        setSidebarWidth(Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + dx)));
+      }
+    }
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setResizingSidebar(false);
+      if (!moved) setSidebarVisible((v) => !v);
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  }
+
   const pushCommand = (cmd: Command) => {
     undoStack.current.push(cmd);
     if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift();
@@ -86,6 +173,36 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
       // Disarm after a successful placement so the next drag/click on the
       // grid doesn't silently log more time against the same Activity.
       setArmedActivityId(null);
+      refreshEntries();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  function handleRequestCreate(date: string, startTime: string, endTime: string) {
+    setCreatingEntry({ date, startTime, endTime });
+  }
+
+  async function handleCreateFromModal(activityId: number, notes: string) {
+    if (!creatingEntry) return;
+    try {
+      const created = await createTimeEntry({ activityId, notes, ...creatingEntry });
+      pushCommand({ kind: "add", entry: created });
+      setCreatingEntry(null);
+      refreshEntries();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleCreateWithNewActivity(name: string, projectId: number, notes: string) {
+    if (!creatingEntry) return;
+    try {
+      const activity = await createActivity({ name, projectId });
+      setActivities((prev) => [...prev, activity]);
+      const created = await createTimeEntry({ activityId: activity.id, notes, ...creatingEntry });
+      pushCommand({ kind: "add", entry: created });
+      setCreatingEntry(null);
       refreshEntries();
     } catch (e) {
       setError(String(e));
@@ -271,6 +388,8 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
       if (e.key === "Escape") {
         setSelectedEntryId(null);
         setEditingEntry(null);
+        setCreatingEntry(null);
+        setArmedActivityId(null);
         return;
       }
       if (selectedEntryId != null) {
@@ -294,6 +413,39 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEntryId, handleUndo, handleRedo, nudgeSelected]);
+
+  useEffect(() => {
+    if (selectedEntryId == null) return;
+
+    // "click", not "pointerdown": a button whose own onClick depends on
+    // selectedEntryId (e.g. "Delete selected block") fires its click
+    // handler before this bubbles up to document, so clearing selection
+    // here doesn't race it -- pointerdown would fire first and unmount
+    // that button before its own click ever landed.
+    function onDocumentClick(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(".calendar-entry")) return;
+      setSelectedEntryId(null);
+    }
+
+    document.addEventListener("click", onDocumentClick);
+    return () => document.removeEventListener("click", onDocumentClick);
+  }, [selectedEntryId]);
+
+  useEffect(() => {
+    if (armedActivityId == null) return;
+
+    // Right-click cancels an armed Activity the same way Escape does --
+    // this app has no context menus of its own, so repurposing it here
+    // doesn't take anything away.
+    function onContextMenu(e: MouseEvent) {
+      e.preventDefault();
+      setArmedActivityId(null);
+    }
+
+    document.addEventListener("contextmenu", onContextMenu);
+    return () => document.removeEventListener("contextmenu", onContextMenu);
+  }, [armedActivityId]);
 
   return (
     <div className="calendar-screen">
@@ -338,12 +490,34 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
       {error && <p className="status status-error">{error}</p>}
 
       <div className="calendar-body">
-        <ActivitySidebar
-          projects={projects}
-          activities={activities}
-          armedActivityId={armedActivityId}
-          onArm={setArmedActivityId}
-        />
+        {sidebarVisible && (
+          <ActivitySidebar
+            projects={projects}
+            activities={activities}
+            armedActivityId={armedActivityId}
+            onArm={setArmedActivityId}
+            onToggleCollapse={handleToggleCollapse}
+            width={sidebarWidth}
+          />
+        )}
+        <div
+          className={
+            "calendar-resize-handle" +
+            (resizingSidebar ? " calendar-resize-handle-active" : "") +
+            (!sidebarVisible ? " calendar-resize-handle-collapsed" : "")
+          }
+          onPointerDown={sidebarVisible ? handleSidebarResizeStart : undefined}
+          onClick={!sidebarVisible ? () => setSidebarVisible(true) : undefined}
+        >
+          <button
+            type="button"
+            className={"calendar-resize-toggle" + (resizingSidebar ? " calendar-resize-toggle-active" : "")}
+            title={sidebarVisible ? "Hide sidebar (drag to resize)" : "Show sidebar"}
+            onPointerDown={handleToggleButtonPointerDown}
+          >
+            {sidebarVisible ? "◂" : "▸"}
+          </button>
+        </div>
         <CalendarGrid
           days={days}
           startHour={settings.workStartHour}
@@ -351,10 +525,12 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
           entries={entries}
           zoom={zoom}
           armedActivityId={armedActivityId}
+          armedActivityColor={armedActivity?.color ?? null}
           armedDefaultDurationMinutes={armedActivity?.defaultDurationMinutes ?? DEFAULT_DURATION_MINUTES}
           selectedEntryId={selectedEntryId}
           onSelectEntry={setSelectedEntryId}
           onCreate={handleCreate}
+          onRequestCreate={handleRequestCreate}
           onMove={handleMove}
           onDuplicate={handleDuplicate}
           onEditEntry={setEditingEntry}
@@ -368,6 +544,19 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
           onSave={handleEditSave}
           onDelete={handleEditDelete}
           onClose={() => setEditingEntry(null)}
+        />
+      )}
+
+      {creatingEntry && (
+        <CreateEntryModal
+          date={creatingEntry.date}
+          startTime={creatingEntry.startTime}
+          endTime={creatingEntry.endTime}
+          activities={activities}
+          projects={projects}
+          onCreate={handleCreateFromModal}
+          onCreateWithNewActivity={handleCreateWithNewActivity}
+          onClose={() => setCreatingEntry(null)}
         />
       )}
     </div>

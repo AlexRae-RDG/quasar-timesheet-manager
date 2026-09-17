@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { KeyboardEvent } from "react";
 import type { TimeEntry } from "../api/calendar";
 import type { Activity } from "../api/activities";
 
@@ -18,9 +19,17 @@ export function EditEntryModal({
   const [activityId, setActivityId] = useState(entry.activityId ?? activities[0]?.id ?? 0);
   const [notes, setNotes] = useState(entry.notes);
 
+  function handleKeyDown(e: KeyboardEvent) {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    // Shift+Enter still falls through to the textarea's own default (a
+    // newline) since we only preventDefault/save on the plain-Enter path.
+    e.preventDefault();
+    onSave(activityId, notes);
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <h2>Edit Time Block</h2>
         <p className="muted">
           {entry.date} · {entry.startTime}–{entry.endTime}

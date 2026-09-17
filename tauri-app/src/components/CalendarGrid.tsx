@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { TimeEntry } from "../api/calendar";
 import { minutesToTime, timeToMinutes, toISODate } from "../lib/date";
 import { layoutDayEntries } from "../lib/overlapLayout";
-import { blockTextColor } from "../theme/palettes";
+import { blockTextColor, BLOCK_TEXT_LIGHT } from "../theme/palettes";
 
 const SLOT_MINUTES = 15;
 const BASE_SLOT_HEIGHT_PX = 30;
@@ -47,10 +47,12 @@ export function CalendarGrid({
   entries,
   zoom,
   armedActivityId,
+  armedActivityColor,
   armedDefaultDurationMinutes,
   selectedEntryId,
   onSelectEntry,
   onCreate,
+  onRequestCreate,
   onMove,
   onDuplicate,
   onEditEntry,
@@ -61,10 +63,14 @@ export function CalendarGrid({
   entries: TimeEntry[];
   zoom: number;
   armedActivityId: number | null;
+  armedActivityColor: string | null;
   armedDefaultDurationMinutes: number;
   selectedEntryId: number | null;
   onSelectEntry: (id: number | null) => void;
   onCreate: (activityId: number, date: string, startTime: string, endTime: string) => void;
+  /** Drag/click-to-create with no Activity armed -- the caller opens a
+   * modal to pick (or create) one instead of creating immediately. */
+  onRequestCreate: (date: string, startTime: string, endTime: string) => void;
   onMove: (id: number, date: string, startTime: string, endTime: string) => void;
   onDuplicate: (entry: TimeEntry) => void;
   onEditEntry: (entry: TimeEntry) => void;
@@ -134,11 +140,28 @@ export function CalendarGrid({
     setDragState(next);
   }, []);
 
+  // Translucent preview of where a click/drag would land while an Activity
+  // is armed -- purely a hover indicator, so it's cleared the moment a real
+  // drag starts (that has its own preview) or the pointer leaves the grid.
+  const [hover, setHover] = useState<{ dayIndex: number; startMin: number } | null>(null);
+
   const gridContentHeight = (totalMinutes / SLOT_MINUTES) * SLOT_HEIGHT_PX;
   const gridHeight = gridContentHeight + GRID_TOP_PAD_PX + GRID_BOTTOM_PAD_PX;
   const minutesToPx = (min: number) => GRID_TOP_PAD_PX + (min / SLOT_MINUTES) * SLOT_HEIGHT_PX;
   const dayIso = useMemo(() => days.map(toISODate), [days]);
   const todayIso = toISODate(new Date());
+
+  // Drives both the "now" line and each block's isHappeningNow check.
+  // Updated on a timer (not just once at mount) so the line actually
+  // creeps down the grid and a block stops looking "current" the moment
+  // its end time passes, without needing a page reload.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+  const nowMinutesSinceStart = now.getHours() * 60 + now.getMinutes() - startHour * 60;
+  const showNowLine = toISODate(now) === todayIso && nowMinutesSinceStart >= 0 && nowMinutesSinceStart <= totalMinutes;
 
   const entriesByDay = useMemo(() => {
     const map = new Map<string, TimeEntry[]>();
@@ -186,7 +209,9 @@ export function CalendarGrid({
   }, []);
 
   const beginCreate = (dayIndex: number, y: number, clientX: number, clientY: number) => {
-    if (armedActivityId == null) return;
+    // No armedActivityId check here anymore -- dragging/clicking with
+    // nothing armed still starts a create-drag; onPointerUp below routes
+    // it to onRequestCreate (a picker modal) instead of onCreate.
     const anchor = yToMinutes(y);
     setDrag({
       mode: "create",
@@ -299,32 +324,37 @@ export function CalendarGrid({
       setDrag(null);
       if (!finalDrag) return;
 
-      if (!finalDrag.moved) {
-        if (finalDrag.mode === "create" && armedActivityId != null) {
-          const date = dayIso[finalDrag.dayIndex];
-          const start = finalDrag.anchorMin;
-          const end = clampMinutes(start + armedDefaultDurationMinutes);
-          onCreate(
-            armedActivityId,
-            date,
-            minutesToTime(start + startHour * 60),
-            minutesToTime(Math.max(end, start + SLOT_MINUTES) + startHour * 60),
-          );
-        } else if (finalDrag.entryId != null) {
-          onSelectEntry(finalDrag.entryId);
+      if (finalDrag.mode === "create") {
+        const date = dayIso[finalDrag.dayIndex];
+        let startMin: number;
+        let endMin: number;
+        if (finalDrag.moved) {
+          startMin = finalDrag.startMin;
+          endMin = finalDrag.endMin;
+        } else {
+          // A plain click (no drag): fall back to the armed Activity's own
+          // default duration, or the generic default when nothing's armed
+          // (armedDefaultDurationMinutes already carries that fallback --
+          // see CalendarScreen).
+          startMin = finalDrag.anchorMin;
+          endMin = clampMinutes(Math.max(startMin + SLOT_MINUTES, startMin + armedDefaultDurationMinutes));
+        }
+        const startTime = minutesToTime(startMin + startHour * 60);
+        const endTime = minutesToTime(endMin + startHour * 60);
+        if (armedActivityId != null) {
+          onCreate(armedActivityId, date, startTime, endTime);
+        } else {
+          onRequestCreate(date, startTime, endTime);
         }
         return;
       }
 
-      if (finalDrag.mode === "create" && armedActivityId != null) {
-        const date = dayIso[finalDrag.dayIndex];
-        onCreate(
-          armedActivityId,
-          date,
-          minutesToTime(finalDrag.startMin + startHour * 60),
-          minutesToTime(finalDrag.endMin + startHour * 60),
-        );
-      } else if (finalDrag.entryId != null) {
+      if (!finalDrag.moved) {
+        if (finalDrag.entryId != null) onSelectEntry(finalDrag.entryId);
+        return;
+      }
+
+      if (finalDrag.entryId != null) {
         const date = dayIso[finalDrag.dayIndex];
         onMove(
           finalDrag.entryId,
@@ -379,6 +409,20 @@ export function CalendarGrid({
           const dayIndex = xToDayIndex(point.x);
           beginCreate(dayIndex, point.y, e.clientX, e.clientY);
         }}
+        onPointerMove={(e) => {
+          if (drag || armedActivityId == null) return;
+          const point = gridPointFromEvent(e);
+          if (!point || point.x < 0 || point.y < 0) {
+            setHover(null);
+            return;
+          }
+          const dayIndex = xToDayIndex(point.x);
+          const startMin = yToMinutes(point.y);
+          setHover((prev) =>
+            prev && prev.dayIndex === dayIndex && prev.startMin === startMin ? prev : { dayIndex, startMin },
+          );
+        }}
+        onPointerLeave={() => setHover(null)}
       >
         <div className="calendar-gutter" style={{ width: GUTTER_WIDTH_PX, height: gridHeight }}>
           {hourMarks.map((h) => (
@@ -424,11 +468,17 @@ export function CalendarGrid({
                   const left = slot.colIndex * (colWidth + BLOCK_GAP_PX);
                   const top = minutesToPx(startMin);
                   const height = Math.max(SLOT_HEIGHT_PX, ((endMin - startMin) / SLOT_MINUTES) * SLOT_HEIGHT_PX);
+                  const isActiveNow =
+                    iso === todayIso && showNowLine && nowMinutesSinceStart >= startMin && nowMinutesSinceStart < endMin;
 
                   return (
                     <div
                       key={entry.id}
-                      className={"calendar-entry" + (selectedEntryId === entry.id ? " calendar-entry-selected" : "")}
+                      className={
+                        "calendar-entry" +
+                        (selectedEntryId === entry.id ? " calendar-entry-selected" : "") +
+                        (isActiveNow ? " calendar-entry-active" : "")
+                      }
                       title={
                         entry.notes
                           ? `${entry.activityName} · ${entry.startTime}–${entry.endTime}\n${entry.notes}`
@@ -441,6 +491,12 @@ export function CalendarGrid({
                         height,
                         background: entry.color,
                         color: blockTextColor(entry.color),
+                        ...(isActiveNow
+                          ? {
+                              outlineColor: activeNowAccent(entry.color),
+                              boxShadow: `0 0 8px 1px ${activeNowAccent(entry.color)}, 0 2px 8px rgba(0, 0, 0, 0.35)`,
+                            }
+                          : {}),
                       }}
                       onPointerDown={(e) => {
                         e.stopPropagation();
@@ -492,11 +548,33 @@ export function CalendarGrid({
                   );
                 })}
 
+                {!drag &&
+                  hover &&
+                  hover.dayIndex === dayIndex &&
+                  armedActivityId != null &&
+                  (() => {
+                    const hoverEnd = clampMinutes(hover.startMin + armedDefaultDurationMinutes);
+                    return (
+                      <div
+                        className="calendar-entry calendar-hover-preview"
+                        style={{
+                          left: 0,
+                          top: minutesToPx(hover.startMin),
+                          width: DAY_WIDTH_PX,
+                          height: Math.max(
+                            SLOT_HEIGHT_PX,
+                            ((hoverEnd - hover.startMin) / SLOT_MINUTES) * SLOT_HEIGHT_PX,
+                          ),
+                          background: armedActivityColor ?? "var(--accent)",
+                        }}
+                      />
+                    );
+                  })()}
+
                 {drag &&
                   drag.mode === "create" &&
                   drag.dayIndex === dayIndex &&
-                  drag.moved &&
-                  armedActivityId != null && (
+                  drag.moved && (
                     <div
                       className="calendar-entry calendar-entry-preview"
                       style={{
@@ -536,6 +614,12 @@ export function CalendarGrid({
                       </div>
                     </div>
                   )}
+
+                {iso === todayIso && showNowLine && (
+                  <div className="calendar-now-line" style={{ top: minutesToPx(nowMinutesSinceStart) }}>
+                    <span className="calendar-now-dot" />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -543,6 +627,15 @@ export function CalendarGrid({
       </div>
     </div>
   );
+}
+
+/** A translucent version of whichever of black/white actually contrasts
+ * with this specific block's own background (see blockTextColor) -- used
+ * for the "happening now" outline/glow so it's always visible regardless
+ * of the block's own color, instead of a fixed theme color that can end up
+ * close to (or the same hue as) the block it's supposed to highlight. */
+function activeNowAccent(bgHex: string): string {
+  return blockTextColor(bgHex) === BLOCK_TEXT_LIGHT ? "rgba(255, 255, 255, 0.9)" : "rgba(0, 0, 0, 0.75)";
 }
 
 function formatHour(h: number): string {

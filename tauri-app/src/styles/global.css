@@ -188,7 +188,6 @@ textarea {
 }
 
 .activity-sidebar {
-  width: 210px;
   flex-shrink: 0;
   overflow-y: auto;
   background: var(--panel-bg);
@@ -198,6 +197,80 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.calendar-resize-handle {
+  /* Kept deliberately narrow: an earlier, wider version (24px, -10px
+     margin) overlapped far enough into calendar-wrapper that a drag
+     started near the grid's left edge could be captured as a sidebar
+     resize instead of a create-drag -- looked exactly like "can't create
+     blocks anymore" without an obvious cause. */
+  flex-shrink: 0;
+  width: 9px;
+  margin: 0 -2px;
+  cursor: col-resize;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-resize-handle-collapsed {
+  cursor: pointer;
+}
+
+.calendar-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border);
+}
+
+.calendar-resize-handle:hover::after,
+.calendar-resize-handle.calendar-resize-handle-active::after {
+  background: var(--accent);
+}
+
+.calendar-resize-toggle {
+  /* Positioned independently of the handle's own (intentionally narrow)
+     box, via absolute + a size larger than its 9px parent, so this stays
+     comfortably clickable without widening the handle's own drag hit
+     area back into the calendar. */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  width: 22px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.calendar-resize-handle-collapsed .calendar-resize-toggle {
+  cursor: pointer;
+}
+
+.calendar-resize-toggle:hover,
+.calendar-resize-toggle-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .activity-sidebar-hint {
@@ -215,12 +288,21 @@ textarea {
 .activity-project-name {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-secondary);
-  padding: 6px 4px 2px;
+  padding: 7px 4px 3px;
+  background: none;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+}
+
+.activity-project-name:hover {
+  color: var(--text-primary);
 }
 
 .color-dot {
@@ -228,6 +310,18 @@ textarea {
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.disclosure-arrow {
+  display: inline-block;
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+.disclosure-arrow-collapsed {
+  transform: rotate(-90deg);
 }
 
 .activity-row {
@@ -402,10 +496,51 @@ textarea {
   pointer-events: none;
 }
 
+.calendar-hover-preview {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .calendar-entry-dragging {
   outline: 2px dashed white;
   outline-offset: -2px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.calendar-entry-active {
+  /* Solid, not dashed -- dashes drawn straight over the label/notes text
+     inside a short block just cut through it and made it harder to read.
+     outlineColor/boxShadow are set inline per-block (see
+     CalendarGrid.tsx's activeNowAccent): whichever of black/white actually
+     contrasts with THIS block's own color, translucent, rather than a
+     fixed theme color that can land close to the block's own hue (an
+     orange "now" line on an orange block was nearly invisible). */
+  outline: 2px solid;
+  outline-offset: -2px;
+  filter: brightness(1.08);
+}
+
+.calendar-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.calendar-now-dot {
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 5px 1px rgba(255, 255, 255, 0.5);
 }
 
 .page-header {

@@ -6,11 +6,15 @@ export function ActivitySidebar({
   activities,
   armedActivityId,
   onArm,
+  onToggleCollapse,
+  width,
 }: {
   projects: Project[];
   activities: Activity[];
   armedActivityId: number | null;
   onArm: (id: number | null) => void;
+  onToggleCollapse: (projectId: number) => void;
+  width: number;
 }) {
   const byProject = useMemo(() => {
     const map = new Map<number | null, Activity[]>();
@@ -23,7 +27,7 @@ export function ActivitySidebar({
   }, [activities]);
 
   return (
-    <div className="activity-sidebar">
+    <div className="activity-sidebar" style={{ width }}>
       <div className="activity-sidebar-hint">
         {armedActivityId == null
           ? "Select an Activity, then drag on the grid to log time."
@@ -34,26 +38,35 @@ export function ActivitySidebar({
         if (list.length === 0) return null;
         return (
           <div key={project.id} className="activity-project-group">
-            <div className="activity-project-name">
-              <span className="color-dot" style={{ background: project.color }} />
-              {project.name}
-            </div>
-            {list.map((activity) => (
-              <button
-                key={activity.id}
-                type="button"
-                className={"activity-row" + (armedActivityId === activity.id ? " activity-row-armed" : "")}
-                onClick={() => onArm(armedActivityId === activity.id ? null : activity.id)}
+            <button
+              type="button"
+              className="activity-project-name"
+              onClick={() => onToggleCollapse(project.id)}
+              aria-expanded={!project.collapsed}
+            >
+              <span
+                className={"disclosure-arrow" + (project.collapsed ? " disclosure-arrow-collapsed" : "")}
+                style={{ color: project.color }}
               >
-                {activity.name}
-              </button>
-            ))}
+                ▾
+              </span>
+              {project.name}
+            </button>
+            {!project.collapsed &&
+              list.map((activity) => (
+                <button
+                  key={activity.id}
+                  type="button"
+                  className={"activity-row" + (armedActivityId === activity.id ? " activity-row-armed" : "")}
+                  onClick={() => onArm(armedActivityId === activity.id ? null : activity.id)}
+                >
+                  {activity.name}
+                </button>
+              ))}
           </div>
         );
       })}
-      {activities.length === 0 && (
-        <p className="muted">No Activities yet -- create one in the Python app for now; Activity/Project management isn't built here yet.</p>
-      )}
+      {activities.length === 0 && <p className="muted">No Activities yet -- add one in the Activities tab.</p>}
     </div>
   );
 }

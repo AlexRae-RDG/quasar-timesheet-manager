@@ -5,6 +5,7 @@ export interface Project {
   name: string;
   color: string;
   sortOrder: number;
+  collapsed: boolean;
 }
 
 export interface Activity {
@@ -69,6 +70,10 @@ export function updateProject(input: UpdateProject): Promise<Project> {
  * before deleting -- see activities.rs's delete_project. */
 export function deleteProject(id: number): Promise<void> {
   return invoke("delete_project", { id });
+}
+
+export function setProjectCollapsed(id: number, collapsed: boolean): Promise<Project> {
+  return invoke("set_project_collapsed", { id, collapsed });
 }
 
 export function createActivity(input: NewActivity): Promise<Activity> {

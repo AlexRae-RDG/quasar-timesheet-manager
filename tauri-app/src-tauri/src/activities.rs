@@ -13,6 +13,7 @@ pub struct Project {
     pub name: String,
     pub color: String,
     pub sort_order: i64,
+    pub collapsed: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -68,7 +69,7 @@ pub struct UpdateActivity {
     pub issue_type: Option<String>,
 }
 
-const PROJECT_COLUMNS: &str = "id, name, color, sort_order";
+const PROJECT_COLUMNS: &str = "id, name, color, sort_order, collapsed";
 
 fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
     Ok(Project {
@@ -76,6 +77,7 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
         name: row.get(1)?,
         color: row.get(2)?,
         sort_order: row.get(3)?,
+        collapsed: row.get::<_, i64>(4)? != 0,
     })
 }
 
@@ -115,6 +117,17 @@ pub fn update_project(conn: &Connection, input: &UpdateProject) -> rusqlite::Res
         rusqlite::params![input.name, input.color, input.id],
     )?;
     get_project(conn, input.id)
+}
+
+/// A separate, narrow command (rather than routing through update_project)
+/// since this fires on every sidebar expand/collapse click -- it shouldn't
+/// need the full name/color payload just to flip one flag.
+pub fn set_project_collapsed(conn: &Connection, id: i64, collapsed: bool) -> rusqlite::Result<Project> {
+    conn.execute(
+        "UPDATE projects SET collapsed = ?1 WHERE id = ?2",
+        rusqlite::params![collapsed as i64, id],
+    )?;
+    get_project(conn, id)
 }
 
 fn get_or_create_general_project(conn: &Connection) -> rusqlite::Result<i64> {

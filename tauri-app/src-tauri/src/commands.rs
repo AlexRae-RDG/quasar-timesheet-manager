@@ -77,6 +77,12 @@ pub fn delete_project(state: State<AppState>, id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn set_project_collapsed(state: State<AppState>, id: i64, collapsed: bool) -> Result<Project, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    activities::set_project_collapsed(&conn, id, collapsed).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn create_activity(state: State<AppState>, input: NewActivity) -> Result<Activity, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     activities::create_activity(&conn, &input).map_err(|e| e.to_string())

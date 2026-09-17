@@ -33,6 +33,7 @@ pub fn run() {
             commands::create_project,
             commands::update_project,
             commands::delete_project,
+            commands::set_project_collapsed,
             commands::create_activity,
             commands::update_activity,
             commands::archive_activity,

@@ -48,10 +48,35 @@ export function installDevMockIfRequested() {
     },
   ];
 
+  // A block spanning right now, so the "now" line and the active-block
+  // highlight (see CalendarGrid.tsx) both have something to visibly line
+  // up against without needing a real clock-matching fixture.
+  {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const localIso = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+    const fmt = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const start = new Date(today.getTime() - 20 * 60_000);
+    const end = new Date(today.getTime() + 25 * 60_000);
+    entries.push({
+      id: 3,
+      activityId: 1,
+      activityName: "Sprint Planning",
+      jiraKey: "QDM-1",
+      color: "#4C6EF5",
+      date: localIso,
+      startTime: fmt(start),
+      endTime: fmt(end),
+      notes: "In progress right now",
+      jiraProject: null,
+      issueType: null,
+      jiraUploadedAt: null,
+    });
+  }
+
   let nextProjectId = 100;
   let projects: Record<string, unknown>[] = [
-    { id: 1, name: "Project Alpha", color: "#4C6EF5", sortOrder: 0 },
-    { id: 2, name: "Project Beta", color: "#12B886", sortOrder: 1 },
+    { id: 1, name: "Project Alpha", color: "#4C6EF5", sortOrder: 0, collapsed: false },
+    { id: 2, name: "Project Beta", color: "#12B886", sortOrder: 1, collapsed: false },
   ];
 
   let nextActivityId = 100;
@@ -102,7 +127,13 @@ export function installDevMockIfRequested() {
         return activities.filter((a) => !a.archived);
       case "create_project": {
         const input = args.input as Record<string, unknown>;
-        const p = { id: nextProjectId++, name: input.name, color: input.color, sortOrder: projects.length };
+        const p = {
+          id: nextProjectId++,
+          name: input.name,
+          color: input.color,
+          sortOrder: projects.length,
+          collapsed: false,
+        };
         projects.push(p);
         return p;
       }
@@ -115,10 +146,21 @@ export function installDevMockIfRequested() {
         }
         return p;
       }
+      case "set_project_collapsed": {
+        const p = projects.find((x) => x.id === args.id);
+        if (p) p.collapsed = args.collapsed;
+        return p;
+      }
       case "delete_project": {
         let general = projects.find((p) => p.name === "General");
         if (!general) {
-          general = { id: nextProjectId++, name: "General", color: "#495057", sortOrder: projects.length };
+          general = {
+            id: nextProjectId++,
+            name: "General",
+            color: "#495057",
+            sortOrder: projects.length,
+            collapsed: false,
+          };
           projects.push(general);
         }
         if (general.id !== args.id) {
