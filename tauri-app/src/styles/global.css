@@ -727,14 +727,18 @@ textarea {
 /* Settings only (see SettingsScreen) -- the page can run long enough that
    Save Settings scrolls out of reach; pinning the header keeps it (and the
    Jira connected/not-connected status next to it) on screen the whole way
-   down. A solid background (not the panel's own translucent one, even in
-   Glassy) is deliberate -- scrolled content passing directly under a
-   sticky header needs to be fully covered, not show through it. */
+   down. --panel-bg (the same "opaque bar over scrolling content" treatment
+   .shell-header already uses), not --app-bg -- in the Glassy theme APP_BG
+   is a whole-page gradient, not a flat color, so painting it onto this
+   small rectangle rendered an arbitrary mismatched crop of it instead of
+   blending in (see the data-glass rules below, which give this the same
+   frosted-panel blur .shell-header gets rather than a plain flat fill). */
 .page-header-sticky {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--app-bg);
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
   padding: 8px 0;
   margin: 0 0 -8px;
 }
@@ -1335,6 +1339,7 @@ textarea {
 :root[data-glass="true"] .activity-sidebar,
 :root[data-glass="true"] .calendar-wrapper,
 :root[data-glass="true"] .shell-header,
+:root[data-glass="true"] .page-header-sticky,
 :root[data-glass="true"] .calendar-resize-toggle,
 :root[data-glass="true"] .field input[type="text"],
 :root[data-glass="true"] .field input[type="password"],
