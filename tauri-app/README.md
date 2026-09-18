@@ -1,7 +1,240 @@
-# Tauri + React + Typescript
+# QUASAR Timesheet Manager (Tauri rebuild)
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+This is a from-scratch rewrite of [QUASAR Timesheet Manager](../README.md)
+— a click-and-drag weekly timesheet with two-way Jira integration — from
+Python/Tkinter to [Tauri](https://tauri.app/) (a Rust backend + a React/
+TypeScript frontend running in the OS's native webview). It's still an
+in-progress branch, not yet the app colleagues are told to download; see
+"Status" below for exactly what that means today.
 
-## Recommended IDE Setup
+It reads and writes the **same SQLite database** the existing Python app
+uses (`~/.jira_timesheet/timesheet.db`), so switching between the two apps
+during this transition carries every Project/Activity/time entry over
+untouched — nothing to export/import, nothing to migrate by hand.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Status
+
+- Feature-complete relative to the Python app, plus some things the Python
+  app doesn't have (see "What's new" below).
+- Still on its own branch, currently versioned `0.1.0` (kept in sync by
+  hand across `package.json`, `src-tauri/tauri.conf.json`, and
+  `src/version.ts` — see the comment on `APP_VERSION`).
+- **No release automation yet.** The repo's `.github/workflows/release.yml`
+  only builds/packages the *old* Python app — it hasn't been pointed at
+  this rewrite. Until that's built out (or someone builds + attaches
+  installers by hand), there's no downloadable build of this app; running
+  it means running it from source (see "For developers" below).
+
+## What's new (vs. the Python app)
+
+- **Department-aware Jira integration**: pick Quality Assurance or
+  Accreditation in Settings/onboarding, and every Jira-facing piece of the
+  app (the sub-task prefix, the Jira Project an Activity uploads under,
+  import/search) automatically uses that team's own project — QDM for
+  Quality Assurance, TISACC for Accreditation — instead of being hardcoded
+  to QDM.
+- **Import from Outlook**: paste a published Outlook (or Google) shared
+  calendar's `.ics` link once in Settings, then pull that week's meetings
+  straight into the Timesheet as time blocks from one button — recurring
+  meetings (daily standups, weekly syncs on specific days) are expanded
+  correctly, including a meeting edited or cancelled for a single day.
+- **Guided first-run tour**: a mandatory setup form (name, department,
+  Jira connection) followed by a spotlighted walkthrough of every tab,
+  rather than a static welcome screen.
+- **Pre-upload Notes validation**: a block with an empty Notes field is
+  highlighted red and blocks Upload to Jira until fixed, since Notes become
+  the worklog's comment in Jira.
+- **Shift+click** a block to duplicate it and jump straight into editing
+  the copy (filling in Notes), rather than duplicate-then-double-click.
+- OS-native secret storage for the Jira API token (macOS Keychain/Windows
+  Credential Manager/Secret Service) instead of an app-managed encrypted
+  file.
+- Light/Dark/Glassy/Custom themes, a boxed-and-collapsible Activities
+  sidebar, and a redesigned toolbar (segmented week nav, a corner zoom
+  control, Apply Template inline).
+
+## Using the app
+
+**First launch**: a mandatory form asks for your name, department (Quality
+Assurance or Accreditation), and Jira connection (Site URL, Email, API
+Token — see "Getting a Jira API token" in the [root README](../README.md#getting-a-jira-api-token)
+for that part), then drops you into a guided tour of every tab. Everything
+here stays editable later from **Settings**.
+
+**Timesheet** (the weekly calendar)
+- Monday–Friday by default (toggle weekends in Settings), in 30-minute
+  slots. **Drag** across empty slots to create a time block; with an
+  Activity armed in the sidebar it's created immediately, otherwise a
+  picker opens.
+- **Drag an edge** to resize a block, **drag the middle** to move it
+  (including to a different day). **Double-click** to edit its Activity
+  and Notes.
+- **Ctrl/Cmd+click** a block to duplicate it in place. **Shift+click** to
+  duplicate *and* jump straight into editing the copy.
+- **Click** a block to select it (**Delete**/**Backspace** removes it,
+  arrow keys nudge it); **Ctrl/Cmd+Z** undoes, **Ctrl/Cmd+Shift+Z** (or
+  **+Y**) redoes — Timesheet and Template each keep their own history.
+- The magnifying-glass control in the grid's corner zooms the row height
+  in/out; **‹ Today ›** switches weeks.
+- **Apply Template to This Week** copies every block from the Template tab
+  onto the currently-shown week (slots already occupied are left alone).
+- **Import from Outlook** fetches this week's events from your saved
+  calendar link (or one pasted on the spot) and lets you review, assign
+  each to an Activity, and import the ones you want — see "Import from
+  Outlook" below.
+- **Upload to Jira** sends this week's linked, not-yet-uploaded blocks as
+  worklogs — see "Uploading to Jira" below. Blocks missing Notes, or filed
+  under an Archived (Jira-Closed) Activity, block the upload with an
+  explanation until fixed.
+
+**Activities sidebar**
+- Hover an Activity for a pencil to quick-edit it, or hover a Project's
+  name for a **+** to add a new Activity underneath it — no need to leave
+  Timesheet. Click an Activity to arm it (then click/drag on the grid to
+  log time against it).
+- The **Activities** tab has the fuller Project/Activity management —
+  create/edit/archive either, and **Import from Jira** to bulk-pull your
+  assigned sub-tasks (see below) instead of adding them one at a time.
+- A new/edited Activity's Jira Key only asks for the number — the QDM-/
+  TISACC- prefix (whichever your department uses) is filled in
+  automatically and required, since it's what Upload to Jira needs.
+
+**Template** — a permanent Monday–Friday grid, not tied to any real date,
+for meetings that repeat every week. Build it once; **Apply Template to
+This Week** (on Timesheet) copies it onto whichever week is showing.
+
+**Summary** — total hours by Project or Activity for a chosen week or
+month, with logged-vs-expected tracking; reflects Timesheet entries only
+and refreshes automatically.
+
+**Import from Jira** (Activities tab) — pulls every QDM/TISACC sub-task
+assigned to you straight from Jira's API (needs a saved API token), and
+groups the results by the internal Project each one probably belongs to
+(guessed from its parent issue's name, editable per row before importing).
+A Closed one you sort into an active Project is reopened in Jira
+automatically as part of importing it.
+
+**Import from Outlook** — paste a published shared-calendar `.ics` link
+into **Settings → Outlook Calendar Import** once, and the Timesheet's
+**Import from Outlook** button fetches it automatically from then on (a
+different link can still be pasted in on the spot instead, without
+touching Settings). Only events on the days currently shown are pulled in;
+each one gets assigned to an Activity before it becomes a real time block,
+and an event that already matches something on your timesheet (same date/
+time) is skipped automatically so re-importing is always safe.
+
+**Uploading to Jira** — **Settings → Jira Cloud Upload** needs a Site URL,
+Email, and API Token saved and verified first (token stored in this
+machine's OS keychain, never in the database). Once connected, **Upload to
+Jira** on the Timesheet sends every linked, not-yet-uploaded block for the
+shown week as a worklog against its Jira Key, using each block's Notes as
+the worklog comment.
+
+**Theme** — Settings has Light, Dark, Glassy (translucent/blurred), and
+Custom (your own color pickers), applied instantly and remembered.
+
+**Keyboard shortcuts** (Settings has the full reference list)
+
+| Keys | Action |
+| --- | --- |
+| Click + drag | Create a time block (or move/resize an existing one) |
+| Ctrl/Cmd + click a block | Duplicate that block |
+| Shift + click a block | Duplicate that block and open it for editing |
+| Double-click a block | Edit its Activity and notes |
+| Delete / Backspace | Delete the selected block |
+| Escape | Deselect, disarm the current Activity, or close a dialog |
+| Right-click | Disarm the current Activity |
+| Arrow keys | Nudge the selected block (Timesheet only) |
+| Ctrl/Cmd + Z | Undo (Timesheet only) |
+| Ctrl/Cmd + Shift + Z (or + Y) | Redo (Timesheet only) |
+| Enter in a text field | Save the dialog |
+| Shift + Enter in Notes | Insert a newline instead of saving |
+
+## For developers
+
+### Running from source
+
+Requires [Node.js](https://nodejs.org/) (18+) and
+[Rust](https://www.rust-lang.org/tools/install) — Tauri needs both toolchains,
+plus the platform prerequisites Tauri itself lists in its
+[prerequisites guide](https://tauri.app/start/prerequisites/) (Xcode
+Command Line Tools on macOS; the Visual Studio Build Tools + WebView2 on
+Windows).
+
+```bash
+cd tauri-app
+npm install
+npm run tauri dev
+```
+
+This opens the app in a real native window, backed by a local dev server
+with hot reload for the frontend (Rust changes trigger a full rebuild).
+
+**Testing against scratch data** — by default the dev build points at the
+same `~/.jira_timesheet/timesheet.db` the packaged app (and the Python
+app) use, so it's easy to accidentally write test data into real data.
+Set `QUASAR_DATA_DIR` to point it at a throwaway folder instead:
+
+```bash
+QUASAR_DATA_DIR=/tmp/quasar-dev-data npm run tauri dev
+```
+
+(this also switches Jira token storage to a plain file inside that folder
+instead of the real OS keychain — see the comment in `src-tauri/src/
+keychain.rs` for why: an unsigned dev binary doesn't have a stable code
+identity for the OS keychain to key access to.)
+
+**Browser-only preview (no native window)** — `npm run dev` starts just
+the Vite dev server; opening it in a plain browser tab with `?mock=1` in
+the URL (optionally `&onboarded=1` to skip the first-run form) swaps in an
+in-memory mock of the Tauri backend (`src/devMock.ts`), so UI work can be
+previewed/screenshotted without a real Tauri IPC bridge. This never
+activates inside the packaged app or the real `tauri dev` window.
+
+### Project layout
+
+```
+src-tauri/                  Rust backend
+  src/db.rs                    SQLite connection + schema (shared with the Python app's DB)
+  src/settings.rs               settings key/value table (name, department, theme, Jira config, ...)
+  src/keychain.rs                 OS keychain access for the Jira API token
+  src/activities.rs                 Project/Activity CRUD
+  src/calendar.rs                    TimeEntry CRUD (the Timesheet's weekly blocks)
+  src/templates.rs                    TemplateEntry CRUD + apply-to-week
+  src/jira.rs                          shared Jira API helpers (auth, site URL normalizing)
+  src/qdm.rs                            searches Jira for a department's assigned sub-tasks
+  src/worklog.rs                         uploads time entries to Jira as worklogs
+  src/ics.rs                             fetches a shared calendar's .ics text (parsing is client-side)
+  src/commands.rs                        #[tauri::command]s exposed to the frontend
+  src/lib.rs                              app setup + the invoke_handler command list
+src/                         React frontend
+  api/                          typed wrappers around each Tauri command (one file per Rust module above)
+  screens/                       CalendarScreen (Timesheet), ActivitiesScreen, TemplateScreen, SummaryScreen, SettingsScreen
+  components/                     modals, the Activities sidebar, the calendar grid, the onboarding form/tour
+  lib/date.ts                       date/time helpers shared across screens
+  lib/ics.ts                         .ics parsing + recurrence expansion for Import from Outlook
+  theme/                             the four themes' color palettes + the ThemeProvider
+  devMock.ts                         in-memory backend mock for browser-only preview (see above)
+```
+
+### Building
+
+```bash
+npm run build       # tsc + vite build (frontend only, into dist/)
+npm run tauri build # full native app bundle for the current OS
+```
+
+There is no cross-compiling — a native bundle has to be built on the same
+kind of machine it's meant to run on, same as the Python app's PyInstaller
+packaging. See "Status" above for why there's no CI doing this yet.
+
+### Tests
+
+```bash
+npx tsc --noEmit          # type-check the frontend
+cargo check               # type-check the Rust backend (run from src-tauri/)
+```
+
+No automated UI/integration test suite yet — changes are verified manually
+(the `?mock=1` browser preview for fast iteration, then a real `tauri dev`
+run against scratch `QUASAR_DATA_DIR` data before calling something done).

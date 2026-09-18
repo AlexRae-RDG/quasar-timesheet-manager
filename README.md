@@ -10,6 +10,12 @@ Everything runs locally, with no account, server, or internet connection
 required beyond the Jira API calls themselves; all data lives in a
 single SQLite file on your machine.
 
+> **A rewrite is in progress** in [`tauri-app/`](tauri-app/) — same app,
+> rebuilt on [Tauri](https://tauri.app/) (Rust + React) instead of Python/
+> Tkinter, reading and writing this same SQLite database. It's not yet
+> what's linked below; see [`tauri-app/README.md`](tauri-app/README.md)
+> for its own setup instructions and current status.
+
 ## Install and get started
 
 **This is the fastest way to get going — no Python, no Terminal, no git.**
