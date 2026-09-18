@@ -14,7 +14,8 @@
       {
         "title": "QUASAR Timesheet Manager",
         "width": 1240,
-        "height": 780
+        "height": 780,
+        "maximized": true
       }
     ],
     "security": {
