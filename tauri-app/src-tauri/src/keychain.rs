@@ -2,6 +2,18 @@
 //! Credential Manager / Secret Service on Linux), through the `keyring`
 //! crate.
 //!
+//! `keyring` 3.x has NO default backend -- Cargo.toml must enable
+//! `apple-native`/`windows-native`/`sync-secret-service` explicitly, or
+//! every one of this module's calls below compiles fine but has no real
+//! storage to talk to on any OS (confirmed: `set_password` and
+//! `get_password` both return `Err`, so `set_token` surfaces an error --
+//! but `has_token`/`get_token` just read as "no token" rather than
+//! erroring, which is what actually surfaces as "Connect Jira in Settings
+//! first." on every Jira action even right after a token was supposedly
+//! saved). If Jira ever looks broken like that again on a fresh checkout,
+//! check Cargo.toml's `keyring` line still has those features before
+//! looking anywhere else.
+//!
 //! This deliberately replaces the Python app's Fernet-file-encrypted
 //! `settings` row (see the old app's `jira_client.py`): Tauri's native
 //! platform bindings give us real OS-backed secret storage, so there's no
