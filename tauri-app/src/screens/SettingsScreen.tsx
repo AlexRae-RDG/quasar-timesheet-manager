@@ -140,7 +140,7 @@ export function SettingsScreen({
 
   return (
     <div className="app-shell">
-      <header className="page-header">
+      <header className="page-header page-header-sticky">
         <h1>Settings</h1>
         <button className="btn btn-accent" onClick={handleSave} disabled={saveState === "saving"}>
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Save Settings"}

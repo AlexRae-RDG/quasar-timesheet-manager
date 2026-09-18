@@ -67,7 +67,27 @@ pub fn set_token(token: &str) -> Result<(), String> {
     if let Some(path) = dev_token_path() {
         return fs::write(path, token).map_err(|e| e.to_string());
     }
-    entry()?.set_password(token).map_err(|e| e.to_string())
+    let e = entry()?;
+    e.set_password(token).map_err(|e| e.to_string())?;
+    // A successful set_password isn't proof the token is actually
+    // retrievable -- some credential stores (or a locked-down machine's
+    // policy around one) can report success on write but not reliably
+    // return it moments later, even in the same process. Reading it back
+    // immediately turns that into a loud, specific error right here at
+    // Save time instead of a confusing "Connect Jira in Settings first."
+    // on the next real Jira action, with nothing pointing at why.
+    match e.get_password() {
+        Ok(saved) if saved == token => Ok(()),
+        Ok(_) => Err(
+            "Saved, but reading it back returned something different -- try again, or check \
+             with IT whether this machine's credential storage is restricted."
+                .to_string(),
+        ),
+        Err(err) => Err(format!(
+            "Saved, but couldn't read it back to confirm -- {err}. Try again, or check with IT \
+             whether this machine's credential storage is restricted."
+        )),
+    }
 }
 
 pub fn delete_token() -> Result<(), String> {
