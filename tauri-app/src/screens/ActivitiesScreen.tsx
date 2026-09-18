@@ -11,18 +11,28 @@ import {
   type Activity,
   type Project,
 } from "../api/activities";
+import { projectKeyForDepartment, type AppSettings } from "../api/settings";
 import { EditActivityModal, type ActivityFormValues } from "../components/EditActivityModal";
 import { EditProjectModal } from "../components/EditProjectModal";
+import { ImportQdmModal } from "../components/ImportQdmModal";
+import { closeJiraIssue, reopenJiraIssue } from "../api/jira";
+
+function isArchivedProject(projects: Project[], projectId: number | null): boolean {
+  const project = projects.find((p) => p.id === projectId);
+  return !!project && project.name.trim().toLowerCase() === "archived";
+}
 
 type ProjectModalState = { mode: "new" } | { mode: "edit"; project: Project } | null;
 type ActivityModalState = { mode: "new"; projectId: number | null } | { mode: "edit"; activity: Activity } | null;
 
-export function ActivitiesScreen() {
+export function ActivitiesScreen({ settings }: { settings: AppSettings }) {
+  const teamKey = projectKeyForDepartment(settings.department);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [projectModal, setProjectModal] = useState<ProjectModalState>(null);
   const [activityModal, setActivityModal] = useState<ActivityModalState>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const refresh = () => {
     listProjects().then(setProjects).catch((e) => setError(String(e)));
@@ -64,10 +74,22 @@ export function ActivitiesScreen() {
         jiraKey: values.jiraKey || undefined,
         defaultDurationMinutes: values.defaultDurationMinutes ? Number(values.defaultDurationMinutes) : undefined,
         jiraProject: values.jiraProject || undefined,
-        issueType: values.issueType || undefined,
       };
       if (activityModal?.mode === "edit") {
-        await updateActivity({ id: activityModal.activity.id, ...input });
+        const wasArchived = isArchivedProject(projects, activityModal.activity.projectId);
+        const saved = await updateActivity({ id: activityModal.activity.id, ...input });
+        // Moving an Activity's QDM out of the Archived bucket means it's
+        // active again -- reopen the ticket in Jira to match, the same
+        // automatic pairing Import QDMs does when you sort a Closed QDM
+        // into a real Project instead. Best-effort: worth surfacing if it
+        // fails, not worth blocking the save that already succeeded.
+        if (wasArchived && !isArchivedProject(projects, values.projectId) && saved.jiraKey && settings.hasJiraToken) {
+          try {
+            await reopenJiraIssue(settings.jiraSiteUrl, settings.email, saved.jiraKey);
+          } catch (e) {
+            setError(`Saved, but couldn't reopen ${saved.jiraKey} in Jira -- ${e}`);
+          }
+        }
       } else {
         await createActivity(input);
       }
@@ -80,8 +102,21 @@ export function ActivitiesScreen() {
 
   async function handleArchiveActivity() {
     if (activityModal?.mode !== "edit") return;
+    const { activity } = activityModal;
     try {
-      await archiveActivity(activityModal.activity.id);
+      // Archiving locally hides an Activity from the sidebar but says
+      // nothing to Jira on its own -- closing the ticket here keeps the two
+      // in sync instead of leaving a "done" Activity whose QDM still shows
+      // as open. Best-effort: a failure here (e.g. no direct transition to
+      // Closed) shouldn't block the local archive, just surface why.
+      if (activity.jiraKey && settings.hasJiraToken) {
+        try {
+          await closeJiraIssue(settings.jiraSiteUrl, settings.email, activity.jiraKey);
+        } catch (e) {
+          setError(`Archived locally, but couldn't close ${activity.jiraKey} in Jira -- ${e}`);
+        }
+      }
+      await archiveActivity(activity.id);
       setActivityModal(null);
       refresh();
     } catch (e) {
@@ -101,9 +136,24 @@ export function ActivitiesScreen() {
     <div className="app-shell">
       <header className="page-header">
         <h1>Activities</h1>
-        <button className="btn btn-accent" onClick={() => setProjectModal({ mode: "new" })}>
-          New Project
-        </button>
+        <div className="row">
+          <button
+            className="btn btn-secondary"
+            disabled={!settings.hasJiraToken}
+            title={settings.hasJiraToken ? undefined : "Connect Jira in Settings first"}
+            onClick={() => setImportModalOpen(true)}
+            data-tour="activities-import"
+          >
+            Import {teamKey}s from Jira
+          </button>
+          <button
+            className="btn btn-accent"
+            data-tour="activities-new-project"
+            onClick={() => setProjectModal({ mode: "new" })}
+          >
+            New Project
+          </button>
+        </div>
       </header>
 
       {error && <p className="status status-error">{error}</p>}
@@ -168,9 +218,29 @@ export function ActivitiesScreen() {
           activity={activityModal.mode === "edit" ? activityModal.activity : null}
           projects={projects}
           defaultProjectId={activityModal.mode === "new" ? activityModal.projectId : null}
+          settings={settings}
           onSave={handleSaveActivity}
           onArchive={activityModal.mode === "edit" ? handleArchiveActivity : undefined}
           onClose={() => setActivityModal(null)}
+        />
+      )}
+
+      {importModalOpen && (
+        <ImportQdmModal
+          settings={settings}
+          projects={projects}
+          activities={activities}
+          onProjectCreated={(project) =>
+            // React Strict Mode can invoke a functional setState updater
+            // more than once in dev -- guarding on the id already being
+            // present keeps a double-invoke from adding the same freshly
+            // created Project twice (confirmed happening here directly;
+            // same root cause as the drag-duplicate-block bug elsewhere in
+            // this app, just on a different piece of state).
+            setProjects((prev) => (prev.some((p) => p.id === project.id) ? prev : [...prev, project]))
+          }
+          onImported={refresh}
+          onClose={() => setImportModalOpen(false)}
         />
       )}
     </div>

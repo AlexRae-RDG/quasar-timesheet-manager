@@ -58,6 +58,12 @@ export function listActivities(): Promise<Activity[]> {
   return invoke("list_activities");
 }
 
+/** Archived included -- for the Summary screen, which needs to attribute
+ * past time to an Activity's Project even after that Activity is archived. */
+export function listAllActivities(): Promise<Activity[]> {
+  return invoke("list_all_activities");
+}
+
 export function createProject(input: NewProject): Promise<Project> {
   return invoke("create_project", { input });
 }

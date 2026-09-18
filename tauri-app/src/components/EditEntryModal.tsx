@@ -9,12 +9,17 @@ export function EditEntryModal({
   onSave,
   onDelete,
   onClose,
+  dateLabel,
 }: {
   entry: TimeEntry;
   activities: Activity[];
   onSave: (activityId: number, notes: string) => void;
   onDelete: () => void;
   onClose: () => void;
+  /** Overrides the displayed date -- the Template tab passes a weekday
+   * name here since entry.date is really just a synthetic stand-in (see
+   * TemplateScreen.tsx) rather than a real calendar date. */
+  dateLabel?: string;
 }) {
   const [activityId, setActivityId] = useState(entry.activityId ?? activities[0]?.id ?? 0);
   const [notes, setNotes] = useState(entry.notes);
@@ -32,7 +37,7 @@ export function EditEntryModal({
       <div className="modal-card" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <h2>Edit Time Block</h2>
         <p className="muted">
-          {entry.date} · {entry.startTime}–{entry.endTime}
+          {dateLabel ?? entry.date} · {entry.startTime}–{entry.endTime}
         </p>
 
         <label className="field">

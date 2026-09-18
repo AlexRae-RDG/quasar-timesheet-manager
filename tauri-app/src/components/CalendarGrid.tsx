@@ -46,6 +46,8 @@ export function CalendarGrid({
   endHour,
   entries,
   zoom,
+  onZoomIn,
+  onZoomOut,
   armedActivityId,
   armedActivityColor,
   armedDefaultDurationMinutes,
@@ -56,12 +58,17 @@ export function CalendarGrid({
   onMove,
   onDuplicate,
   onEditEntry,
+  missingNotesEntryIds,
 }: {
   days: Date[];
   startHour: number;
   endHour: number;
   entries: TimeEntry[];
   zoom: number;
+  /** Omitted on the Template screen, which keeps its own zoom buttons in
+   * its own toolbar rather than this floating corner control. */
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
   armedActivityId: number | null;
   armedActivityColor: string | null;
   armedDefaultDurationMinutes: number;
@@ -72,8 +79,15 @@ export function CalendarGrid({
    * modal to pick (or create) one instead of creating immediately. */
   onRequestCreate: (date: string, startTime: string, endTime: string) => void;
   onMove: (id: number, date: string, startTime: string, endTime: string) => void;
-  onDuplicate: (entry: TimeEntry) => void;
+  /** `openEdit` (Shift+click) opens Edit Entry for the new duplicate right
+   * away, rather than leaving the user to double-click it themselves --
+   * see CalendarScreen's handleDuplicate. */
+  onDuplicate: (entry: TimeEntry, openEdit?: boolean) => void;
   onEditEntry: (entry: TimeEntry) => void;
+  /** Entries flagged as missing Notes by the last Upload to Jira attempt --
+   * outlined in red until each one's actually fixed. Omitted on the
+   * Template screen, which has no Jira upload concept. */
+  missingNotesEntryIds?: Set<number>;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -380,7 +394,7 @@ export function CalendarGrid({
   }
 
   return (
-    <div className="calendar-wrapper">
+    <div className="calendar-wrapper" data-tour="calendar-grid">
       <div className="calendar-header" style={{ paddingLeft: GUTTER_WIDTH_PX, height: HEADER_HEIGHT_PX }}>
         {days.map((d, i) => (
           <div
@@ -470,6 +484,7 @@ export function CalendarGrid({
                   const height = Math.max(SLOT_HEIGHT_PX, ((endMin - startMin) / SLOT_MINUTES) * SLOT_HEIGHT_PX);
                   const isActiveNow =
                     iso === todayIso && showNowLine && nowMinutesSinceStart >= startMin && nowMinutesSinceStart < endMin;
+                  const isMissingNotes = !!missingNotesEntryIds?.has(entry.id) && !entry.notes.trim();
 
                   return (
                     <div
@@ -477,12 +492,15 @@ export function CalendarGrid({
                       className={
                         "calendar-entry" +
                         (selectedEntryId === entry.id ? " calendar-entry-selected" : "") +
-                        (isActiveNow ? " calendar-entry-active" : "")
+                        (isActiveNow ? " calendar-entry-active" : "") +
+                        (isMissingNotes ? " calendar-entry-missing-notes" : "")
                       }
                       title={
                         entry.notes
                           ? `${entry.activityName} · ${entry.startTime}–${entry.endTime}\n${entry.notes}`
-                          : `${entry.activityName} · ${entry.startTime}–${entry.endTime}`
+                          : isMissingNotes
+                            ? `${entry.activityName} · ${entry.startTime}–${entry.endTime}\nMissing Notes -- required before uploading to Jira`
+                            : `${entry.activityName} · ${entry.startTime}–${entry.endTime}`
                       }
                       style={{
                         left,
@@ -491,12 +509,21 @@ export function CalendarGrid({
                         height,
                         background: entry.color,
                         color: blockTextColor(entry.color),
-                        ...(isActiveNow
-                          ? {
-                              outlineColor: activeNowAccent(entry.color),
-                              boxShadow: `0 0 8px 1px ${activeNowAccent(entry.color)}, 0 2px 8px rgba(0, 0, 0, 0.35)`,
-                            }
-                          : {}),
+                        // Missing-notes takes visual priority over the
+                        // active-now halo when a block is both -- its color
+                        // is fixed (the theme's danger red), not computed
+                        // per-block like activeNowAccent, so it's set via
+                        // the CSS class below instead of inline here; an
+                        // inline outlineColor from the active-now branch
+                        // would otherwise win over that class regardless.
+                        ...(isMissingNotes
+                          ? {}
+                          : isActiveNow
+                            ? {
+                                outlineColor: activeNowAccent(entry.color),
+                                boxShadow: `0 0 8px 1px ${activeNowAccent(entry.color)}, 0 2px 8px rgba(0, 0, 0, 0.35)`,
+                              }
+                            : {}),
                       }}
                       onPointerDown={(e) => {
                         e.stopPropagation();
@@ -504,6 +531,10 @@ export function CalendarGrid({
                         if (e.button !== 0) return;
                         if (e.ctrlKey || e.metaKey) {
                           onDuplicate(entry);
+                          return;
+                        }
+                        if (e.shiftKey) {
+                          onDuplicate(entry, true);
                           return;
                         }
                         const point = gridPointFromEvent(e);
@@ -625,7 +656,34 @@ export function CalendarGrid({
           })}
         </div>
       </div>
+
+      {onZoomIn && onZoomOut && (
+        <div className="calendar-zoom-control" data-tour="calendar-zoom">
+          <button type="button" onClick={onZoomOut} aria-label="Zoom out" title={`Zoom out (${Math.round(zoom * 100)}%)`}>
+            <ZoomGlyph mode="out" />
+          </button>
+          <button type="button" onClick={onZoomIn} aria-label="Zoom in" title={`Zoom in (${Math.round(zoom * 100)}%)`}>
+            <ZoomGlyph mode="in" />
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Magnifying glass with a +/- stroke -- kept as a plain inline SVG (same
+ * approach as JiraIcon/Logo) rather than an icon font dependency, using
+ * currentColor so it follows the corner control's own hover/idle color. */
+function ZoomGlyph({ mode }: { mode: "in" | "out" }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
+      <line x1="15" y1="15" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="7" y1="10" x2="13" y2="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      {mode === "in" && (
+        <line x1="10" y1="7" x2="10" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      )}
+    </svg>
   );
 }
 

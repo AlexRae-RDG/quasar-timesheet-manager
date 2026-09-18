@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import { getTheme, systemPrefersDark, SYSTEM_THEME_ID, type PaletteSeeds } from "./palettes";
+import { getTheme, GLASSY_THEME_ID, resolveThemeId, type PaletteSeeds } from "./palettes";
 
 interface ThemeContextValue {
   themeId: string;
@@ -23,6 +23,15 @@ function applyPaletteToDocument(themeId: string, customSeeds: PaletteSeeds) {
   for (const [key, value] of Object.entries(palette)) {
     root.setProperty(`--${key.toLowerCase().replace(/_/g, "-")}`, value);
   }
+  // Flags the frosted-glass CSS in global.css ([data-glass="true"]) --
+  // backdrop-filter blur is a real CSS property, not a color, so it can't
+  // ride along as a custom-property value the way the rest of the palette
+  // does.
+  if (resolveThemeId(themeId) === GLASSY_THEME_ID) {
+    document.documentElement.setAttribute("data-glass", "true");
+  } else {
+    document.documentElement.removeAttribute("data-glass");
+  }
 }
 
 export function ThemeProvider({
@@ -38,19 +47,6 @@ export function ThemeProvider({
   onCustomSeedsChange: (seeds: PaletteSeeds) => void;
   children: ReactNode;
 }) {
-  // Live-follows OS appearance changes while "System" is active. The
-  // Python app only checks this once at startup (a Tk limitation); the
-  // webview gets prefers-color-scheme change events for free, so this
-  // rebuilds the palette live instead of requiring a restart.
-  const [, forceUpdate] = useState(0);
-  useEffect(() => {
-    if (themeId !== SYSTEM_THEME_ID || typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const listener = () => forceUpdate((n) => n + 1);
-    mq.addEventListener("change", listener);
-    return () => mq.removeEventListener("change", listener);
-  }, [themeId]);
-
   useEffect(() => {
     applyPaletteToDocument(themeId, customSeeds);
   }, [themeId, customSeeds]);
@@ -67,5 +63,3 @@ export function ThemeProvider({
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
-
-export { systemPrefersDark };

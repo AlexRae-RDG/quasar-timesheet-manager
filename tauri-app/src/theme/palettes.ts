@@ -1,9 +1,9 @@
 /**
- * Port of the Python app's app/theme.py color system: derive_palette(), the
- * eighteen curated presets, "system" (follows OS light/dark), and "custom"
- * (user-picked seeds). Ported value-for-value from theme.py rather than
- * re-designed, so an existing user's saved theme_mode / custom seed colors
- * resolve to the same look.
+ * Theme system: derivePalette() turns four seed colors into a full palette
+ * (still the same mix()-based approach ported from the Python app's
+ * app/theme.py), backing four theme choices -- Light, Dark, Custom
+ * (user-picked seeds), and Glassy (a hand-built translucent palette, not
+ * seed-derived -- see GLASS_PALETTE below).
  */
 
 export interface PaletteSeeds {
@@ -124,284 +124,100 @@ export function derivePalette(seeds: PaletteSeeds): Palette {
   };
 }
 
-export interface ThemePreset {
-  id: string;
-  label: string;
-  category: string;
-  description: string;
-  seeds: PaletteSeeds;
-}
-
-// Eighteen curated palettes, ported verbatim from theme.py's _PRESETS.
-export const PRESETS: ThemePreset[] = [
-  {
-    id: "stormy_morning",
-    label: "Stormy Morning",
-    category: "Monochromatic",
-    description: "Charcoal and slate-blue in one family -- calm, restrained, all business.",
-    seeds: { appBg: "#0B0E13", panelBg: "#12161D", textPrimary: "#EDEFF3", accent: "#5B7CA3" },
-  },
-  {
-    id: "mossy_hollow",
-    label: "Mossy Hollow",
-    category: "Monochromatic",
-    description: "Deep forest green throughout, one quiet hue from background to accent.",
-    seeds: { appBg: "#0A0F0B", panelBg: "#101712", textPrimary: "#E9F2EA", accent: "#4C7A58" },
-  },
-  {
-    id: "ink_wash",
-    label: "Ink Wash",
-    category: "Monochromatic",
-    description: "Paper white and charcoal ink -- a light monochrome, nothing but gray and near-black.",
-    seeds: {
-      appBg: "#F3F3F4",
-      panelBg: "#FFFFFF",
-      textPrimary: "#17181C",
-      accent: "#3A3D46",
-      danger: "#C4314B",
-      nowLine: "#E4572E",
-    },
-  },
-  {
-    id: "blooming_romance",
-    label: "Blooming Romance",
-    category: "Romantic",
-    description: "Soft blush pink on white -- warm and romantic without tipping into saccharine.",
-    seeds: {
-      appBg: "#FDF4F6",
-      panelBg: "#FFFFFF",
-      textPrimary: "#3A1420",
-      accent: "#D6537B",
-      danger: "#C0293F",
-      nowLine: "#E08A2E",
-    },
-  },
-  {
-    id: "lavender_fields",
-    label: "Lavender Fields",
-    category: "Romantic",
-    description: "Pale lavender and soft violet -- gentle, a little dreamy.",
-    seeds: {
-      appBg: "#F6F3FC",
-      panelBg: "#FFFFFF",
-      textPrimary: "#2A1F3D",
-      accent: "#8B6FD6",
-      danger: "#D6455E",
-      nowLine: "#E0932E",
-    },
-  },
-  {
-    id: "evening_rose",
-    label: "Evening Rose",
-    category: "Romantic",
-    description: "Deep rose on near-black -- the same romantic pink family, after dark.",
-    seeds: {
-      appBg: "#170D12",
-      panelBg: "#21131A",
-      textPrimary: "#F7E9EE",
-      accent: "#E8608A",
-      danger: "#FF6B6B",
-      nowLine: "#FFB454",
-    },
-  },
-  {
-    id: "zesty_lemon",
-    label: "Zesty Lemon",
-    category: "Playful",
-    description: "Bright and citrusy -- a mustard-gold accent on a warm cream background.",
-    seeds: {
-      appBg: "#FDFBEF",
-      panelBg: "#FFFFFF",
-      textPrimary: "#2B2610",
-      accent: "#C99A00",
-      danger: "#D6334C",
-      nowLine: "#2F6FED",
-    },
-  },
-  {
-    id: "bubblegum_pop",
-    label: "Bubblegum Pop",
-    category: "Playful",
-    description: "Hot pink on near-black -- loud, neon, unmistakably playful.",
-    seeds: {
-      appBg: "#0F0A14",
-      panelBg: "#17101F",
-      textPrimary: "#FBEFFF",
-      accent: "#FF4FD8",
-      danger: "#FF4D6D",
-      nowLine: "#7CFF6B",
-    },
-  },
-  {
-    id: "electric_kiwi",
-    label: "Electric Kiwi",
-    category: "Playful",
-    description: "Lime green on near-black -- sharp, energetic, a little irreverent.",
-    seeds: {
-      appBg: "#0A0F08",
-      panelBg: "#10160D",
-      textPrimary: "#EFFCE9",
-      accent: "#84C400",
-      danger: "#FF5D5D",
-      nowLine: "#FF9F1C",
-    },
-  },
-  {
-    id: "cobalt_rush",
-    label: "Cobalt Rush",
-    category: "Vibrant",
-    description: "Electric blue on near-black -- high-contrast and confident.",
-    seeds: {
-      appBg: "#05070F",
-      panelBg: "#0B1020",
-      textPrimary: "#EAF0FF",
-      accent: "#2F6FED",
-      danger: "#FF3B5C",
-      nowLine: "#FF9500",
-    },
-  },
-  {
-    id: "magenta_pulse",
-    label: "Magenta Pulse",
-    category: "Vibrant",
-    description: "Rich magenta on deep violet-black -- vivid and a little electric.",
-    seeds: {
-      appBg: "#0F0714",
-      panelBg: "#180D22",
-      textPrimary: "#F5EAFB",
-      accent: "#C93BE0",
-      danger: "#FF4D6D",
-      nowLine: "#FFB454",
-    },
-  },
-  {
-    id: "slate_graphite",
-    label: "Slate Graphite",
-    category: "Neutral",
-    description: "Cool graphite gray with a muted steel accent -- quiet and professional.",
-    seeds: {
-      appBg: "#0E0F11",
-      panelBg: "#16181B",
-      textPrimary: "#EDEEF0",
-      accent: "#6E7681",
-      danger: "#E5484D",
-      nowLine: "#F2994A",
-    },
-  },
-  {
-    id: "sandstone",
-    label: "Sandstone",
-    category: "Neutral",
-    description: "Warm sand tones with a muted clay accent -- soft daylight neutrality.",
-    seeds: {
-      appBg: "#F5EFE6",
-      panelBg: "#FFFDF9",
-      textPrimary: "#2E2A22",
-      accent: "#B08A5A",
-      danger: "#C1442E",
-      nowLine: "#4C7A58",
-    },
-  },
-  {
-    id: "ocean_mist",
-    label: "Ocean Mist",
-    category: "Tranquil",
-    description: "Pale sea-glass teal on white -- light, airy, easy on the eyes.",
-    seeds: {
-      appBg: "#F0F6F6",
-      panelBg: "#FFFFFF",
-      textPrimary: "#123435",
-      accent: "#2A9D8F",
-      danger: "#C0293F",
-      nowLine: "#E76F51",
-    },
-  },
-  {
-    id: "sage_retreat",
-    label: "Sage Retreat",
-    category: "Tranquil",
-    description: "Soft sage green on white -- calm, natural, unhurried.",
-    seeds: {
-      appBg: "#F3F6F1",
-      panelBg: "#FFFFFF",
-      textPrimary: "#1F2E1A",
-      accent: "#6E9B6B",
-      danger: "#C1442E",
-      nowLine: "#D97706",
-    },
-  },
-  {
-    id: "midnight_lagoon",
-    label: "Midnight Lagoon",
-    category: "Tranquil",
-    description: "Deep teal on near-black -- the same calm sea-glass family, after dark.",
-    seeds: {
-      appBg: "#060F11",
-      panelBg: "#0C1A1D",
-      textPrimary: "#E4F5F5",
-      accent: "#17A6A0",
-      danger: "#FF5D5D",
-      nowLine: "#FFB454",
-    },
-  },
-  {
-    id: "autumn_harvest",
-    label: "Autumn Harvest",
-    category: "Seasonal",
-    description: "Toasted brown and burnt orange -- a cozy, low-light autumn palette.",
-    seeds: {
-      appBg: "#140D08",
-      panelBg: "#1F140C",
-      textPrimary: "#FBEEE1",
-      accent: "#E08A2E",
-      danger: "#C1442E",
-      nowLine: "#7CA84C",
-    },
-  },
-  {
-    id: "winter_frost",
-    label: "Winter Frost",
-    category: "Seasonal",
-    description: "Icy pale blue on white -- crisp, clean, a little wintry.",
-    seeds: {
-      appBg: "#F2F7FB",
-      panelBg: "#FFFFFF",
-      textPrimary: "#142433",
-      accent: "#4E7CB8",
-      danger: "#C0293F",
-      nowLine: "#E0932E",
-    },
-  },
-];
-
+export const LIGHT_THEME_ID = "light";
+export const DARK_THEME_ID = "dark";
 export const CUSTOM_THEME_ID = "custom";
-export const SYSTEM_THEME_ID = "system";
-export const DEFAULT_THEME_ID = SYSTEM_THEME_ID;
+export const GLASSY_THEME_ID = "glassy";
+export const DEFAULT_THEME_ID = DARK_THEME_ID;
 
-export const THEME_ORDER = [SYSTEM_THEME_ID, ...PRESETS.map((p) => p.id)];
+export const THEME_ORDER = [LIGHT_THEME_ID, DARK_THEME_ID, GLASSY_THEME_ID, CUSTOM_THEME_ID];
 
-const PRESET_BY_ID: Record<string, ThemePreset> = Object.fromEntries(
-  PRESETS.map((p) => [p.id, p]),
-);
+const LIGHT_SEEDS: PaletteSeeds = {
+  appBg: "#F4F6FA",
+  panelBg: "#FFFFFF",
+  textPrimary: "#161B22",
+  accent: "#2F6FED",
+};
+const DARK_SEEDS: PaletteSeeds = {
+  appBg: "#0B0E14",
+  panelBg: "#12161F",
+  textPrimary: "#EAF0FF",
+  accent: "#2F6FED",
+};
 
-// Anyone with a database from the old 7-palette era gets mapped to the
-// closest match among the current twenty, same table as theme.py's
-// _LEGACY_MODE_MAP.
+// Hand-built rather than seed-derived: derivePalette()'s mix()/darken() math
+// assumes solid #RRGGBB seeds, which can't express the translucency a glass
+// look depends on. APP_BG is a rich, colorful gradient (rather than a flat
+// hex) so the blurred, semi-transparent panels have something worth
+// refracting -- see global.css's [data-glass="true"] rules, which add the
+// actual backdrop-filter blur on top of these colors.
+const GLASS_PALETTE: Palette = {
+  APP_BG: "linear-gradient(135deg, #2b1657 0%, #12295c 45%, #0b3a4a 100%)",
+  PANEL_BG: "rgba(255, 255, 255, 0.10)",
+  BORDER: "rgba(255, 255, 255, 0.16)",
+  BORDER_STRONG: "rgba(255, 255, 255, 0.30)",
+  TEXT_PRIMARY: "#F5F7FF",
+  TEXT_SECONDARY: "rgba(245, 247, 255, 0.70)",
+  TEXT_MUTED: "rgba(245, 247, 255, 0.48)",
+  ACCENT: "#0A84FF",
+  ACCENT_HOVER: "#3396FF",
+  ACCENT_SOFT: "rgba(10, 132, 255, 0.22)",
+  DANGER: "#FF6B6B",
+  DANGER_SOFT: "rgba(255, 107, 107, 0.16)",
+  DANGER_SOFT_ACTIVE: "rgba(255, 107, 107, 0.26)",
+  GRID_LINE: "rgba(255, 255, 255, 0.08)",
+  GRID_LINE_HOUR: "rgba(255, 255, 255, 0.16)",
+  HEADER_BG: "rgba(255, 255, 255, 0.06)",
+  TODAY_TINT: "rgba(10, 132, 255, 0.16)",
+  NOW_LINE: "#FFB454",
+  BLOCK_BORDER: "rgba(255, 255, 255, 0.14)",
+  SELECTION_OUTLINE: "#FFFFFF",
+  PREVIEW_FILL: "#0A84FF",
+  PREVIEW_OUTLINE: "#3396FF",
+  FIELD_BG: "rgba(255, 255, 255, 0.14)",
+  SURFACE: "rgba(255, 255, 255, 0.09)",
+};
+
+// Anyone with a database from an earlier theme era (the old 7-mode set, or
+// the later 18-preset + System set) gets mapped onto whichever of the four
+// current themes is the closer match -- light background presets fall to
+// Light, dark ones to Dark. "system" (used to follow OS light/dark live)
+// has no real equivalent now that theme-following was dropped in favor of
+// an explicit choice, so it falls to Dark like any other unrecognized id.
 const LEGACY_MODE_MAP: Record<string, string> = {
-  light: "winter_frost",
-  dark: "stormy_morning",
-  sleek_indigo: "stormy_morning",
-  neon_cyan: "cobalt_rush",
-  crisp_light: "winter_frost",
-  emerald_terminal: "mossy_hollow",
-  warm_amber: "sandstone",
-  violet_nebula: "magenta_pulse",
-  mac_glass: "ocean_mist",
+  light: LIGHT_THEME_ID,
+  dark: DARK_THEME_ID,
+  sleek_indigo: DARK_THEME_ID,
+  neon_cyan: DARK_THEME_ID,
+  crisp_light: LIGHT_THEME_ID,
+  emerald_terminal: DARK_THEME_ID,
+  warm_amber: LIGHT_THEME_ID,
+  violet_nebula: DARK_THEME_ID,
+  mac_glass: LIGHT_THEME_ID,
+  stormy_morning: DARK_THEME_ID,
+  mossy_hollow: DARK_THEME_ID,
+  ink_wash: LIGHT_THEME_ID,
+  blooming_romance: LIGHT_THEME_ID,
+  lavender_fields: LIGHT_THEME_ID,
+  evening_rose: DARK_THEME_ID,
+  zesty_lemon: LIGHT_THEME_ID,
+  bubblegum_pop: DARK_THEME_ID,
+  electric_kiwi: DARK_THEME_ID,
+  cobalt_rush: DARK_THEME_ID,
+  magenta_pulse: DARK_THEME_ID,
+  slate_graphite: DARK_THEME_ID,
+  sandstone: LIGHT_THEME_ID,
+  ocean_mist: LIGHT_THEME_ID,
+  sage_retreat: LIGHT_THEME_ID,
+  midnight_lagoon: DARK_THEME_ID,
+  autumn_harvest: DARK_THEME_ID,
+  winter_frost: LIGHT_THEME_ID,
+  system: DARK_THEME_ID,
 };
 
 export function resolveThemeId(value: string | null | undefined): string {
-  if (value === CUSTOM_THEME_ID || value === SYSTEM_THEME_ID || (value && PRESET_BY_ID[value])) {
-    return value as string;
+  if (value === LIGHT_THEME_ID || value === DARK_THEME_ID || value === CUSTOM_THEME_ID || value === GLASSY_THEME_ID) {
+    return value;
   }
   if (value && LEGACY_MODE_MAP[value]) {
     return LEGACY_MODE_MAP[value];
@@ -409,28 +225,9 @@ export function resolveThemeId(value: string | null | undefined): string {
   return DEFAULT_THEME_ID;
 }
 
-const SYSTEM_SEEDS_LIGHT: PaletteSeeds = {
-  appBg: "#F4F6FA",
-  panelBg: "#FFFFFF",
-  textPrimary: "#161B22",
-  accent: "#2F6FED",
-};
-const SYSTEM_SEEDS_DARK: PaletteSeeds = {
-  appBg: "#0B0E14",
-  panelBg: "#12161F",
-  textPrimary: "#EAF0FF",
-  accent: "#2F6FED",
-};
-
-export function systemPrefersDark(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return true;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
-}
-
 export interface ThemeInfo {
   label: string;
   description: string;
-  category?: string;
   palette: Palette;
 }
 
@@ -444,21 +241,24 @@ export function getTheme(themeId: string, customSeeds: PaletteSeeds): ThemeInfo 
       palette: derivePalette(customSeeds),
     };
   }
-  if (resolved === SYSTEM_THEME_ID) {
-    const seeds = systemPrefersDark() ? SYSTEM_SEEDS_DARK : SYSTEM_SEEDS_LIGHT;
+  if (resolved === GLASSY_THEME_ID) {
     return {
-      label: "System",
-      description:
-        'Match System Appearance -- follows your Mac or Windows light/dark setting.',
-      palette: derivePalette(seeds),
+      label: "Glassy",
+      description: "Translucent, frosted panels over a rich gradient backdrop.",
+      palette: GLASS_PALETTE,
     };
   }
-  const preset = PRESET_BY_ID[resolved];
+  if (resolved === LIGHT_THEME_ID) {
+    return {
+      label: "Light",
+      description: "Clean and bright, dark text on white panels.",
+      palette: derivePalette(LIGHT_SEEDS),
+    };
+  }
   return {
-    label: preset.label,
-    description: preset.description,
-    category: preset.category,
-    palette: derivePalette(preset.seeds),
+    label: "Dark",
+    description: "Low-glare dark panels with a cool blue accent.",
+    palette: derivePalette(DARK_SEEDS),
   };
 }
 

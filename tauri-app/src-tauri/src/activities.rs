@@ -198,6 +198,16 @@ pub fn list_activities(conn: &Connection) -> rusqlite::Result<Vec<Activity>> {
     rows.collect()
 }
 
+/// All Activities, archived included -- the Summary screen needs this to
+/// attribute a past TimeEntry to its Activity's current Project even after
+/// that Activity has been archived (archiving only hides it from the
+/// picker; it isn't a delete, so its Project link is still meaningful).
+pub fn list_all_activities(conn: &Connection) -> rusqlite::Result<Vec<Activity>> {
+    let mut stmt = conn.prepare(&format!("{ACTIVITY_COLUMNS_QUERY} ORDER BY a.name"))?;
+    let rows = stmt.query_map([], row_to_activity)?;
+    rows.collect()
+}
+
 fn get_activity(conn: &Connection, id: i64) -> rusqlite::Result<Activity> {
     conn.query_row(&format!("{ACTIVITY_COLUMNS_QUERY} WHERE a.id = ?1"), [id], row_to_activity)
 }

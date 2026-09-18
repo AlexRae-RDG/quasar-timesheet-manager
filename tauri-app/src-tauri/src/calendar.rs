@@ -96,18 +96,19 @@ fn get_time_entry(conn: &Connection, id: i64) -> rusqlite::Result<TimeEntry> {
     )
 }
 
-struct ActivitySnapshot {
-    name: String,
-    jira_key: Option<String>,
-    color: String,
-    jira_project: Option<String>,
-    issue_type: Option<String>,
+pub(crate) struct ActivitySnapshot {
+    pub name: String,
+    pub jira_key: Option<String>,
+    pub color: String,
+    pub jira_project: Option<String>,
+    pub issue_type: Option<String>,
 }
 
-/// The fields a TimeEntry copies from its Activity (and, through it, the
-/// Activity's Project) at write time -- see models.py's TimeEntry
-/// docstring on why these are snapshotted rather than looked up live.
-fn resolve_activity_snapshot(conn: &Connection, activity_id: i64) -> rusqlite::Result<ActivitySnapshot> {
+/// The fields a TimeEntry (or TemplateEntry -- see templates.rs, which
+/// reuses this) copies from its Activity (and, through it, the Activity's
+/// Project) at write time -- see models.py's TimeEntry docstring on why
+/// these are snapshotted rather than looked up live.
+pub(crate) fn resolve_activity_snapshot(conn: &Connection, activity_id: i64) -> rusqlite::Result<ActivitySnapshot> {
     conn.query_row(
         "SELECT a.name, a.jira_key, COALESCE(p.color, '#4C6EF5'), a.jira_project, a.issue_type
          FROM activities a LEFT JOIN projects p ON p.id = a.project_id
@@ -191,5 +192,17 @@ pub fn update_time_entry(conn: &Connection, input: &UpdateTimeEntry) -> rusqlite
 
 pub fn delete_time_entry(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM time_entries WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// Stamps jira_uploaded_at after a successful worklog upload (see
+/// worklog.rs) -- deliberately not bundled into update_time_entry, since
+/// this is a one-way marker set by the upload flow itself, not something a
+/// normal edit should ever touch.
+pub fn mark_jira_uploaded(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE time_entries SET jira_uploaded_at = datetime('now') WHERE id = ?1",
+        [id],
+    )?;
     Ok(())
 }

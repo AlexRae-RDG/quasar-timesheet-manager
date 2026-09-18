@@ -3,17 +3,23 @@ import type { Project } from "../api/activities";
 
 export function EditProjectModal({
   project,
+  initialName,
   onSave,
   onDelete,
   onClose,
 }: {
   /** null when creating a new Project. */
   project: Project | null;
+  /** Pre-fills Name when creating -- e.g. a name guessed from a QDM's
+   * parent issue, so the QDM import flow can offer "+ New Project" without
+   * making the user retype what was already guessed. Ignored when editing
+   * an existing Project. */
+  initialName?: string;
   onSave: (name: string, color: string) => void;
   onDelete?: () => void;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(project?.name ?? "");
+  const [name, setName] = useState(project?.name ?? initialName ?? "");
   const [color, setColor] = useState(project?.color ?? "#4C6EF5");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 

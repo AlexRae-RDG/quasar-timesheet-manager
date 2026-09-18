@@ -2,9 +2,13 @@ mod activities;
 mod calendar;
 mod commands;
 mod db;
+mod ics;
 mod jira;
 mod keychain;
+mod qdm;
 mod settings;
+mod templates;
+mod worklog;
 
 use rusqlite::Connection;
 use std::sync::Mutex;
@@ -25,11 +29,19 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::save_settings,
+            commands::complete_onboarding,
+            commands::reset_onboarding,
             commands::verify_jira_credentials,
             commands::save_jira_token,
             commands::clear_jira_token,
+            commands::search_qdms,
+            commands::fetch_ics_calendar,
+            commands::reopen_jira_issue,
+            commands::close_jira_issue,
+            commands::upload_worklogs,
             commands::list_projects,
             commands::list_activities,
+            commands::list_all_activities,
             commands::create_project,
             commands::update_project,
             commands::delete_project,
@@ -41,6 +53,11 @@ pub fn run() {
             commands::create_time_entry,
             commands::update_time_entry,
             commands::delete_time_entry,
+            commands::list_template_entries,
+            commands::create_template_entry,
+            commands::update_template_entry,
+            commands::delete_template_entry,
+            commands::apply_template_to_week,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -32,6 +32,15 @@ impl Default for CustomThemeSeeds {
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub display_name: String,
+    pub first_name: String,
+    pub last_name: String,
+    /// General profile contact email, captured at onboarding -- separate
+    /// from jira_email below, though onboarding seeds both from the same
+    /// input since it's a single-user app.
+    pub email: String,
+    /// "quality_assurance" | "accreditation" | "" (unset). Purely a stored
+    /// classification for now -- nothing else in the app reads it yet.
+    pub department: String,
     pub theme_mode: String,
     pub custom_theme: CustomThemeSeeds,
     pub work_start_hour: i32,
@@ -41,17 +50,30 @@ pub struct AppSettings {
     pub show_timer_bar: bool,
     pub jira_site_url: String,
     pub jira_email: String,
+    /// The user's published Outlook (or Google) shared-calendar .ics link --
+    /// stored so "Import from Outlook" on the Timesheet can fetch straight
+    /// away instead of asking for it every time. Optional; empty until set.
+    pub outlook_ics_url: String,
     /// Whether a Jira API token is currently stored in the OS keychain.
     /// The token value itself is never sent to the frontend once saved --
     /// only this presence flag -- so it can never be displayed in plain
     /// text after entry.
     pub has_jira_token: bool,
+    /// Whether the mandatory-fields form + guided tour has been completed.
+    /// Defaults false for both brand-new AND pre-existing databases, so an
+    /// upgrade from a version without onboarding still prompts existing
+    /// users once to backfill the now-required fields.
+    pub onboarding_completed: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveSettingsInput {
     pub display_name: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+    pub department: String,
     pub theme_mode: String,
     pub custom_theme: CustomThemeSeeds,
     pub work_start_hour: i32,
@@ -61,6 +83,7 @@ pub struct SaveSettingsInput {
     pub show_timer_bar: bool,
     pub jira_site_url: String,
     pub jira_email: String,
+    pub outlook_ics_url: String,
 }
 
 fn get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
@@ -97,7 +120,11 @@ pub fn load(conn: &Connection) -> rusqlite::Result<AppSettings> {
 
     Ok(AppSettings {
         display_name: get(conn, "jira_display_name")?.unwrap_or_default(),
-        theme_mode: get(conn, "theme_mode")?.unwrap_or_else(|| "system".to_string()),
+        first_name: get(conn, "first_name")?.unwrap_or_default(),
+        last_name: get(conn, "last_name")?.unwrap_or_default(),
+        email: get(conn, "email")?.unwrap_or_default(),
+        department: get(conn, "department")?.unwrap_or_default(),
+        theme_mode: get(conn, "theme_mode")?.unwrap_or_else(|| "dark".to_string()),
         custom_theme,
         work_start_hour: get(conn, "work_start_hour")?
             .and_then(|v| v.parse().ok())
@@ -115,12 +142,20 @@ pub fn load(conn: &Connection) -> rusqlite::Result<AppSettings> {
         jira_site_url: get(conn, "jira_site_url")?
             .unwrap_or_else(|| DEFAULT_JIRA_SITE_URL.to_string()),
         jira_email: get(conn, "jira_email")?.unwrap_or_default(),
+        outlook_ics_url: get(conn, "outlook_ics_url")?.unwrap_or_default(),
         has_jira_token: crate::keychain::has_token(),
+        onboarding_completed: get(conn, "onboarding_completed")?
+            .map(|v| v == "1")
+            .unwrap_or(false),
     })
 }
 
 pub fn save(conn: &Connection, input: &SaveSettingsInput) -> rusqlite::Result<()> {
     set(conn, "jira_display_name", &input.display_name)?;
+    set(conn, "first_name", &input.first_name)?;
+    set(conn, "last_name", &input.last_name)?;
+    set(conn, "email", &input.email)?;
+    set(conn, "department", &input.department)?;
     set(conn, "theme_mode", &input.theme_mode)?;
     set(conn, "custom_theme_app_bg", &input.custom_theme.app_bg)?;
     set(conn, "custom_theme_panel_bg", &input.custom_theme.panel_bg)?;
@@ -141,5 +176,21 @@ pub fn save(conn: &Connection, input: &SaveSettingsInput) -> rusqlite::Result<()
     )?;
     set(conn, "jira_site_url", &input.jira_site_url)?;
     set(conn, "jira_email", &input.jira_email)?;
+    set(conn, "outlook_ics_url", &input.outlook_ics_url)?;
     Ok(())
+}
+
+/// A separate, one-way command rather than a field on the general save path
+/// -- keeps "onboarding is done" an explicit, intentional transition rather
+/// than something that could be silently reset by a save call that forgot
+/// to carry the flag forward.
+pub fn complete_onboarding(conn: &Connection) -> rusqlite::Result<()> {
+    set(conn, "onboarding_completed", "1")
+}
+
+/// The inverse -- lets Settings' "Replay Welcome Tour" button send a real
+/// install back through the mandatory form + guided tour without touching
+/// any other data, for previewing what a brand new user sees.
+pub fn reset_onboarding(conn: &Connection) -> rusqlite::Result<()> {
+    set(conn, "onboarding_completed", "0")
 }
