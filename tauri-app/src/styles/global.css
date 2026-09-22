@@ -772,7 +772,8 @@ textarea {
 .page-header-stuck {
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
 }
 
 .page-header-stuck::after {

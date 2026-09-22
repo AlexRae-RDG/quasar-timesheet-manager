@@ -79,7 +79,7 @@ export function SettingsScreen({
     if (!el) return;
     const observer = new IntersectionObserver(([entry]) => setHeaderStuck(!entry.isIntersecting), {
       threshold: 0,
-      rootMargin: "-56px 0px 0px 0px",
+      rootMargin: "-80px 0px 0px 0px",
     });
     observer.observe(el);
     return () => observer.disconnect();
