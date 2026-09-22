@@ -504,9 +504,10 @@ hand, see "Updating the app" above (`Update and Reinstall App.command`).
 (the Tauri rewrite, which replaced the Python app on `main`) on GitHub's
 own macOS/Windows runners via [`tauri-apps/tauri-action`](https://github.com/tauri-apps/tauri-action)
 and attaches the results to a GitHub Release whenever a version tag is
-pushed. **First, bump the version in all three places it's kept in sync
+pushed. **First, bump the version in all four places it's kept in sync
 by hand** — `tauri-app/package.json`, `tauri-app/src-tauri/tauri.conf.json`,
-and `tauri-app/src/version.ts`'s `APP_VERSION` — and commit that:
+`tauri-app/src-tauri/Cargo.toml`, and `tauri-app/src/version.ts`'s
+`APP_VERSION` — and commit that:
 
 ```bash
 git tag v1.10.0

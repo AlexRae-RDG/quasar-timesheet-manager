@@ -15,10 +15,9 @@ export/import, nothing to migrate by hand.
 
 - Feature-complete relative to the Python app, plus some things the Python
   app doesn't have (see "What's new" below).
-- Merged into `main`, currently versioned `0.1.0` (kept in sync by hand
-  across `package.json`, `src-tauri/tauri.conf.json`, and `src/version.ts`
-  — see the comment on `APP_VERSION`). Bump all three before cutting the
-  first release under this rewrite.
+- Merged into `main`, currently versioned `2.0.0` (kept in sync by hand
+  across `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
+  and `src/version.ts` — see the comment on `APP_VERSION`).
 - **Release automation now builds this app.** The repo's
   `.github/workflows/release.yml` builds and packages this Tauri app (not
   the old Python one, which it built until now) whenever a version tag is
