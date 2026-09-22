@@ -751,8 +751,7 @@ textarea {
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 8px 0 36px;
-  margin: 0 0 -36px;
+  padding: 8px 0;
 }
 
 /* --panel-bg (the same tint .shell-header uses), not --app-bg -- in the
@@ -761,13 +760,28 @@ textarea {
    crop of it instead of blending in.
    A hard-edged box here (a second one, stacked right under the persistent
    shell-header) read as its own separate floating panel rather than part
-   of the page -- the mask-image fades the title/button area's opaque fill
-   out to nothing rather than stopping at a visible line, so scrolled
-   content dissolves under it instead of hitting a hard edge. */
+   of the page -- the ::after below fades a plain (unblurred) copy of that
+   same color out to nothing just past the box's bottom edge, so scrolled
+   content dissolves under it instead of hitting a hard line. This is
+   deliberately a SEPARATE element from the blurred box, not a mask-image
+   on it directly: WebKit (the macOS app's real webview, as opposed to the
+   Chromium-based browser used to first check this) silently drops
+   backdrop-filter entirely on an element that also has a mask-image,
+   confirmed by testing against the real app -- something a browser-based
+   check alone won't catch. */
 .page-header-stuck {
   background: var(--panel-bg);
-  -webkit-mask-image: linear-gradient(to bottom, black, black 56%, transparent 96%);
-  mask-image: linear-gradient(to bottom, black, black 56%, transparent 96%);
+}
+
+.page-header-stuck::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 28px;
+  background: linear-gradient(to bottom, var(--panel-bg), transparent);
+  pointer-events: none;
 }
 
 .page-header h1 {
