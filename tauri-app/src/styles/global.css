@@ -1808,7 +1808,7 @@ textarea {
 
 .kanban-card {
   background: var(--field-bg);
-  border: 1px solid var(--border-strong);
+  border: 2px solid var(--border-strong);
   border-radius: 8px;
   padding: 10px 12px;
   display: flex;
@@ -1819,7 +1819,9 @@ textarea {
 }
 
 .kanban-card:hover {
-  border-color: var(--accent);
+  /* Not border-color -- that's carrying the priority signal now, so hover
+     brightens the card instead of overriding it with the accent color. */
+  filter: brightness(1.12);
 }
 
 /* Follows the cursor while a card is being dragged, standing in for the
@@ -1830,8 +1832,9 @@ textarea {
   z-index: 20;
   cursor: grabbing;
   pointer-events: none;
+  /* Border color is left to the priority class (kept on the ghost too) --
+     the shadow and tilt are what read as "lifted", not a color swap. */
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  border-color: var(--accent);
   transform: rotate(-1.5deg);
 }
 
@@ -1877,26 +1880,20 @@ textarea {
   margin-top: 2px;
 }
 
-.kanban-priority {
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  font-weight: 600;
+/* Priority reads as the whole card's outline color (a traffic-light
+   green/yellow/red) rather than a separate word -- fixed colors, not
+   theme variables, since the point is a consistent signal regardless of
+   which of the four themes is active. */
+.kanban-card-priority-low {
+  border-color: #2f9e44;
 }
 
-.kanban-priority-low {
-  background: var(--surface);
-  color: var(--text-secondary);
+.kanban-card-priority-medium {
+  border-color: #ffc107;
 }
 
-.kanban-priority-medium {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.kanban-priority-high {
-  background: var(--danger-soft);
-  color: var(--danger);
+.kanban-card-priority-high {
+  border-color: var(--danger);
 }
 
 .kanban-deadline {
