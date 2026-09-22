@@ -727,20 +727,27 @@ textarea {
 /* Settings only (see SettingsScreen) -- the page can run long enough that
    Save Settings scrolls out of reach; pinning the header keeps it (and the
    Jira connected/not-connected status next to it) on screen the whole way
-   down. --panel-bg (the same "opaque bar over scrolling content" treatment
-   .shell-header already uses), not --app-bg -- in the Glassy theme APP_BG
-   is a whole-page gradient, not a flat color, so painting it onto this
-   small rectangle rendered an arbitrary mismatched crop of it instead of
-   blending in (see the data-glass rules below, which give this the same
-   frosted-panel blur .shell-header gets rather than a plain flat fill). */
+   down. --panel-bg (the same tint .shell-header uses), not --app-bg -- in
+   the Glassy theme APP_BG is a whole-page gradient, not a flat color, so
+   painting it onto this small rectangle rendered an arbitrary mismatched
+   crop of it instead of blending in.
+   A hard-edged box here (a second one, stacked right under the persistent
+   shell-header) read as its own separate floating panel rather than part
+   of the page -- the mask-image below keeps the title/button area fully
+   opaque but fades the rest of the box out to nothing, so scrolled content
+   dissolves under it instead of hitting a visible line. The extra bottom
+   padding (offset by the matching negative margin, so layout doesn't
+   shift) is purely the fade's own runway -- taller than it looks like it
+   needs to be, since a short fade still reads as a hard edge. */
 .page-header-sticky {
   position: sticky;
   top: 0;
   z-index: 2;
   background: var(--panel-bg);
-  border-bottom: 1px solid var(--border);
-  padding: 8px 0;
-  margin: 0 0 -8px;
+  padding: 8px 0 36px;
+  margin: 0 0 -36px;
+  -webkit-mask-image: linear-gradient(to bottom, black, black 56%, transparent 96%);
+  mask-image: linear-gradient(to bottom, black, black 56%, transparent 96%);
 }
 
 .page-header h1 {
