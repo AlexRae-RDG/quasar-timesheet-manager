@@ -804,8 +804,19 @@ textarea {
   padding: 8px 0;
 }
 
+/* --app-bg (the page's own background), not --panel-bg (the card/toolbar
+   tint) -- this should read as the page itself showing through solidly,
+   not a distinct panel sitting on top of it. In the Glassy theme APP_BG is
+   a gradient rather than a flat color, which is exactly why this needs
+   background-attachment: fixed here too: that ties the gradient to the
+   *viewport's* coordinates rather than this element's own box (matching
+   body's own fixed attachment in that theme -- see the data-glass rule
+   below), so once this box is actually pinned in place, the two are
+   painting the identical gradient pixels at the same screen position
+   rather than two independently-cropped samples of it that don't line up. */
 .page-header-stuck {
-  background: var(--panel-bg);
+  background: var(--app-bg);
+  background-attachment: fixed;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1405,7 +1416,6 @@ textarea {
 :root[data-glass="true"] .activity-sidebar,
 :root[data-glass="true"] .calendar-wrapper,
 :root[data-glass="true"] .shell-header,
-:root[data-glass="true"] .page-header-stuck,
 :root[data-glass="true"] .calendar-resize-toggle,
 :root[data-glass="true"] .field input[type="text"],
 :root[data-glass="true"] .field input[type="password"],

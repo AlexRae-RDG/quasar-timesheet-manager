@@ -67,7 +67,7 @@ export function AppShell({
         <div className="shell-nav-actions" ref={setNavActionsSlot} />
       </nav>
 
-      <TimerBar settings={settings} />
+      <TimerBar settings={settings} activeTab={activeTab} />
 
       <main className="shell-content">
         <NavActionsSlotContext.Provider value={navActionsSlot}>{children}</NavActionsSlotContext.Provider>

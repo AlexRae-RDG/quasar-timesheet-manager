@@ -31,16 +31,18 @@ function formatElapsed(totalSeconds: number): string {
  * duration rounded to the nearest 15 minutes -- the fast path for "what
  * am I doing right now" with no dragging on the grid or picking exact
  * start/end times by hand. Lives in AppShell (always mounted, above the
- * per-tab content) rather than inside the Timesheet screen, since it
- * always logs against today's real date regardless of which tab or which
- * week is currently on screen -- ported from the Python app's
- * app/timer_bar.py.
+ * per-tab content) rather than inside the Timesheet screen itself, since a
+ * timer already running has to keep counting across a tab switch -- losing
+ * it just from navigating away would be exactly the kind of silent data
+ * loss the close-while-running confirmation below exists to prevent
+ * elsewhere. Ported from the Python app's app/timer_bar.py.
  *
- * Always mounted regardless of Settings' "Show the timer bar" toggle --
- * only its own visible row is skipped when that's off (see the early
- * return below) -- so a timer already running keeps running/ticking, and
- * a close-while-running confirmation still fires, even while hidden. */
-export function TimerBar({ settings }: { settings: AppSettings }) {
+ * Always mounted regardless of Settings' "Show the timer bar" toggle or
+ * which tab is active -- only its own visible row is skipped when either
+ * says not to (see the condition below), so a timer already running keeps
+ * running/ticking, and a close-while-running confirmation still fires,
+ * even while hidden. */
+export function TimerBar({ settings, activeTab }: { settings: AppSettings; activeTab: string }) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedActivityId, setSelectedActivityId] = useState<number | "">("");
   const [startDt, setStartDt] = useState<Date | null>(null);
@@ -166,7 +168,7 @@ export function TimerBar({ settings }: { settings: AppSettings }) {
 
   return (
     <>
-      {settings.showTimerBar && (
+      {settings.showTimerBar && activeTab === "timesheet" && (
         <div className="timer-bar">
           <span className="timer-bar-label">Timer</span>
           <select
