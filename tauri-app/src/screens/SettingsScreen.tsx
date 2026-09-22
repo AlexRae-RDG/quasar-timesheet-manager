@@ -94,7 +94,13 @@ export function SettingsScreen({
 
     function check() {
       if (!header || !card) return;
-      const touching = card.getBoundingClientRect().top <= header.getBoundingClientRect().bottom;
+      // A few real px of overlap, not the exact first pixel of contact --
+      // right at that first pixel, antialiasing/subpixel rounding on the
+      // two independently-measured edges can make it read as "not quite
+      // touching yet" even though the numbers say it's true, which looked
+      // like it was firing early. Waiting for a small, real overlap first
+      // means it only ever shows once they're unambiguously overlapping.
+      const touching = card.getBoundingClientRect().top <= header.getBoundingClientRect().bottom - 12;
       header.classList.toggle("page-header-stuck", touching);
     }
     check();

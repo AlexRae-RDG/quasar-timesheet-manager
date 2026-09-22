@@ -752,8 +752,17 @@ textarea {
    mismatched crop of it instead of matching. */
 .page-header-stuck {
   background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-bottom: none;
+  /* Top only, deliberately -- the card underneath has its own left/right
+     border running its whole height, and this header sits on top of it
+     rather than replacing it. A left/right border here too would be a
+     SECOND, separate line directly next to that one -- lining up while
+     the corner above is a flat vertical stretch, but visibly splitting
+     into two right where this box's rounded corner curves away from
+     vertical and the card's own straight edge doesn't. With none, the
+     card's own line is the only one there is, running underneath this box
+     the same as it does everywhere else, and never has anything to clash
+     with regardless of exactly where this box's edge falls on it. */
+  border-top: 1px solid var(--border);
   border-radius: 12px 12px 0 0;
 }
 
