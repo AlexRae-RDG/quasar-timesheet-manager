@@ -282,14 +282,17 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
     }
   }
 
-  async function handleDuplicate(entry: TimeEntry, openEdit?: boolean) {
+  async function handleDuplicate(
+    entry: TimeEntry,
+    options?: { openEdit?: boolean; date?: string; startTime?: string; endTime?: string },
+  ) {
     if (entry.activityId == null) return;
     try {
       const created = await createTimeEntry({
         activityId: entry.activityId,
-        date: entry.date,
-        startTime: entry.startTime,
-        endTime: entry.endTime,
+        date: options?.date ?? entry.date,
+        startTime: options?.startTime ?? entry.startTime,
+        endTime: options?.endTime ?? entry.endTime,
         notes: entry.notes,
       });
       pushCommand({ kind: "add", entry: created });
@@ -297,7 +300,7 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
       // Shift+click's whole point is "duplicate this, then let me fill in
       // Notes right away" -- jumping straight to Edit saves the extra
       // double-click that plain Ctrl/Cmd+click duplication would still need.
-      if (openEdit) setEditingEntry(created);
+      if (options?.openEdit) setEditingEntry(created);
     } catch (e) {
       setError(String(e));
     }

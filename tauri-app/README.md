@@ -68,6 +68,15 @@ export/import, nothing to migrate by hand.
   sidebar (drag the handle, or click it to collapse — Timesheet and
   Template both have their own independently), and a redesigned toolbar
   (segmented week nav, a corner zoom control, Apply Template inline).
+- **Fixed visual size regardless of Windows' display scale setting**: this
+  app is built and designed around 100% scale, and most colleagues' PCs
+  default to 150% -- rather than rendering visibly larger/coarser there
+  the way a plain web page would, `src/lib/windowsScale.ts` measures the
+  OS scale via `devicePixelRatio` and applies an equal-and-opposite CSS
+  zoom so the app always looks like its 100% self. Windows-only (a no-op
+  on macOS, where a high devicePixelRatio means a real Retina display, not
+  a scale setting to counter) and stays correct live if the window moves
+  to a different-DPI monitor or the scale setting changes mid-session.
 
 ## Using the app
 
@@ -85,8 +94,10 @@ here stays editable later from **Settings**.
 - **Drag an edge** to resize a block, **drag the middle** to move it
   (including to a different day). **Double-click** to edit its Activity
   and Notes.
-- **Ctrl/Cmd+click** a block to duplicate it in place. **Shift+click** to
-  duplicate *and* jump straight into editing the copy.
+- **Ctrl/Cmd+click** a block to duplicate it in place, or **Ctrl/Cmd+drag**
+  it to duplicate straight to wherever you drop it (the original stays put
+  either way). **Shift+click** to duplicate in place *and* jump straight
+  into editing the copy.
 - **Click** a block to select it (**Delete**/**Backspace** removes it,
   arrow keys nudge it); **Ctrl/Cmd+Z** undoes, **Ctrl/Cmd+Shift+Z** (or
   **+Y**) redoes — Timesheet and Template each keep their own history.
@@ -177,8 +188,9 @@ Custom (your own color pickers), applied instantly and remembered.
 | Keys | Action |
 | --- | --- |
 | Click + drag | Create a time block (or move/resize an existing one) |
-| Ctrl/Cmd + click a block | Duplicate that block |
-| Shift + click a block | Duplicate that block and open it for editing |
+| Ctrl/Cmd + click a block | Duplicate that block in place |
+| Ctrl/Cmd + drag a block | Duplicate that block to wherever you drop it |
+| Shift + click a block | Duplicate that block in place and open it for editing |
 | Double-click a block | Edit its Activity and notes |
 | Delete / Backspace | Delete the selected block |
 | Escape | Deselect, disarm the current Activity, or close a dialog |

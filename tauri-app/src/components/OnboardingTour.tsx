@@ -72,7 +72,7 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     tab: "template",
-    selector: '[data-tour="template-label"]',
+    selector: '[data-tour="tab-template"]',
     title: "Template",
     body: "Build a recurring Monday-to-Friday schedule once, then apply it to any week from the Timesheet toolbar.",
   },

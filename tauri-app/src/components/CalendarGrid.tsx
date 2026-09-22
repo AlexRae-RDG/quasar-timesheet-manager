@@ -38,6 +38,12 @@ interface DragState {
   pointerDownX: number;
   pointerDownY: number;
   moved: boolean;
+  /** move only: set when Ctrl/Cmd was held at grab -- the original entry
+   * this drag is a copy of. Its presence, not a separate flag, is what
+   * this drag branches on: with it, the drop creates a duplicate at the
+   * new spot and the original stays put; without it, the drag just moves
+   * the original there. */
+  duplicateSource?: TimeEntry;
 }
 
 export function CalendarGrid({
@@ -80,9 +86,15 @@ export function CalendarGrid({
   onRequestCreate: (date: string, startTime: string, endTime: string) => void;
   onMove: (id: number, date: string, startTime: string, endTime: string) => void;
   /** `openEdit` (Shift+click) opens Edit Entry for the new duplicate right
-   * away, rather than leaving the user to double-click it themselves --
-   * see CalendarScreen's handleDuplicate. */
-  onDuplicate: (entry: TimeEntry, openEdit?: boolean) => void;
+   * away, rather than leaving the user to double-click it themselves. A
+   * plain Ctrl/Cmd+click (no drag) duplicates in place, same as before --
+   * `date`/`startTime`/`endTime` are only passed for a Ctrl/Cmd+drag,
+   * putting the copy at the drop location instead of the original's own.
+   * See CalendarScreen's handleDuplicate. */
+  onDuplicate: (
+    entry: TimeEntry,
+    options?: { openEdit?: boolean; date?: string; startTime?: string; endTime?: string },
+  ) => void;
   onEditEntry: (entry: TimeEntry) => void;
   /** Entries flagged as missing Notes by the last Upload to Jira attempt --
    * outlined in red until each one's actually fixed. Omitted on the
@@ -241,7 +253,14 @@ export function CalendarGrid({
     });
   };
 
-  const beginMove = (entry: TimeEntry, dayIndex: number, y: number, clientX: number, clientY: number) => {
+  const beginMove = (
+    entry: TimeEntry,
+    dayIndex: number,
+    y: number,
+    clientX: number,
+    clientY: number,
+    duplicate: boolean,
+  ) => {
     const startMin = timeToMinutes(entry.startTime) - startHour * 60;
     const endMin = timeToMinutes(entry.endTime) - startHour * 60;
     const clickMin = yToMinutes(y);
@@ -259,6 +278,7 @@ export function CalendarGrid({
       pointerDownX: clientX,
       pointerDownY: clientY,
       moved: false,
+      duplicateSource: duplicate ? entry : undefined,
     });
   };
 
@@ -364,18 +384,25 @@ export function CalendarGrid({
       }
 
       if (!finalDrag.moved) {
-        if (finalDrag.entryId != null) onSelectEntry(finalDrag.entryId);
+        if (finalDrag.duplicateSource) {
+          // A plain Ctrl/Cmd+click, no drag -- same in-place duplicate this
+          // gesture has always done.
+          onDuplicate(finalDrag.duplicateSource);
+        } else if (finalDrag.entryId != null) {
+          onSelectEntry(finalDrag.entryId);
+        }
         return;
       }
 
       if (finalDrag.entryId != null) {
         const date = dayIso[finalDrag.dayIndex];
-        onMove(
-          finalDrag.entryId,
-          date,
-          minutesToTime(finalDrag.startMin + startHour * 60),
-          minutesToTime(finalDrag.endMin + startHour * 60),
-        );
+        const startTime = minutesToTime(finalDrag.startMin + startHour * 60);
+        const endTime = minutesToTime(finalDrag.endMin + startHour * 60);
+        if (finalDrag.duplicateSource) {
+          onDuplicate(finalDrag.duplicateSource, { date, startTime, endTime });
+        } else {
+          onMove(finalDrag.entryId, date, startTime, endTime);
+        }
       }
     }
 
@@ -472,8 +499,11 @@ export function CalendarGrid({
                   // the drag threshold), it's drawn once via the unified
                   // preview below instead -- which follows drag.dayIndex,
                   // so it can visibly cross into a different day column
-                  // rather than disappearing until the drag ends.
-                  if (drag?.entryId === entry.id && drag.moved) return null;
+                  // rather than disappearing until the drag ends. A
+                  // duplicate-drag is the one exception: the original isn't
+                  // going anywhere, so it stays put and only the floating
+                  // copy-preview follows the pointer.
+                  if (drag?.entryId === entry.id && drag.moved && !drag.duplicateSource) return null;
 
                   const startMin = timeToMinutes(entry.startTime) - startHour * 60;
                   const endMin = timeToMinutes(entry.endTime) - startHour * 60;
@@ -529,17 +559,13 @@ export function CalendarGrid({
                         e.stopPropagation();
                         e.preventDefault();
                         if (e.button !== 0) return;
-                        if (e.ctrlKey || e.metaKey) {
-                          onDuplicate(entry);
-                          return;
-                        }
                         if (e.shiftKey) {
-                          onDuplicate(entry, true);
+                          onDuplicate(entry, { openEdit: true });
                           return;
                         }
                         const point = gridPointFromEvent(e);
                         if (!point) return;
-                        beginMove(entry, dayIndex, point.y, e.clientX, e.clientY);
+                        beginMove(entry, dayIndex, point.y, e.clientX, e.clientY, e.ctrlKey || e.metaKey);
                       }}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
@@ -626,7 +652,10 @@ export function CalendarGrid({
                   drag.dayIndex === dayIndex &&
                   drag.moved && (
                     <div
-                      className="calendar-entry calendar-entry-dragging"
+                      className={
+                        "calendar-entry calendar-entry-dragging" +
+                        (drag.duplicateSource ? " calendar-entry-duplicating" : "")
+                      }
                       style={{
                         left: 0,
                         top: minutesToPx(drag.startMin),

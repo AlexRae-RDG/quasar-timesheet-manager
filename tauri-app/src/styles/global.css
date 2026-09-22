@@ -757,6 +757,17 @@ textarea {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
+/* Ctrl/Cmd+drag: the floating copy-preview, not the block actually being
+   moved (the original stays put -- see CalendarGrid.tsx). Dashed accent
+   outline instead of the plain move-drag's white one, echoing
+   .calendar-entry-preview's own "something new is about to be created"
+   styling, plus a touch of transparency so it doesn't read as solid,
+   settled content the way a real move's preview does. */
+.calendar-entry-duplicating {
+  outline: 2px dashed var(--accent);
+  opacity: 0.85;
+}
+
 .calendar-entry-active {
   /* Solid, not dashed -- dashes drawn straight over the label/notes text
      inside a short block just cut through it and made it harder to read.

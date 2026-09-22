@@ -235,18 +235,21 @@ export function TemplateScreen({ settings }: { settings: AppSettings }) {
     }
   }
 
-  async function handleDuplicate(entry: TimeEntry, openEdit?: boolean) {
+  async function handleDuplicate(
+    entry: TimeEntry,
+    options?: { openEdit?: boolean; date?: string; startTime?: string; endTime?: string },
+  ) {
     if (entry.activityId == null) return;
     try {
       const created = await createTemplateEntry({
         activityId: entry.activityId,
-        dayOfWeek: dateToDayOfWeek(entry.date),
-        startTime: entry.startTime,
-        endTime: entry.endTime,
+        dayOfWeek: dateToDayOfWeek(options?.date ?? entry.date),
+        startTime: options?.startTime ?? entry.startTime,
+        endTime: options?.endTime ?? entry.endTime,
         notes: entry.notes,
       });
       refresh();
-      if (openEdit) setEditingEntry(toFakeEntry(created));
+      if (options?.openEdit) setEditingEntry(toFakeEntry(created));
     } catch (e) {
       setError(String(e));
     }
@@ -366,18 +369,15 @@ export function TemplateScreen({ settings }: { settings: AppSettings }) {
           </button>
         </div>
         <div className="calendar-main">
-          <div className="calendar-toolbar">
-            <div className="calendar-week-label" data-tour="template-label">
-              Template -- recurring Monday to Friday blocks
-            </div>
-            <div className="calendar-toolbar-actions">
-              {selectedEntryId != null && (
+          {selectedEntryId != null && (
+            <div className="calendar-toolbar">
+              <div className="calendar-toolbar-actions">
                 <button className="btn btn-danger" onClick={() => handleDelete(selectedEntryId)}>
                   Delete selected block
                 </button>
-              )}
+              </div>
             </div>
-          </div>
+          )}
 
           {error && <p className="status status-error">{error}</p>}
 

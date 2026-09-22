@@ -34,7 +34,8 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i);
 
 const SHORTCUTS: Array<{ keys: string; description: string }> = [
   { keys: "Click + drag", description: "Create a time block (or move/resize an existing one)" },
-  { keys: "Ctrl / Cmd + click a block", description: "Duplicate that block" },
+  { keys: "Ctrl / Cmd + click a block", description: "Duplicate that block in place" },
+  { keys: "Ctrl / Cmd + drag a block", description: "Duplicate that block to wherever you drop it" },
   { keys: "Shift + click a block", description: "Duplicate that block and open it for editing" },
   { keys: "Double-click a block", description: "Edit its Activity and notes" },
   { keys: "Delete / Backspace", description: "Delete the selected block" },
