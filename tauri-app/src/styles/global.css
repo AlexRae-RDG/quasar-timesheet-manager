@@ -138,6 +138,11 @@ textarea {
   opacity: 0.7;
 }
 
+.timer-bar-select option {
+  background-color: var(--field-bg);
+  color: var(--text-primary);
+}
+
 .timer-bar-dot {
   width: 10px;
   height: 10px;
@@ -910,6 +915,19 @@ textarea {
   padding-right: 32px;
 }
 
+/* `color` inherits from the select into its <option>s, but
+   background-color doesn't -- so without this, a dark theme's light text
+   drops into the dropdown's native default (white) background and
+   disappears. This is what was still broken on Windows after the
+   color-scheme fix: WebView2 doesn't fall back to color-scheme once the
+   select already declares its own colors, it just leaves <option>
+   unstyled. Setting both explicitly on the option itself is the part
+   Chromium actually honors in a native select popup. */
+.field select option {
+  background-color: var(--field-bg);
+  color: var(--text-primary);
+}
+
 .field textarea {
   resize: vertical;
   font-family: inherit;
@@ -1471,6 +1489,16 @@ textarea {
   -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
 
+/* A native select popup can't blur, so Glassy's translucent FIELD_BG would
+   just wash out against whatever the OS draws behind it -- give options a
+   solid stand-in (mid-tone from the theme's own gradient) instead. */
+:root[data-glass="true"] .field select option,
+:root[data-glass="true"] .timer-bar-select option,
+:root[data-glass="true"] .qdm-row-project option {
+  background-color: #12295c;
+  color: var(--text-primary);
+}
+
 /* A faint inset top edge reads as a light catching the glass's rim --
    the small detail that sells the "frosted pane" look. */
 :root[data-glass="true"] .card,
@@ -1658,6 +1686,11 @@ textarea {
   background-position: right 6px center;
   background-size: 12px 12px;
   padding-right: 24px;
+}
+
+.qdm-row-project option {
+  background-color: var(--field-bg);
+  color: var(--text-primary);
 }
 
 .qdm-row-project-unsorted {
