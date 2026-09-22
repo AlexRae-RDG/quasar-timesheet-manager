@@ -16,6 +16,7 @@ import { EditActivityModal, type ActivityFormValues } from "../components/EditAc
 import { EditProjectModal } from "../components/EditProjectModal";
 import { ImportQdmModal } from "../components/ImportQdmModal";
 import { closeJiraIssue, reopenJiraIssue } from "../api/jira";
+import { useStickyHeader } from "../lib/useStickyHeader";
 
 function isArchivedProject(projects: Project[], projectId: number | null): boolean {
   const project = projects.find((p) => p.id === projectId);
@@ -33,6 +34,7 @@ export function ActivitiesScreen({ settings }: { settings: AppSettings }) {
   const [projectModal, setProjectModal] = useState<ProjectModalState>(null);
   const [activityModal, setActivityModal] = useState<ActivityModalState>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const headerRef = useStickyHeader<HTMLElement>();
 
   const refresh = () => {
     listProjects().then(setProjects).catch((e) => setError(String(e)));
@@ -134,7 +136,7 @@ export function ActivitiesScreen({ settings }: { settings: AppSettings }) {
 
   return (
     <div className="app-shell">
-      <header className="page-header">
+      <header ref={headerRef} className="page-header page-header-sticky">
         <h1>Activities</h1>
         <div className="row">
           <button

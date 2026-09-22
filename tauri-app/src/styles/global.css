@@ -986,6 +986,17 @@ textarea {
   padding: 0;
 }
 
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-color-confirm {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .row {
   display: flex;
   gap: 16px;

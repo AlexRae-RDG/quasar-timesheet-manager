@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Project } from "../api/activities";
 
 export function EditProjectModal({
@@ -22,6 +22,7 @@ export function EditProjectModal({
   const [name, setName] = useState(project?.name ?? initialName ?? "");
   const [color, setColor] = useState(project?.color ?? "#4C6EF5");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const colorInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -60,7 +61,30 @@ export function EditProjectModal({
 
             <label className="field field-color">
               <span>Color</span>
-              <input type="color" value={color} onChange={(e) => setColor(e.target.value.toUpperCase())} />
+              <div className="color-picker-row">
+                <input
+                  ref={colorInputRef}
+                  type="color"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value.toUpperCase())}
+                />
+                {/* The OS color panel this opens is its own floating window,
+                    not part of this modal -- it has no "done" button of its
+                    own and doesn't close on its own just because you've
+                    picked a color, which made it easy to feel stuck on this
+                    field with no obvious way off it. Blurring the input is
+                    the actual signal that ends the picker interaction (the
+                    color itself is already live in `color` via onChange
+                    regardless), so this button just gives that a visible,
+                    clickable target inside the modal itself. */}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-color-confirm"
+                  onClick={() => colorInputRef.current?.blur()}
+                >
+                  Confirm
+                </button>
+              </div>
             </label>
 
             <div className="modal-actions">

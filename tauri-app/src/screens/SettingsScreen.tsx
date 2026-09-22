@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   clearJiraToken,
@@ -12,6 +12,7 @@ import {
   type AppSettings,
 } from "../api/settings";
 import { ThemeSwatch } from "../components/ThemeSwatch";
+import { useStickyHeader } from "../lib/useStickyHeader";
 import { APP_VERSION } from "../version";
 import {
   CUSTOM_THEME_ID,
@@ -63,29 +64,7 @@ export function SettingsScreen({
   const [jiraTokenInput, setJiraTokenInput] = useState("");
   const [jiraVerify, setJiraVerify] = useState<JiraVerifyState>({ kind: "idle" });
   const teamKey = projectKeyForDepartment(settings.department);
-
-  // Whether the page has scrolled at all -- the header gets a background
-  // (a plain solid/blurred bar with a bottom border, the same treatment
-  // .shell-header already uses above it) only once there's real content
-  // to cover, same as before. Several fancier versions of this (a fade,
-  // rounded corners meant to look like the card's own top edge) each
-  // broke in their own way, so this is deliberately the plain version --
-  // a scroll position past 0, nothing more, toggled straight on the DOM
-  // node rather than through React state/className so a real trackpad's
-  // fast momentum scroll can't outrun a render cycle and visibly lag.
-  const headerRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    const scrollEl = document.querySelector<HTMLElement>(".shell-content");
-    const header = headerRef.current;
-    if (!scrollEl || !header) return;
-
-    function check() {
-      header?.classList.toggle("page-header-stuck", (scrollEl?.scrollTop ?? 0) > 0);
-    }
-    check();
-    scrollEl.addEventListener("scroll", check, { passive: true });
-    return () => scrollEl.removeEventListener("scroll", check);
-  }, []);
+  const headerRef = useStickyHeader<HTMLElement>();
 
   const resolvedThemeId = resolveThemeId(settings.themeMode);
 
