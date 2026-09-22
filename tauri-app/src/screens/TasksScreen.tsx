@@ -9,8 +9,6 @@ const COLUMNS: { status: TaskStatus; label: string }[] = [
   { status: "done", label: "Done" },
 ];
 
-const PRIORITY_LABEL: Record<Task["priority"], string> = { low: "Low", medium: "Medium", high: "High" };
-
 // Below this, a press-and-release counts as a click (open the card), not a
 // drag -- same threshold CalendarGrid's own pointer-based dragging uses.
 const DRAG_THRESHOLD_PX = 4;
@@ -43,14 +41,13 @@ function CardBody({ task }: { task: Task }) {
     <>
       <div className="kanban-card-title">{task.title}</div>
       {task.description && <div className="kanban-card-desc">{task.description}</div>}
-      <div className="kanban-card-footer">
-        <span className={`kanban-priority kanban-priority-${task.priority}`}>{PRIORITY_LABEL[task.priority]}</span>
-        {task.deadline && (
+      {task.deadline && (
+        <div className="kanban-card-footer">
           <span className={"kanban-deadline" + (isOverdue(task) ? " kanban-deadline-overdue" : "")}>
             {task.deadline}
           </span>
-        )}
-      </div>
+        </div>
+      )}
     </>
   );
 }
@@ -238,7 +235,7 @@ export function TasksScreen() {
               <div
                 key={task.id}
                 data-task-id={task.id}
-                className="kanban-card"
+                className={`kanban-card kanban-card-priority-${task.priority}`}
                 onPointerDown={(e) => handleCardPointerDown(e, task)}
               >
                 <CardBody task={task} />
@@ -270,7 +267,7 @@ export function TasksScreen() {
 
       {ghost && (
         <div
-          className="kanban-card kanban-card-ghost"
+          className={`kanban-card kanban-card-ghost kanban-card-priority-${ghost.task.priority}`}
           style={{ left: ghost.x, top: ghost.y, width: ghost.width }}
         >
           <CardBody task={ghost.task} />
