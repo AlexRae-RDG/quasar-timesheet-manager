@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import { getTheme, GLASSY_THEME_ID, resolveThemeId, type PaletteSeeds } from "./palettes";
+import { getTheme, GLASSY_THEME_ID, isDark, resolveThemeId, type PaletteSeeds } from "./palettes";
 
 interface ThemeContextValue {
   themeId: string;
@@ -18,6 +18,7 @@ export function useThemeContext(): ThemeContextValue {
 }
 
 function applyPaletteToDocument(themeId: string, customSeeds: PaletteSeeds) {
+  const resolved = resolveThemeId(themeId);
   const { palette } = getTheme(themeId, customSeeds);
   const root = document.documentElement.style;
   for (const [key, value] of Object.entries(palette)) {
@@ -27,11 +28,25 @@ function applyPaletteToDocument(themeId: string, customSeeds: PaletteSeeds) {
   // backdrop-filter blur is a real CSS property, not a color, so it can't
   // ride along as a custom-property value the way the rest of the palette
   // does.
-  if (resolveThemeId(themeId) === GLASSY_THEME_ID) {
+  if (resolved === GLASSY_THEME_ID) {
     document.documentElement.setAttribute("data-glass", "true");
   } else {
     document.documentElement.removeAttribute("data-glass");
   }
+  // Tells the browser's own native form-control rendering (a <select>'s
+  // dropdown list, scrollbars, etc.) whether it's sitting on a dark or
+  // light background -- without this, Chromium in particular renders that
+  // popup with light-mode colors regardless of this app's own CSS, which
+  // on a dark theme meant white list-item text on the popup's own default
+  // white background: unreadable, and nothing to do with the custom
+  // chevron styling (that only ever reaches the closed select box, never
+  // this native popup). Glassy isn't run through derivePalette (its
+  // PANEL_BG is a translucent rgba(), which isDark() -- built for solid
+  // #RRGGBB seeds -- can't parse), but it's always the dark-styled one of
+  // the four themes regardless, so it's hardcoded true here rather than
+  // fed through that check.
+  const dark = resolved === GLASSY_THEME_ID ? true : isDark(palette.PANEL_BG);
+  root.setProperty("color-scheme", dark ? "dark" : "light");
 }
 
 export function ThemeProvider({

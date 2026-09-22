@@ -73,7 +73,7 @@ function darken(color: string, amount: number): string {
   return rgbToHex([r * factor, g * factor, b * factor]);
 }
 
-function isDark(color: string): boolean {
+export function isDark(color: string): boolean {
   const [r, g, b] = hexToRgb(color);
   const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
   return luminance < 128;
