@@ -70,7 +70,13 @@ function App() {
         <OnboardingForm settings={settings} onChange={updateSettings} onSubmit={() => setOnboardingStage("tour")} />
       ) : (
         <>
-          <AppShell tabs={TABS} activeTab={activeTab} onSelectTab={setActiveTab} headerStyle={settings.headerStyle}>
+          <AppShell
+            tabs={TABS}
+            activeTab={activeTab}
+            onSelectTab={setActiveTab}
+            headerStyle={settings.headerStyle}
+            settings={settings}
+          >
             {activeTab === "timesheet" && <CalendarScreen settings={settings} />}
             {activeTab === "activities" && <ActivitiesScreen settings={settings} />}
             {activeTab === "template" && <TemplateScreen settings={settings} />}

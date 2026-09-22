@@ -118,6 +118,19 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
     refreshEntries();
   }, [refreshEntries]);
 
+  // The Timer bar (AppShell, always mounted regardless of active tab) logs
+  // straight to today's date via its own createTimeEntry call, bypassing
+  // this screen entirely -- if today happens to fall in the week currently
+  // shown, pull that block in without needing a manual refresh or a
+  // tab-away-and-back.
+  useEffect(() => {
+    function onLogged() {
+      refreshEntries();
+    }
+    window.addEventListener("quasar:time-entry-logged", onLogged);
+    return () => window.removeEventListener("quasar:time-entry-logged", onLogged);
+  }, [refreshEntries]);
+
   const armedActivity = activities.find((a) => a.id === armedActivityId) ?? null;
 
   const missingNotesEntryIds = useMemo(

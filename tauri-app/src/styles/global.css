@@ -82,6 +82,63 @@ textarea {
   margin-left: 0;
 }
 
+/* Always visible regardless of which tab is active (see TimerBar/AppShell)
+   -- pick an Activity, Start, and it logs against today's real date when
+   Stopped, no matter which screen happens to be on top at the time. */
+.timer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin: 0 20px 14px;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+
+.timer-bar-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.timer-bar-select {
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  max-width: 220px;
+}
+
+.timer-bar-select:disabled {
+  opacity: 0.7;
+}
+
+.timer-bar-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px 1px var(--danger);
+}
+
+.timer-bar-elapsed {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 52px;
+}
+
+.timer-bar-status {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .shell-content {
   flex: 1;
   overflow: auto;

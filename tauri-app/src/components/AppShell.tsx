@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
+import type { AppSettings } from "../api/settings";
 import { Logo } from "./Logo";
+import { TimerBar } from "./TimerBar";
 
 export interface Tab {
   id: string;
@@ -28,12 +30,14 @@ export function AppShell({
   activeTab,
   onSelectTab,
   headerStyle,
+  settings,
   children,
 }: {
   tabs: Tab[];
   activeTab: string;
   onSelectTab: (id: string) => void;
   headerStyle: "standard" | "compact" | "hidden";
+  settings: AppSettings;
   children: ReactNode;
 }) {
   const profile = HEADER_PROFILES[headerStyle === "compact" ? "compact" : "standard"];
@@ -62,6 +66,8 @@ export function AppShell({
         ))}
         <div className="shell-nav-actions" ref={setNavActionsSlot} />
       </nav>
+
+      <TimerBar settings={settings} />
 
       <main className="shell-content">
         <NavActionsSlotContext.Provider value={navActionsSlot}>{children}</NavActionsSlotContext.Provider>
