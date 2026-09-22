@@ -120,6 +120,14 @@ export function installDevMockIfRequested() {
     { id: 2, name: "Project Beta", color: "#12B886", sortOrder: 1, collapsed: false },
   ];
 
+  let nextTaskId = 1;
+  let tasks: Record<string, unknown>[] = [
+    { id: nextTaskId++, title: "Draft Q3 accreditation report", description: "", status: "todo", priority: "high", deadline: iso(new Date(today.getTime() - 2 * 86_400_000)), sortOrder: 0 },
+    { id: nextTaskId++, title: "Review onboarding doc", description: "Check it still matches the current flow", status: "todo", priority: "low", deadline: null, sortOrder: 1 },
+    { id: nextTaskId++, title: "Fix Windows dropdown contrast", description: "", status: "in_progress", priority: "medium", deadline: iso(today), sortOrder: 0 },
+    { id: nextTaskId++, title: "Ship Timer bar", description: "Ported from the Python app", status: "done", priority: "medium", deadline: null, sortOrder: 0 },
+  ];
+
   let nextActivityId = 100;
   let activities: Record<string, unknown>[] = [
     {
@@ -512,6 +520,40 @@ END:VCALENDAR`;
         }
         return { applied, skipped };
       }
+      case "list_tasks":
+        return [...tasks];
+      case "create_task": {
+        const input = args.input as Record<string, unknown>;
+        const inTodo = tasks.filter((t) => t.status === "todo");
+        const nextOrder = inTodo.length ? Math.max(...inTodo.map((t) => t.sortOrder as number)) + 1 : 0;
+        const t = {
+          id: nextTaskId++,
+          title: input.title,
+          description: input.description ?? "",
+          status: "todo",
+          priority: input.priority ?? "medium",
+          deadline: input.deadline ?? null,
+          sortOrder: nextOrder,
+        };
+        tasks.push(t);
+        return t;
+      }
+      case "update_task": {
+        const input = args.input as Record<string, unknown>;
+        const t = tasks.find((x) => x.id === input.id);
+        if (t) {
+          t.title = input.title;
+          t.description = input.description;
+          t.status = input.status;
+          t.priority = input.priority;
+          t.deadline = input.deadline;
+          t.sortOrder = input.sortOrder;
+        }
+        return t;
+      }
+      case "delete_task":
+        tasks = tasks.filter((x) => x.id !== args.id);
+        return null;
       default:
         return null;
     }

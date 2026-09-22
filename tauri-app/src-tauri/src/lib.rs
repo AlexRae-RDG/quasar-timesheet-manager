@@ -7,6 +7,7 @@ mod jira;
 mod keychain;
 mod qdm;
 mod settings;
+mod tasks;
 mod templates;
 mod worklog;
 
@@ -58,6 +59,10 @@ pub fn run() {
             commands::update_template_entry,
             commands::delete_template_entry,
             commands::apply_template_to_week,
+            commands::list_tasks,
+            commands::create_task,
+            commands::update_task,
+            commands::delete_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

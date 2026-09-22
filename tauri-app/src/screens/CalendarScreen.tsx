@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { PointerEvent as ReactPointerEvent } from "react";
 import { createTimeEntry, deleteTimeEntry, listTimeEntries, updateTimeEntry, type TimeEntry } from "../api/calendar";
 import {
   archiveActivity,
@@ -24,6 +23,7 @@ import { ImportOutlookModal } from "../components/ImportOutlookModal";
 import { JiraIcon } from "../components/JiraIcon";
 import { UploadToJiraModal } from "../components/UploadToJiraModal";
 import { addDays, minutesToTime, timeToMinutes, toISODate, weekStart } from "../lib/date";
+import { useResizableSidebar } from "../lib/useResizableSidebar";
 import { projectKeyForDepartment, type AppSettings } from "../api/settings";
 
 type ActivityModalState = { mode: "new"; projectId: number } | { mode: "edit"; activity: Activity } | null;
@@ -37,7 +37,6 @@ const UNDO_LIMIT = 50;
 const DEFAULT_SIDEBAR_WIDTH = 210;
 const MIN_SIDEBAR_WIDTH = 160;
 const MAX_SIDEBAR_WIDTH = 420;
-const SIDEBAR_TOGGLE_DRAG_THRESHOLD_PX = 4;
 
 interface EntryFields {
   // API-ready, not just descriptive: null means "leave this entry's
@@ -73,9 +72,11 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
   const [zoom, setZoom] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
-  const [resizingSidebar, setResizingSidebar] = useState(false);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const sidebar = useResizableSidebar({
+    defaultWidth: DEFAULT_SIDEBAR_WIDTH,
+    minWidth: MIN_SIDEBAR_WIDTH,
+    maxWidth: MAX_SIDEBAR_WIDTH,
+  });
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [archivedBlock, setArchivedBlock] = useState<TimeEntry[] | null>(null);
   // Two separate pieces rather than one: dismissing the popup ("Got it")
@@ -205,63 +206,6 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
     } catch (e) {
       setError(String(e));
     }
-  }
-
-  function handleSidebarResizeStart(e: ReactPointerEvent) {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-    setResizingSidebar(true);
-
-    function onMove(ev: PointerEvent) {
-      const next = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + (ev.clientX - startX)));
-      setSidebarWidth(next);
-    }
-    function onUp() {
-      setResizingSidebar(false);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    }
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
-  }
-
-  // The toggle button itself: a plain click (released before crossing the
-  // threshold) toggles visibility, same as before; holding and moving past
-  // it resizes instead, same gesture as the bare handle strip. Collapsed,
-  // there's nothing to resize, so any press there just re-expands.
-  function handleToggleButtonPointerDown(e: ReactPointerEvent) {
-    e.stopPropagation();
-    e.preventDefault();
-    if (!sidebarVisible) {
-      setSidebarVisible(true);
-      return;
-    }
-
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-    let moved = false;
-
-    function onMove(ev: PointerEvent) {
-      const dx = ev.clientX - startX;
-      if (!moved && Math.abs(dx) > SIDEBAR_TOGGLE_DRAG_THRESHOLD_PX) {
-        moved = true;
-        setResizingSidebar(true);
-      }
-      if (moved) {
-        setSidebarWidth(Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + dx)));
-      }
-    }
-    function onUp() {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      setResizingSidebar(false);
-      if (!moved) setSidebarVisible((v) => !v);
-    }
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
   }
 
   const pushCommand = (cmd: Command) => {
@@ -622,7 +566,7 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
         )}
 
       <div className="calendar-body">
-        {sidebarVisible && (
+        {sidebar.visible && (
           <ActivitySidebar
             projects={projects}
             activities={activities}
@@ -631,35 +575,35 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
             onToggleCollapse={handleToggleCollapse}
             onEditActivity={(activity) => setActivityModal({ mode: "edit", activity })}
             onAddActivity={(projectId) => setActivityModal({ mode: "new", projectId })}
-            width={sidebarWidth}
+            width={sidebar.width}
           />
         )}
         <div
           className={
             "calendar-resize-handle" +
-            (resizingSidebar ? " calendar-resize-handle-active" : "") +
-            (!sidebarVisible ? " calendar-resize-handle-collapsed" : "")
+            (sidebar.resizing ? " calendar-resize-handle-active" : "") +
+            (!sidebar.visible ? " calendar-resize-handle-collapsed" : "")
           }
-          onPointerDown={sidebarVisible ? handleSidebarResizeStart : undefined}
-          onClick={!sidebarVisible ? () => setSidebarVisible(true) : undefined}
+          onPointerDown={sidebar.visible ? sidebar.handleResizeStart : undefined}
+          onClick={!sidebar.visible ? () => sidebar.setVisible(true) : undefined}
         >
           <button
             type="button"
-            className={"calendar-resize-toggle" + (resizingSidebar ? " calendar-resize-toggle-active" : "")}
-            title={sidebarVisible ? "Hide sidebar (drag to resize)" : "Show sidebar"}
-            onPointerDown={handleToggleButtonPointerDown}
+            className={"calendar-resize-toggle" + (sidebar.resizing ? " calendar-resize-toggle-active" : "")}
+            title={sidebar.visible ? "Hide sidebar (drag to resize)" : "Show sidebar"}
+            onPointerDown={sidebar.handleToggleButtonPointerDown}
             // A real click always fires pointerup THEN a native click, in
             // that order. Without this, a plain click that had just
             // collapsed the sidebar (via the pointerup handler above) let
             // that trailing click event bubble to the parent handle -- whose
-            // own onClick re-shows the sidebar the instant !sidebarVisible
+            // own onClick re-shows the sidebar the instant !sidebar.visible
             // becomes true -- undoing the collapse in the same gesture that
             // caused it. Stopping it here only affects clicks that
             // originate on this button; the parent's own re-expand-by-click
             // (for clicking anywhere on the collapsed strip) is unaffected.
             onClick={(e) => e.stopPropagation()}
           >
-            {sidebarVisible ? "◂" : "▸"}
+            {sidebar.visible ? "◂" : "▸"}
           </button>
         </div>
         <div className="calendar-main">

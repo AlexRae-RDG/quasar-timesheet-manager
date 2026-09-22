@@ -24,6 +24,7 @@ import { CreateEntryModal } from "../components/CreateEntryModal";
 import { EditActivityModal, type ActivityFormValues } from "../components/EditActivityModal";
 import { EditEntryModal } from "../components/EditEntryModal";
 import { addDays, toISODate, WEEKDAY_LABELS } from "../lib/date";
+import { useResizableSidebar } from "../lib/useResizableSidebar";
 import type { AppSettings } from "../api/settings";
 
 type ActivityModalState = { mode: "new"; projectId: number } | { mode: "edit"; activity: Activity } | null;
@@ -32,6 +33,9 @@ const DEFAULT_DURATION_MINUTES = 30;
 const ZOOM_MIN = 0.7;
 const ZOOM_MAX = 1.3;
 const ZOOM_STEP = 0.1;
+const DEFAULT_SIDEBAR_WIDTH = 210;
+const MIN_SIDEBAR_WIDTH = 160;
+const MAX_SIDEBAR_WIDTH = 420;
 
 // Template entries are keyed by day_of_week (0=Mon..4=Fri), not a real
 // date, but CalendarGrid only knows how to key by date -- so it's driven
@@ -82,6 +86,11 @@ export function TemplateScreen({ settings }: { settings: AppSettings }) {
   const [zoom, setZoom] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [activityModal, setActivityModal] = useState<ActivityModalState>(null);
+  const sidebar = useResizableSidebar({
+    defaultWidth: DEFAULT_SIDEBAR_WIDTH,
+    minWidth: MIN_SIDEBAR_WIDTH,
+    maxWidth: MAX_SIDEBAR_WIDTH,
+  });
 
   const entriesRef = useRef<TemplateEntry[]>([]);
   entriesRef.current = templateEntries;
@@ -325,16 +334,37 @@ export function TemplateScreen({ settings }: { settings: AppSettings }) {
   return (
     <div className="calendar-screen">
       <div className="calendar-body">
-        <ActivitySidebar
-          projects={projects}
-          activities={activities}
-          armedActivityId={armedActivityId}
-          onArm={setArmedActivityId}
-          onToggleCollapse={handleToggleCollapse}
-          onEditActivity={(activity) => setActivityModal({ mode: "edit", activity })}
-          onAddActivity={(projectId) => setActivityModal({ mode: "new", projectId })}
-          width={210}
-        />
+        {sidebar.visible && (
+          <ActivitySidebar
+            projects={projects}
+            activities={activities}
+            armedActivityId={armedActivityId}
+            onArm={setArmedActivityId}
+            onToggleCollapse={handleToggleCollapse}
+            onEditActivity={(activity) => setActivityModal({ mode: "edit", activity })}
+            onAddActivity={(projectId) => setActivityModal({ mode: "new", projectId })}
+            width={sidebar.width}
+          />
+        )}
+        <div
+          className={
+            "calendar-resize-handle" +
+            (sidebar.resizing ? " calendar-resize-handle-active" : "") +
+            (!sidebar.visible ? " calendar-resize-handle-collapsed" : "")
+          }
+          onPointerDown={sidebar.visible ? sidebar.handleResizeStart : undefined}
+          onClick={!sidebar.visible ? () => sidebar.setVisible(true) : undefined}
+        >
+          <button
+            type="button"
+            className={"calendar-resize-toggle" + (sidebar.resizing ? " calendar-resize-toggle-active" : "")}
+            title={sidebar.visible ? "Hide sidebar (drag to resize)" : "Show sidebar"}
+            onPointerDown={sidebar.handleToggleButtonPointerDown}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {sidebar.visible ? "◂" : "▸"}
+          </button>
+        </div>
         <div className="calendar-main">
           <div className="calendar-toolbar">
             <div className="calendar-week-label" data-tour="template-label">

@@ -4,6 +4,7 @@ use crate::activities::{self, Activity, NewActivity, NewProject, Project, Update
 use crate::calendar::{self, NewTimeEntry, TimeEntry, UpdateTimeEntry};
 use crate::keychain;
 use crate::settings::{self, AppSettings, SaveSettingsInput};
+use crate::tasks::{self, NewTask, Task, UpdateTask};
 use crate::templates::{self, ApplyTemplateResult, NewTemplateEntry, TemplateEntry, UpdateTemplateEntry};
 use crate::AppState;
 use tauri::State;
@@ -255,4 +256,28 @@ pub fn delete_template_entry(state: State<AppState>, id: i64) -> Result<(), Stri
 pub fn apply_template_to_week(state: State<AppState>, week_start: String) -> Result<ApplyTemplateResult, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     templates::apply_template_to_week(&conn, &week_start).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_tasks(state: State<AppState>) -> Result<Vec<Task>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    tasks::list_tasks(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_task(state: State<AppState>, input: NewTask) -> Result<Task, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    tasks::create_task(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_task(state: State<AppState>, input: UpdateTask) -> Result<Task, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    tasks::update_task(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_task(state: State<AppState>, id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    tasks::delete_task(&conn, id).map_err(|e| e.to_string())
 }

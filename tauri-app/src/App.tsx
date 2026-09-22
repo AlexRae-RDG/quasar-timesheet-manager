@@ -7,6 +7,7 @@ import { ActivitiesScreen } from "./screens/ActivitiesScreen";
 import { CalendarScreen } from "./screens/CalendarScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { SummaryScreen } from "./screens/SummaryScreen";
+import { TasksScreen } from "./screens/TasksScreen";
 import { TemplateScreen } from "./screens/TemplateScreen";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
@@ -14,6 +15,7 @@ const TABS: Tab[] = [
   { id: "timesheet", label: "Timesheet" },
   { id: "activities", label: "Activities" },
   { id: "template", label: "Template" },
+  { id: "tasks", label: "Tasks" },
   { id: "summary", label: "Summary" },
   { id: "settings", label: "Settings" },
 ];
@@ -80,6 +82,7 @@ function App() {
             {activeTab === "timesheet" && <CalendarScreen settings={settings} />}
             {activeTab === "activities" && <ActivitiesScreen settings={settings} />}
             {activeTab === "template" && <TemplateScreen settings={settings} />}
+            {activeTab === "tasks" && <TasksScreen />}
             {activeTab === "summary" && <SummaryScreen settings={settings} />}
             {activeTab === "settings" && <SettingsScreen settings={settings} onChange={updateSettings} />}
           </AppShell>
