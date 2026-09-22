@@ -363,13 +363,14 @@ export function ImportQdmModal({
             <>
               {results.length === 0 ? (
                 <p className="muted">No matching {teamKey}s found.</p>
-              ) : projects.length === 0 && !newProjectFor ? (
-                <p className="muted">
-                  You don't have any Projects yet -- pick "+ New Project" from any row below to
-                  create one on the spot.
-                </p>
               ) : (
                 <>
+                  {projects.length === 0 && (
+                    <p className="muted">
+                      You don't have any Projects yet -- pick "+ New Project…" from any row's dropdown
+                      below to create one on the spot.
+                    </p>
+                  )}
                   <div className="segmented qdm-tabs">
                     <button
                       type="button"
