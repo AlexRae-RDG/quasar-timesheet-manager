@@ -7,7 +7,7 @@
 //! two others can take the midpoint of their two sort_orders without ever
 //! needing to renumber the rest of the column.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Clone, Debug)]
@@ -61,7 +61,59 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     })
 }
 
+/// The board's weekly "clear the Done column" boundary: the most recent
+/// Friday 21:00, in local time -- computed entirely in SQL rather than
+/// pulling in a date/time crate for this one call site (same choice
+/// templates.rs's own add_days makes). `weekday 5` advances to the next
+/// Friday (a no-op if today already is one), always giving a date >= today;
+/// if that candidate 21:00 hasn't happened yet, the real most-recent one is
+/// a week earlier.
+fn most_recent_friday_9pm(conn: &Connection) -> rusqlite::Result<String> {
+    conn.query_row(
+        "SELECT CASE WHEN candidate <= current THEN candidate ELSE datetime(candidate, '-7 days') END
+         FROM (
+             SELECT date('now', 'localtime', 'weekday 5') || ' 21:00:00' AS candidate,
+                    datetime('now', 'localtime') AS current
+         )",
+        [],
+        |row| row.get(0),
+    )
+}
+
+/// Deletes every Done task once the most recent Friday 21:00 boundary has
+/// passed since the last time this ran -- so the board doesn't get clogged
+/// up with finished cards, without ever touching To Do or In Progress.
+/// Runs on every list_tasks call (cheap: one extra query in the common
+/// case) rather than on a timer, since there's no guarantee the app is
+/// still open when 9pm Friday actually arrives -- this instead catches up
+/// the first time it's opened afterwards, then doesn't repeat until the
+/// following Friday.
+fn cleanup_done_if_due(conn: &Connection) -> rusqlite::Result<()> {
+    let boundary = most_recent_friday_9pm(conn)?;
+
+    let last_cleanup: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'tasks_done_cleanup_boundary'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    if last_cleanup.as_deref() >= Some(boundary.as_str()) {
+        return Ok(());
+    }
+
+    conn.execute("DELETE FROM tasks WHERE status = 'done'", [])?;
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('tasks_done_cleanup_boundary', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [&boundary],
+    )?;
+    Ok(())
+}
+
 pub fn list_tasks(conn: &Connection) -> rusqlite::Result<Vec<Task>> {
+    cleanup_done_if_due(conn)?;
     let mut stmt = conn.prepare(&format!("SELECT {TASK_COLUMNS} FROM tasks ORDER BY sort_order"))?;
     let rows = stmt.query_map([], row_to_task)?;
     rows.collect()

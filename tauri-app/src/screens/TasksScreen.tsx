@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { createTask, deleteTask, listTasks, updateTask, type Task, type TaskStatus } from "../api/tasks";
 import { EditTaskModal, type TaskFormValues } from "../components/EditTaskModal";
 
@@ -11,13 +11,17 @@ const COLUMNS: { status: TaskStatus; label: string }[] = [
 
 const PRIORITY_LABEL: Record<Task["priority"], string> = { low: "Low", medium: "Medium", high: "High" };
 
+// Below this, a press-and-release counts as a click (open the card), not a
+// drag -- same threshold CalendarGrid's own pointer-based dragging uses.
+const DRAG_THRESHOLD_PX = 4;
+
 type ModalState = { mode: "new"; status: TaskStatus } | { mode: "edit"; task: Task } | null;
 
-/** Reads which card the pointer is over in `container` (by DOM position,
- * since drag events can't be relied on to carry live geometry any other
- * way) and returns the index it should land at if dropped now -- the
- * dragged card itself is skipped so dropping it back near its own old spot
- * doesn't count itself as a neighbor. */
+/** Reads which card the pointer is over in `container` (by DOM position --
+ * there's no drag-event geometry to lean on here) and returns the index a
+ * card would land at if dropped now. The dragged card itself is skipped so
+ * dropping it back near its own old spot doesn't count itself as a
+ * neighbor. */
 function dropIndexAt(container: HTMLElement, clientY: number, draggingId: number): number {
   const cards = Array.from(container.querySelectorAll<HTMLElement>(".kanban-card"));
   let index = 0;
@@ -41,6 +45,13 @@ export function TasksScreen() {
   const [modal, setModal] = useState<ModalState>(null);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
+
+  // Read inside the window-level pointer listeners below instead of the
+  // `tasks` state directly, so a drag that outlives a background refresh
+  // still commits against the latest data -- same reason CalendarScreen
+  // keeps its own entriesRef alongside `entries`.
+  const tasksRef = useRef<Task[]>([]);
+  tasksRef.current = tasks;
 
   const refresh = () => {
     listTasks().then(setTasks).catch((e) => setError(String(e)));
@@ -90,28 +101,22 @@ export function TasksScreen() {
     }
   }
 
-  function handleCardDragStart(e: DragEvent<HTMLDivElement>, task: Task) {
-    setDraggingId(task.id);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(task.id));
-  }
-
-  function handleColumnDragOver(e: DragEvent<HTMLDivElement>, status: TaskStatus) {
-    if (draggingId == null) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverStatus(status);
-  }
-
-  async function handleColumnDrop(e: DragEvent<HTMLDivElement>, status: TaskStatus) {
-    e.preventDefault();
-    setDragOverStatus(null);
-    const draggedTask = tasks.find((t) => t.id === draggingId);
+  async function commitDrop(taskId: number, clientX: number, clientY: number) {
+    const draggedTask = tasksRef.current.find((t) => t.id === taskId);
     setDraggingId(null);
+    setDragOverStatus(null);
     if (!draggedTask) return;
 
-    const index = dropIndexAt(e.currentTarget, e.clientY, draggedTask.id);
-    const neighbors = (columnTasks.get(status) ?? []).filter((t) => t.id !== draggedTask.id);
+    const columnEl = (document.elementFromPoint(clientX, clientY) as HTMLElement | null)?.closest<HTMLElement>(
+      ".kanban-column",
+    );
+    if (!columnEl) return; // dropped outside any column -- cancel, same as before
+    const status = columnEl.dataset.status as TaskStatus;
+
+    const index = dropIndexAt(columnEl, clientY, taskId);
+    const neighbors = tasksRef.current
+      .filter((t) => t.status === status && t.id !== taskId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
     const prev = neighbors[index - 1];
     const next = neighbors[index];
     let sortOrder: number;
@@ -138,6 +143,45 @@ export function TasksScreen() {
     }
   }
 
+  // Plain pointer events rather than native HTML5 drag-and-drop -- the same
+  // choice CalendarGrid's block dragging and the sidebar resize handle both
+  // make elsewhere in this app, because WebKit (the Tauri webview on macOS)
+  // can swallow native drag gestures outright. Sticking to the pattern
+  // that's already proven reliable here rather than adding a second,
+  // independent drag mechanism.
+  function handleCardPointerDown(e: ReactPointerEvent<HTMLDivElement>, task: Task) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let moved = false;
+
+    function onMove(ev: PointerEvent) {
+      if (!moved) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD_PX) return;
+        moved = true;
+        setDraggingId(task.id);
+      }
+      const columnEl = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLElement>(
+        ".kanban-column",
+      );
+      setDragOverStatus((columnEl?.dataset.status as TaskStatus | undefined) ?? null);
+    }
+
+    function onUp(ev: PointerEvent) {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (moved) {
+        commitDrop(task.id, ev.clientX, ev.clientY);
+      } else {
+        setModal({ mode: "edit", task });
+      }
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  }
+
   return (
     <div className="calendar-screen">
       <div className="calendar-toolbar">
@@ -152,10 +196,8 @@ export function TasksScreen() {
           return (
             <div
               key={status}
+              data-status={status}
               className={"kanban-column" + (dragOverStatus === status ? " kanban-column-dragover" : "")}
-              onDragOver={(e) => handleColumnDragOver(e, status)}
-              onDragLeave={() => setDragOverStatus((s) => (s === status ? null : s))}
-              onDrop={(e) => handleColumnDrop(e, status)}
             >
               <div className="kanban-column-header">
                 <span>{label}</span>
@@ -168,13 +210,7 @@ export function TasksScreen() {
                     key={task.id}
                     data-task-id={task.id}
                     className={"kanban-card" + (draggingId === task.id ? " kanban-card-dragging" : "")}
-                    draggable
-                    onDragStart={(e) => handleCardDragStart(e, task)}
-                    onDragEnd={() => {
-                      setDraggingId(null);
-                      setDragOverStatus(null);
-                    }}
-                    onClick={() => setModal({ mode: "edit", task })}
+                    onPointerDown={(e) => handleCardPointerDown(e, task)}
                   >
                     <div className="kanban-card-title">{task.title}</div>
                     {task.description && <div className="kanban-card-desc">{task.description}</div>}
