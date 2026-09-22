@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   clearJiraToken,
@@ -63,6 +63,23 @@ export function SettingsScreen({
   const [jiraTokenInput, setJiraTokenInput] = useState("");
   const [jiraVerify, setJiraVerify] = useState<JiraVerifyState>({ kind: "idle" });
   const teamKey = projectKeyForDepartment(settings.department);
+
+  // Whether the sticky header currently has real content scrolled underneath
+  // it -- only then does it need a background at all (see .page-header-stuck
+  // in global.css). A zero-height sentinel sits in normal flow right above
+  // the header; once scrolling carries it out of view, the header itself
+  // has reached its pinned position and needs to start covering content.
+  const [headerStuck, setHeaderStuck] = useState(false);
+  const headerSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = headerSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => setHeaderStuck(!entry.isIntersecting), {
+      threshold: 0,
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const resolvedThemeId = resolveThemeId(settings.themeMode);
 
@@ -140,7 +157,8 @@ export function SettingsScreen({
 
   return (
     <div className="app-shell">
-      <header className="page-header page-header-sticky">
+      <div ref={headerSentinelRef} className="page-header-sentinel" />
+      <header className={"page-header page-header-sticky" + (headerStuck ? " page-header-stuck" : "")}>
         <h1>Settings</h1>
         <button className="btn btn-accent" onClick={handleSave} disabled={saveState === "saving"}>
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Save Settings"}
