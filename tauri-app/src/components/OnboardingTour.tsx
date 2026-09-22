@@ -89,6 +89,12 @@ const TOUR_STEPS: TourStep[] = [
     body: "Pull meetings straight from a published Outlook calendar link and turn them into time blocks -- save the link once in Settings so this is a single click every week, or paste one in on the spot.",
   },
   {
+    tab: "tasks",
+    selector: '[data-tour="tab-tasks"]',
+    title: "Tasks",
+    body: "A personal kanban board, separate from your Timesheet -- drag cards between To Do, In Progress, and Done, color-coded by priority (green/yellow/red). Done cards clear out automatically every Friday at 9pm so the board doesn't pile up.",
+  },
+  {
     tab: "summary",
     selector: '[data-tour="summary-project-card"]',
     title: "Summary",
