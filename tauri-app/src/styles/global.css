@@ -1814,7 +1814,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  cursor: pointer;
+  cursor: grab;
   text-align: left;
 }
 
@@ -1822,8 +1822,36 @@ textarea {
   border-color: var(--accent);
 }
 
-.kanban-card-dragging {
-  opacity: 0.4;
+/* Follows the cursor while a card is being dragged, standing in for the
+   card itself -- which is lifted out of its column's flow entirely for the
+   duration (see TasksScreen), so this is the only visible copy of it. */
+.kanban-card-ghost {
+  position: fixed;
+  z-index: 20;
+  cursor: grabbing;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-color: var(--accent);
+  transform: rotate(-1.5deg);
+}
+
+/* Marks exactly where the card would land if dropped right now -- an empty
+   slot the same height a card would occupy, so the column's real cards
+   visibly part around it instead of just stacking up two separate hover
+   cues (the old whole-column highlight and this) that didn't say where. */
+.kanban-drop-indicator {
+  height: 8px;
+  border-radius: 4px;
+  border: 1.5px dashed var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Forces the "grabbing hand" cursor everywhere while a drag is in flight,
+   not just over the ghost (which has pointer-events: none and so would
+   otherwise show whatever's underneath it -- text cursors, link pointers). */
+.kanban-dragging,
+.kanban-dragging * {
+  cursor: grabbing !important;
 }
 
 .kanban-card-title {
