@@ -6,6 +6,7 @@ import {
   DEPARTMENTS,
   JIRA_API_TOKEN_URL,
   projectKeyForDepartment,
+  resetOnboarding,
   saveJiraToken,
   saveSettings,
   verifyJiraCredentials,
@@ -138,6 +139,16 @@ export function SettingsScreen({
     await clearJiraToken();
     onChange({ hasJiraToken: false });
     setJiraVerify({ kind: "idle" });
+  }
+
+  // Reloading is the simplest way back to App.tsx's very first settings
+  // fetch -- it re-reads onboardingCompleted fresh and drops straight into
+  // the mandatory form, same path a genuinely new install takes. Existing
+  // Profile/Jira/theme settings aren't touched, so the form comes back
+  // pre-filled rather than blank.
+  async function handleReplayTour() {
+    await resetOnboarding();
+    window.location.reload();
   }
 
   return (
@@ -392,6 +403,20 @@ export function SettingsScreen({
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="card">
+        <h2>Welcome Tour</h2>
+        <p className="muted">
+          Replays the mandatory setup form and the guided walkthrough of every tab, the same one
+          shown on first launch -- your Profile, Jira connection, and other settings stay exactly
+          as they are.
+        </p>
+        <div className="row">
+          <button type="button" className="btn btn-secondary" onClick={handleReplayTour}>
+            Replay Welcome Tour
+          </button>
+        </div>
       </section>
 
       {saveState === "error" && (
