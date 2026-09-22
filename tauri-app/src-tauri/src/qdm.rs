@@ -102,8 +102,19 @@ pub async fn search_qdms(
     let url = format!("{site}/rest/api/3/search/jql");
     let mut results = Vec::new();
     let mut page_token: Option<String> = None;
+    let mut page_num = 0;
+
+    // Temporary diagnostics for a "no error, but zero results" report that
+    // only reproduces on one particular Windows machine (identical
+    // account/token/JQL works fine elsewhere) -- goes to this dev process's
+    // own stdout/stderr, which a packaged release never shows a console
+    // for, so this is harmless to leave in rather than something to remember
+    // to strip out later. Never logs the token itself.
+    eprintln!("[qdm] site={site} email={email} project_key={project_key}");
+    eprintln!("[qdm] jql={jql}");
 
     loop {
+        page_num += 1;
         let mut body = serde_json::json!({
             "jql": jql,
             "maxResults": MAX_RESULTS_PER_PAGE,
@@ -121,24 +132,35 @@ pub async fn search_qdms(
             .timeout(Duration::from_secs(15))
             .send()
             .await
-            .map_err(|e| format!("Couldn't reach {site_url} -- {e}"))?;
+            .map_err(|e| {
+                eprintln!("[qdm] page {page_num} request failed: {e}");
+                format!("Couldn't reach {site_url} -- {e}")
+            })?;
 
         let status = resp.status();
+        let headers = resp.headers().clone();
+        eprintln!("[qdm] page {page_num} response: HTTP {status}");
+        for (name, value) in headers.iter() {
+            eprintln!("[qdm]   header {name}: {}", value.to_str().unwrap_or("<non-utf8>"));
+        }
+
+        let raw_body = resp.text().await.unwrap_or_default();
+        eprintln!("[qdm] page {page_num} body ({} bytes): {}", raw_body.len(), truncate(raw_body.trim(), 500));
+
         if !status.is_success() {
             if status.as_u16() == 401 || status.as_u16() == 403 {
                 return Err("Jira rejected these credentials -- check your Email and API Token.".to_string());
             }
-            let detail = resp.text().await.unwrap_or_default();
             return Err(format!(
                 "HTTP {status} from Jira while searching QDMs. {}",
-                truncate(detail.trim(), 200)
+                truncate(raw_body.trim(), 200)
             ));
         }
 
-        let data: SearchResponse = resp
-            .json()
-            .await
+        let data: SearchResponse = serde_json::from_str(&raw_body)
             .map_err(|e| format!("Unexpected response from Jira -- {e}"))?;
+
+        eprintln!("[qdm] page {page_num} parsed {} issue(s), nextPageToken={:?}", data.issues.len(), data.next_page_token);
 
         for issue in data.issues {
             results.push(QdmResult {
@@ -158,5 +180,6 @@ pub async fn search_qdms(
         }
     }
 
+    eprintln!("[qdm] total results: {}", results.len());
     Ok(results)
 }
