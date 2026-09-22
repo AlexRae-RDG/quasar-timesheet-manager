@@ -771,6 +771,8 @@ textarea {
    check alone won't catch. */
 .page-header-stuck {
   background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
 .page-header-stuck::after {

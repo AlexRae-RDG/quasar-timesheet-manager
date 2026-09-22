@@ -66,9 +66,12 @@ export function SettingsScreen({
 
   // Whether the sticky header currently has real content scrolled underneath
   // it -- only then does it need a background at all (see .page-header-stuck
-  // in global.css). A zero-height sentinel sits in normal flow right above
-  // the header; once scrolling carries it out of view, the header itself
-  // has reached its pinned position and needs to start covering content.
+  // in global.css). A zero-height sentinel sits at the very top of the page;
+  // once scrolling carries it out of view, the header itself has reached its
+  // pinned position. The negative rootMargin below delays that "stuck" flip
+  // until scrolled a bit further still -- with none, it fired the instant
+  // scrolling started at all, before the next card had actually scrolled up
+  // to meet the header, showing a bare gap between the two for a moment.
   const [headerStuck, setHeaderStuck] = useState(false);
   const headerSentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -76,6 +79,7 @@ export function SettingsScreen({
     if (!el) return;
     const observer = new IntersectionObserver(([entry]) => setHeaderStuck(!entry.isIntersecting), {
       threshold: 0,
+      rootMargin: "-56px 0px 0px 0px",
     });
     observer.observe(el);
     return () => observer.disconnect();
