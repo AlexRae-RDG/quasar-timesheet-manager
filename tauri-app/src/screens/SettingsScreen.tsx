@@ -64,27 +64,34 @@ export function SettingsScreen({
   const [jiraVerify, setJiraVerify] = useState<JiraVerifyState>({ kind: "idle" });
   const teamKey = projectKeyForDepartment(settings.department);
 
-  // Whether the sticky header currently has real content scrolled underneath
-  // it -- only then does it need a background at all (see .page-header-stuck
-  // in global.css). A zero-height sentinel sits at the very top of the page;
-  // once scrolling carries it out of view, the header itself has reached its
-  // pinned position and needs to start covering content. No extra delay on
-  // top of that any more (a fixed rootMargin here was always a guess at a
-  // pixel offset that wouldn't necessarily match the real app's own layout
-  // metrics) -- .page-header-stuck's fade is now sized to exactly match
-  // .app-shell's own gap to the next card, so it can only ever cover that
-  // dead space and never the card's real content, regardless of exactly
-  // when this flips.
+  // Whether the Profile card has scrolled up far enough to actually touch
+  // the pinned header's own bottom edge -- only then does the header show
+  // a background/border, so it reads as "the card's own top edge, now
+  // pinned" (giving the shrinking-box look) rather than a separate panel
+  // that might not line up with whatever's really underneath it. Compares
+  // real, currently-rendered positions on every scroll instead of a fixed
+  // pixel guess (rootMargin, a sentinel placed at some assumed offset,
+  // etc.) -- those all had to assume a header height and gap that didn't
+  // reliably match the real app's own layout/font metrics, which is
+  // exactly what kept this visibly off. This can't drift out of sync the
+  // same way, since it's just asking the DOM the two edges' actual current
+  // positions each time.
   const [headerStuck, setHeaderStuck] = useState(false);
-  const headerSentinelRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const firstCardRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    const el = headerSentinelRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(([entry]) => setHeaderStuck(!entry.isIntersecting), {
-      threshold: 0,
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
+    const scrollEl = document.querySelector<HTMLElement>(".shell-content");
+    const header = headerRef.current;
+    const card = firstCardRef.current;
+    if (!scrollEl || !header || !card) return;
+
+    function check() {
+      if (!header || !card) return;
+      setHeaderStuck(card.getBoundingClientRect().top <= header.getBoundingClientRect().bottom);
+    }
+    check();
+    scrollEl.addEventListener("scroll", check, { passive: true });
+    return () => scrollEl.removeEventListener("scroll", check);
   }, []);
 
   const resolvedThemeId = resolveThemeId(settings.themeMode);
@@ -163,15 +170,17 @@ export function SettingsScreen({
 
   return (
     <div className="app-shell">
-      <div ref={headerSentinelRef} className="page-header-sentinel" />
-      <header className={"page-header page-header-sticky" + (headerStuck ? " page-header-stuck" : "")}>
+      <header
+        ref={headerRef}
+        className={"page-header page-header-sticky" + (headerStuck ? " page-header-stuck" : "")}
+      >
         <h1>Settings</h1>
         <button className="btn btn-accent" onClick={handleSave} disabled={saveState === "saving"}>
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Save Settings"}
         </button>
       </header>
 
-      <section className="card">
+      <section className="card" ref={firstCardRef}>
         <h2>Profile</h2>
         <div className="row">
           <label className="field field-inline">
