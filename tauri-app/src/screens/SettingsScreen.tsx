@@ -73,10 +73,17 @@ export function SettingsScreen({
   // pixel guess (rootMargin, a sentinel placed at some assumed offset,
   // etc.) -- those all had to assume a header height and gap that didn't
   // reliably match the real app's own layout/font metrics, which is
-  // exactly what kept this visibly off. This can't drift out of sync the
-  // same way, since it's just asking the DOM the two edges' actual current
-  // positions each time.
-  const [headerStuck, setHeaderStuck] = useState(false);
+  // exactly what kept this visibly off.
+  //
+  // The class itself is toggled straight on the DOM node here, not via
+  // React state/className -- a real trackpad's momentum scroll fires far
+  // more scroll events than this browser-pane testing ever did, and
+  // routing each one through setState + a re-render (rather than just
+  // flipping a class in the same tick the position was measured) was
+  // enough render-cycle lag, under that much more frequent firing, to
+  // visibly trail a frame or two behind the actual scroll position --
+  // exactly a "starts before it's actually touching" symptom, despite the
+  // measurement itself being exact.
   const headerRef = useRef<HTMLElement | null>(null);
   const firstCardRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -87,7 +94,8 @@ export function SettingsScreen({
 
     function check() {
       if (!header || !card) return;
-      setHeaderStuck(card.getBoundingClientRect().top <= header.getBoundingClientRect().bottom);
+      const touching = card.getBoundingClientRect().top <= header.getBoundingClientRect().bottom;
+      header.classList.toggle("page-header-stuck", touching);
     }
     check();
     scrollEl.addEventListener("scroll", check, { passive: true });
@@ -170,10 +178,7 @@ export function SettingsScreen({
 
   return (
     <div className="app-shell">
-      <header
-        ref={headerRef}
-        className={"page-header page-header-sticky" + (headerStuck ? " page-header-stuck" : "")}
-      >
+      <header ref={headerRef} className="page-header page-header-sticky">
         <h1>Settings</h1>
         <button className="btn btn-accent" onClick={handleSave} disabled={saveState === "saving"}>
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Save Settings"}
