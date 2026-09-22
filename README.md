@@ -10,11 +10,16 @@ Everything runs locally, with no account, server, or internet connection
 required beyond the Jira API calls themselves; all data lives in a
 single SQLite file on your machine.
 
-> **A rewrite is in progress** in [`tauri-app/`](tauri-app/) — same app,
-> rebuilt on [Tauri](https://tauri.app/) (Rust + React) instead of Python/
-> Tkinter, reading and writing this same SQLite database. It's not yet
-> what's linked below; see [`tauri-app/README.md`](tauri-app/README.md)
-> for its own setup instructions and current status.
+> **This app has been rebuilt** in [`tauri-app/`](tauri-app/) on
+> [Tauri](https://tauri.app/) (Rust + React) instead of Python/Tkinter,
+> reading and writing this same SQLite database, and has replaced the
+> Python app on `main`. Release automation now builds *that* app (see
+> "Cutting a release" below) — until the first tag's pushed under it,
+> though, the **Releases** page linked in "Install and get started" below
+> still has the last Python build, and the walkthrough below still
+> describes that app's exact behavior in a few places. See
+> [`tauri-app/README.md`](tauri-app/README.md) for the new app's own
+> setup instructions and current status.
 
 ## Install and get started
 
@@ -495,33 +500,31 @@ hand, see "Updating the app" above (`Update and Reinstall App.command`).
 
 ### Cutting a release
 
-`.github/workflows/release.yml` runs both build scripts on GitHub's own
-macOS/Windows runners and attaches the results to a GitHub Release
-whenever a version tag is pushed. **First, bump `app/version.py`'s
-`APP_VERSION` to match** and commit that — the running app compares this
-against the tag to power the "update available" popup covered below, so
-a tag pushed without a matching `APP_VERSION` bump means that popup
-either never fires for this release or fires again on the very build
-that IS the update:
+`.github/workflows/release.yml` builds the [`tauri-app/`](tauri-app/) app
+(the Tauri rewrite, which replaced the Python app on `main`) on GitHub's
+own macOS/Windows runners via [`tauri-apps/tauri-action`](https://github.com/tauri-apps/tauri-action)
+and attaches the results to a GitHub Release whenever a version tag is
+pushed. **First, bump the version in all three places it's kept in sync
+by hand** — `tauri-app/package.json`, `tauri-app/src-tauri/tauri.conf.json`,
+and `tauri-app/src/version.ts`'s `APP_VERSION` — and commit that:
 
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.10.0
+git push origin v1.10.0
 ```
 
-Check the **Actions** tab for the two build jobs; once they finish,
-**Releases** has the new zips attached. Tag names must match `v1.2.3` —
-there's no enforced versioning scheme beyond that. You can also trigger a
-build manually from **Actions → Build and release → Run workflow**
-without a tag (uploads as workflow artifacts instead of a Release —
-useful for testing the build itself).
-
-The `build-macos` job pins Python 3.14 specifically (not something more
-conservative) because of a real display bug — see "Checking for updates
-on launch" below for the full story — where an older Python's bundled
-Tcl/Tk misdetects Retina displays as 72 DPI instead of ~96+, making the
-packaged app render noticeably smaller and less responsive than a local
-build. Don't downgrade it without re-checking that.
+Check the **Actions** tab for the two build jobs (macOS builds a
+universal binary covering both Intel and Apple Silicon in one). Once both
+finish, **Releases** has a new **draft** release with the built installers
+attached — a macOS `.dmg` and Windows `.exe` (NSIS) / `.msi`, plus a couple
+of secondary formats alongside them. It's left as a draft deliberately
+(rather than going live the moment the first of the two platform jobs
+finishes) so you can check both are attached before clicking **Publish**
+yourself. Tag names must match `v1.2.3` — there's no enforced versioning
+scheme beyond that. You can also trigger a build manually from
+**Actions → Build and release → Run workflow** without a tag (uploads as
+workflow artifacts instead of a Release — useful for testing the build
+itself).
 
 ### Checking for updates on launch
 
@@ -532,6 +535,15 @@ connection never delays startup) and compares its tag against
 choosing "No" remembers that version so it won't ask again until
 something newer than *that* ships, and "Cancel" just asks again next
 launch.
+
+This whole mechanism (`update_check.py` and `auto_update.py` below) is
+Python-app-specific and hasn't been ported to the Tauri rewrite, which has
+no self-update check of its own yet. It also downloads by matching the
+exact `QUASAR-Timesheet-Manager-macOS.zip` / `-Windows.zip` filenames
+`release.yml` used to publish — once a release is cut under the new Tauri
+workflow (different filenames: `.dmg`, `.exe`, `.msi`), any still-running
+Python app's update check will see that newer tag but find no matching
+asset to download.
 
 This only works once the repo is public — an unauthenticated request
 against a private repo's API 404s, which this app treats the same as "no

@@ -1,17 +1,18 @@
-# Builds the native macOS and Windows apps and attaches them to a GitHub
-# Release, so colleagues can just download a ready-to-run copy instead of
-# installing Python or building anything themselves.
+# Builds the native macOS and Windows QUASAR Timesheet Manager app (the
+# Tauri rebuild in tauri-app/) and attaches installers to a GitHub Release,
+# so colleagues can just download a ready-to-run copy instead of installing
+# Node/Rust or building anything themselves.
 #
-# Fires automatically whenever a tag like "v1.0.0" is pushed (see the
+# Fires automatically whenever a tag like "v1.10.0" is pushed (see the
 # "Cutting a release" section in the README for the exact commands), or
 # can be run by hand from the Actions tab ("Run workflow") for testing --
-# a manual run still builds both platforms, it just won't have a tag to
-# attach a Release to unless one already exists for the ref you run it on.
+# a manual run still builds both platforms, it just uploads them as
+# workflow artifacts instead of attaching to a Release, since there's no
+# tag to attach one to.
 #
-# This wraps the exact same packaging/build_macos.sh / build_windows.bat
-# scripts described in the README, run on GitHub's own macOS/Windows
-# runners -- PyInstaller has to build on the OS it's targeting, which is
-# exactly why two separate jobs (one per OS) exist below.
+# This used to build the old Python/Tkinter app instead (via
+# packaging/build_macos.sh / build_windows.bat) -- that app has been
+# replaced by this Tauri rewrite, so this workflow now builds that.
 name: Build and release
 
 on:
@@ -21,75 +22,72 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write  # needed to create/update the Release and upload assets
+  contents: write # needed to create/update the Release and upload assets
 
 jobs:
-  build-macos:
-    runs-on: macos-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            # Universal binary (Intel + Apple Silicon in one .app) rather
+            # than picking one -- colleagues are on a mix of both, and a
+            # single download that just works on either beats guessing.
+            args: "--target universal-apple-darwin"
+          - platform: windows-latest
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
-      # Python 3.11's macOS build bundles Tcl/Tk 8.6, which misreports
-      # Retina displays as 72 DPI (instead of ~96+), making the packaged
-      # app render noticeably smaller/less responsive than a local build.
-      # Python 3.14+ bundles Tcl/Tk 9.0, which detects Retina DPI
-      # correctly -- use it here so the CI build matches local dev.
-      - uses: actions/setup-python@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.14"
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: Build QUASAR Timesheet Manager.app
-        run: bash packaging/build_macos.sh
-
-      - name: Zip the .app for release
-        run: |
-          cd dist
-          ditto -c -k --keepParent "QUASAR Timesheet Manager.app" \
-            "../QUASAR-Timesheet-Manager-macOS.zip"
-
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - uses: actions/setup-node@v4
         with:
-          files: QUASAR-Timesheet-Manager-macOS.zip
-          generate_release_notes: true
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tauri-app/package-lock.json
 
+      - name: Install frontend dependencies
+        working-directory: tauri-app
+        run: npm ci
+
+      # Builds via `tauri build` under the hood and, only when triggered by
+      # a tag push (tagName/releaseName set below), creates or updates a
+      # GitHub Release for that tag and uploads every bundle it produced
+      # (macOS: .dmg + .app.tar.gz; Windows: NSIS and MSI installers) --
+      # left as a draft so the Release only goes live once both platforms'
+      # jobs have finished and someone's clicked Publish, rather than
+      # colleagues seeing a release with just one OS's build attached
+      # while the other is still running.
+      - name: Build and (on a tag) release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: tauri-app
+          args: ${{ matrix.args }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseDraft: true
+          prerelease: false
+
+      # Manual/test runs (no tag) don't get a Release to attach to -- upload
+      # the same bundles as workflow artifacts instead, so the build can
+      # still be downloaded and sanity-checked.
       - name: Upload build (manual/test runs without a tag)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
-          name: QUASAR-Timesheet-Manager-macOS
-          path: QUASAR-Timesheet-Manager-macOS.zip
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Build QUASAR Timesheet Manager.exe
-        shell: cmd
-        run: packaging\build_windows.bat
-
-      - name: Zip the app folder for release
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "dist\QUASAR Timesheet Manager" `
-            -DestinationPath "QUASAR-Timesheet-Manager-Windows.zip"
-
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: QUASAR-Timesheet-Manager-Windows.zip
-          generate_release_notes: true
-
-      - name: Upload build (manual/test runs without a tag)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: QUASAR-Timesheet-Manager-Windows
-          path: QUASAR-Timesheet-Manager-Windows.zip
+          name: QUASAR-Timesheet-Manager-${{ matrix.platform }}
+          path: |
+            tauri-app/src-tauri/target/**/release/bundle/dmg/*.dmg
+            tauri-app/src-tauri/target/**/release/bundle/macos/*.app.tar.gz
+            tauri-app/src-tauri/target/**/release/bundle/nsis/*.exe
+            tauri-app/src-tauri/target/**/release/bundle/msi/*.msi
+          if-no-files-found: ignore

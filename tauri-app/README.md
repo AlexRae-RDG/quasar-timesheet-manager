@@ -3,27 +3,30 @@
 This is a from-scratch rewrite of [QUASAR Timesheet Manager](../README.md)
 — a click-and-drag weekly timesheet with two-way Jira integration — from
 Python/Tkinter to [Tauri](https://tauri.app/) (a Rust backend + a React/
-TypeScript frontend running in the OS's native webview). It's still an
-in-progress branch, not yet the app colleagues are told to download; see
-"Status" below for exactly what that means today.
+TypeScript frontend running in the OS's native webview). It has replaced
+the Python app as of its merge into `main`; see "Status" below.
 
 It reads and writes the **same SQLite database** the existing Python app
 uses (`~/.jira_timesheet/timesheet.db`), so switching between the two apps
-during this transition carries every Project/Activity/time entry over
-untouched — nothing to export/import, nothing to migrate by hand.
+carries every Project/Activity/time entry over untouched — nothing to
+export/import, nothing to migrate by hand.
 
 ## Status
 
 - Feature-complete relative to the Python app, plus some things the Python
   app doesn't have (see "What's new" below).
-- Still on its own branch, currently versioned `0.1.0` (kept in sync by
-  hand across `package.json`, `src-tauri/tauri.conf.json`, and
-  `src/version.ts` — see the comment on `APP_VERSION`).
-- **No release automation yet.** The repo's `.github/workflows/release.yml`
-  only builds/packages the *old* Python app — it hasn't been pointed at
-  this rewrite. Until that's built out (or someone builds + attaches
-  installers by hand), there's no downloadable build of this app; running
-  it means running it from source (see "For developers" below).
+- Merged into `main`, currently versioned `0.1.0` (kept in sync by hand
+  across `package.json`, `src-tauri/tauri.conf.json`, and `src/version.ts`
+  — see the comment on `APP_VERSION`). Bump all three before cutting the
+  first release under this rewrite.
+- **Release automation now builds this app.** The repo's
+  `.github/workflows/release.yml` builds and packages this Tauri app (not
+  the old Python one, which it built until now) whenever a version tag is
+  pushed — see the top-level README's "Cutting a release" section for the
+  exact steps. Until the first tag's pushed under this workflow, there's
+  still no downloadable build; running it means running it from source
+  (see "For developers" below), or building it locally with
+  `npm run tauri build`.
 
 ## What's new (vs. the Python app)
 
