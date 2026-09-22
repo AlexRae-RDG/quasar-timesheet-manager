@@ -64,44 +64,23 @@ export function SettingsScreen({
   const [jiraVerify, setJiraVerify] = useState<JiraVerifyState>({ kind: "idle" });
   const teamKey = projectKeyForDepartment(settings.department);
 
-  // Whether the Profile card has scrolled up far enough to actually touch
-  // the pinned header's own bottom edge -- only then does the header show
-  // a background/border, so it reads as "the card's own top edge, now
-  // pinned" (giving the shrinking-box look) rather than a separate panel
-  // that might not line up with whatever's really underneath it. Compares
-  // real, currently-rendered positions on every scroll instead of a fixed
-  // pixel guess (rootMargin, a sentinel placed at some assumed offset,
-  // etc.) -- those all had to assume a header height and gap that didn't
-  // reliably match the real app's own layout/font metrics, which is
-  // exactly what kept this visibly off.
-  //
-  // The class itself is toggled straight on the DOM node here, not via
-  // React state/className -- a real trackpad's momentum scroll fires far
-  // more scroll events than this browser-pane testing ever did, and
-  // routing each one through setState + a re-render (rather than just
-  // flipping a class in the same tick the position was measured) was
-  // enough render-cycle lag, under that much more frequent firing, to
-  // visibly trail a frame or two behind the actual scroll position --
-  // exactly a "starts before it's actually touching" symptom, despite the
-  // measurement itself being exact.
+  // Whether the page has scrolled at all -- the header gets a background
+  // (a plain solid/blurred bar with a bottom border, the same treatment
+  // .shell-header already uses above it) only once there's real content
+  // to cover, same as before. Several fancier versions of this (a fade,
+  // rounded corners meant to look like the card's own top edge) each
+  // broke in their own way, so this is deliberately the plain version --
+  // a scroll position past 0, nothing more, toggled straight on the DOM
+  // node rather than through React state/className so a real trackpad's
+  // fast momentum scroll can't outrun a render cycle and visibly lag.
   const headerRef = useRef<HTMLElement | null>(null);
-  const firstCardRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const scrollEl = document.querySelector<HTMLElement>(".shell-content");
     const header = headerRef.current;
-    const card = firstCardRef.current;
-    if (!scrollEl || !header || !card) return;
+    if (!scrollEl || !header) return;
 
     function check() {
-      if (!header || !card) return;
-      // A few real px of overlap, not the exact first pixel of contact --
-      // right at that first pixel, antialiasing/subpixel rounding on the
-      // two independently-measured edges can make it read as "not quite
-      // touching yet" even though the numbers say it's true, which looked
-      // like it was firing early. Waiting for a small, real overlap first
-      // means it only ever shows once they're unambiguously overlapping.
-      const touching = card.getBoundingClientRect().top <= header.getBoundingClientRect().bottom - 12;
-      header.classList.toggle("page-header-stuck", touching);
+      header?.classList.toggle("page-header-stuck", (scrollEl?.scrollTop ?? 0) > 0);
     }
     check();
     scrollEl.addEventListener("scroll", check, { passive: true });
@@ -191,7 +170,7 @@ export function SettingsScreen({
         </button>
       </header>
 
-      <section className="card" ref={firstCardRef}>
+      <section className="card">
         <h2>Profile</h2>
         <div className="row">
           <label className="field field-inline">

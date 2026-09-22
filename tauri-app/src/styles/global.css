@@ -727,12 +727,19 @@ textarea {
 /* Settings only (see SettingsScreen) -- the page can run long enough that
    Save Settings scrolls out of reach; pinning the header keeps it (and the
    Jira connected/not-connected status next to it) on screen the whole way
-   down. No background here at rest -- at the top of the page there's
-   nothing scrolling underneath yet, so a visible fill (even one meant to
-   match the page) just reads as a box sitting on top of it; SettingsScreen
-   toggles .page-header-stuck only once the Profile card below has
-   actually scrolled up to touch the header's own bottom edge, and that's
-   the only state that paints anything. */
+   down. No background at rest -- at the top of the page there's nothing
+   scrolling underneath yet, so a visible fill just reads as a box sitting
+   on top of it; SettingsScreen adds .page-header-stuck the moment any
+   scrolling at all has happened.
+   Several fancier attempts at this (a fade, a mask, rounded corners meant
+   to look like the card's own top edge) each broke in their own way --
+   a WebKit-only bug dropping backdrop-filter entirely when paired with a
+   mask, geometry that never quite matched the real rendered layout, one
+   set of borders visibly clashing with another. This is deliberately the
+   plain, boring version instead: the exact same "solid/blurred bar with a
+   bottom border" treatment .shell-header already uses above it, which has
+   never had any of those problems, rather than trying to make this one
+   visually merge into the card below it. */
 .page-header-sticky {
   position: sticky;
   top: 0;
@@ -740,30 +747,9 @@ textarea {
   padding: 8px 0;
 }
 
-/* Once touching, the header reads as the Profile card's own top edge,
-   now pinned -- same fill, a top border/rounded-top-corners matching the
-   card's own (see .card), and nothing else. No fade, no bottom border: the
-   card sitting flush underneath (that's what "touching" means) supplies
-   the rest of the box, so this only ever needs to look like its top
-   slice, not a separate panel trying to blend into it from a distance.
-   --panel-bg (the same tint .shell-header/.card use), not --app-bg -- in
-   the Glassy theme APP_BG is a whole-page gradient, not a flat color, so
-   painting it onto this small rectangle would render an arbitrary
-   mismatched crop of it instead of matching. */
 .page-header-stuck {
   background: var(--panel-bg);
-  /* Top only, deliberately -- the card underneath has its own left/right
-     border running its whole height, and this header sits on top of it
-     rather than replacing it. A left/right border here too would be a
-     SECOND, separate line directly next to that one -- lining up while
-     the corner above is a flat vertical stretch, but visibly splitting
-     into two right where this box's rounded corner curves away from
-     vertical and the card's own straight edge doesn't. With none, the
-     card's own line is the only one there is, running underneath this box
-     the same as it does everywhere else, and never has anything to clash
-     with regardless of exactly where this box's edge falls on it. */
-  border-top: 1px solid var(--border);
-  border-radius: 12px 12px 0 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .page-header h1 {
