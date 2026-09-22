@@ -16,6 +16,21 @@
   --danger-soft-active: #2a1a34;
   --field-bg: #10162c;
   --surface: #10162c;
+  /* A select's dropdown arrow is otherwise entirely up to the OS -- fine
+     on macOS (WebKit draws a small, minimal one), but WebView2 on Windows
+     draws a much blockier, dated-looking one instead. appearance: none
+     strips that everywhere a <select> is used in this app, replaced by
+     this chevron drawn the same way on both platforms instead (see
+     .field select/.qdm-row-project/.timer-bar-select below). A fixed
+     color, not a CSS variable -- currentColor and var() aren't resolved
+     inside an embedded data-URI SVG's own attributes, so this can't
+     follow each theme's real --text-secondary the way inline text does;
+     this particular gray was picked as a middle ground that stays legible
+     against both the lightest and darkest themes rather than matching any
+     one of them exactly. This only ever restyles the *closed* select box
+     -- the dropdown's own open list of options is still drawn natively by
+     the OS either way, which no amount of CSS can reach. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%238B93A7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 }
 
 * {
@@ -110,6 +125,13 @@ textarea {
   color: var(--text-primary);
   font-size: 13px;
   max-width: 220px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px 12px;
+  padding-right: 28px;
 }
 
 .timer-bar-select:disabled {
@@ -878,6 +900,16 @@ textarea {
   outline-offset: -1px;
 }
 
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  padding-right: 32px;
+}
+
 .field textarea {
   resize: vertical;
   font-family: inherit;
@@ -1619,6 +1651,13 @@ textarea {
   padding: 5px 6px;
   color: var(--text-primary);
   font-size: 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 12px 12px;
+  padding-right: 24px;
 }
 
 .qdm-row-project-unsorted {
