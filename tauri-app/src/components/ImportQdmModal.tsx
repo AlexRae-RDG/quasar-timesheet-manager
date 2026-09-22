@@ -337,8 +337,8 @@ export function ImportQdmModal({
   const unsortedRows = groups.get(UNSORTED);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card import-qdm-card" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop">
+      <div className="modal-card import-qdm-card">
         <h2>Import {teamKey}s from Jira</h2>
         <p className="muted">
           Sub-tasks in the {teamKey} project assigned to you. Each one needs a Project to sort into --
