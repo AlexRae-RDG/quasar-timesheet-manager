@@ -1,0 +1,1915 @@
+:root {
+  /* Fallback values (Cobalt Rush) until ThemeProvider applies the saved
+     theme on first render -- see theme/ThemeProvider.tsx. */
+  --app-bg: #05070f;
+  --panel-bg: #0b1020;
+  --border: #1a2036;
+  --border-strong: #262c46;
+  --text-primary: #eaf0ff;
+  --text-secondary: #97a2c2;
+  --text-muted: #616a89;
+  --accent: #2f6fed;
+  --accent-hover: #2759c4;
+  --accent-soft: #16234a;
+  --danger: #ff3b5c;
+  --danger-soft: #1c1327;
+  --danger-soft-active: #2a1a34;
+  --field-bg: #10162c;
+  --surface: #10162c;
+  /* A select's dropdown arrow is otherwise entirely up to the OS -- fine
+     on macOS (WebKit draws a small, minimal one), but WebView2 on Windows
+     draws a much blockier, dated-looking one instead. appearance: none
+     strips that everywhere a <select> is used in this app, replaced by
+     this chevron drawn the same way on both platforms instead (see
+     .field select/.qdm-row-project/.timer-bar-select below). A fixed
+     color, not a CSS variable -- currentColor and var() aren't resolved
+     inside an embedded data-URI SVG's own attributes, so this can't
+     follow each theme's real --text-secondary the way inline text does;
+     this particular gray was picked as a middle ground that stays legible
+     against both the lightest and darkest themes rather than matching any
+     one of them exactly. This only ever restyles the *closed* select box
+     -- the dropdown's own open list of options is still drawn natively by
+     the OS either way, which no amount of CSS can reach. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%238B93A7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--text-primary);
+  font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* App-wide default: no native text selection. Without this, a click on
+     any text-containing button/row can be interpreted as the start of a
+     text-selection drag if there's even a pixel of movement between
+     mousedown and mouseup (routine on a trackpad, not just automation) --
+     the click event then never fires because the browser treats it as a
+     drag-select instead. This first surfaced as the calendar's
+     create-drag silently failing; same root cause here for the Activities
+     list rows. Inputs/textareas opt back into normal text editing below. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.shell-tab-row {
+  display: flex;
+  gap: 8px;
+  padding: 14px 20px;
+}
+
+.shell-nav-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.shell-nav-actions:empty {
+  margin-left: 0;
+}
+
+/* Always visible regardless of which tab is active (see TimerBar/AppShell)
+   -- pick an Activity, Start, and it logs against today's real date when
+   Stopped, no matter which screen happens to be on top at the time. */
+.timer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin: 0 20px 14px;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+
+.timer-bar-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.timer-bar-select {
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  max-width: 220px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px 12px;
+  padding-right: 28px;
+}
+
+.timer-bar-select:disabled {
+  opacity: 0.7;
+}
+
+.timer-bar-select option {
+  background-color: var(--field-bg);
+  color: var(--text-primary);
+}
+
+.timer-bar-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px 1px var(--danger);
+}
+
+.timer-bar-elapsed {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 52px;
+}
+
+.timer-bar-status {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.shell-content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.app-shell {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 8px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.placeholder-card {
+  align-items: center;
+  text-align: center;
+  padding: 48px 24px;
+}
+
+/* Activities screen */
+.project-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.project-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.activity-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.activity-list-row:hover {
+  background: var(--surface);
+}
+
+.activity-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.badge {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.placeholder-title {
+  font-size: 20px;
+  margin: 0;
+  color: var(--text-primary);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* Calendar screen */
+.calendar-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.calendar-week-label {
+  color: var(--text-secondary);
+  font-size: 14px;
+  flex: 1;
+}
+
+.calendar-nav-pill .segment {
+  padding: 8px 14px;
+}
+
+.calendar-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.calendar-body {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Wraps the toolbar + grid together, as a sibling of the sidebar rather
+   than a full-width row above the whole body -- so the date pill and week
+   label line up with the grid's own left edge (and the toolbar's right
+   side with its right edge) instead of starting under the sidebar,
+   regardless of the sidebar's current width or whether it's shown at all. */
+.calendar-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.activity-sidebar {
+  flex-shrink: 0;
+  /* The spec says overflow other than visible should already zero out the
+     automatic minimum size here, letting align-items: stretch's height
+     actually bind and overflow-y do its job -- but the Tauri webview
+     (WebKit) doesn't apply that reliably, so it's spelled out explicitly
+     instead (same fix as .calendar-main/.qdm-scroll-area elsewhere), or a
+     long Activity list just pushes past the window with no scrollbar. */
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.calendar-resize-handle {
+  /* Kept deliberately narrow: an earlier, wider version (24px, -10px
+     margin) overlapped far enough into calendar-wrapper that a drag
+     started near the grid's left edge could be captured as a sidebar
+     resize instead of a create-drag -- looked exactly like "can't create
+     blocks anymore" without an obvious cause. */
+  flex-shrink: 0;
+  width: 9px;
+  margin: 0 -2px;
+  cursor: col-resize;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-resize-handle-collapsed {
+  cursor: pointer;
+}
+
+.calendar-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border);
+}
+
+.calendar-resize-handle:hover::after,
+.calendar-resize-handle.calendar-resize-handle-active::after {
+  background: var(--accent);
+}
+
+.calendar-resize-toggle {
+  /* Positioned independently of the handle's own (intentionally narrow)
+     box, via absolute + a size larger than its 9px parent, so this stays
+     comfortably clickable without widening the handle's own drag hit
+     area back into the calendar. */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  width: 22px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.calendar-resize-handle-collapsed .calendar-resize-toggle {
+  cursor: pointer;
+}
+
+.calendar-resize-toggle:hover,
+.calendar-resize-toggle-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.activity-sidebar-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.activity-project-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  /* Collapsed, this is just the header's own height; expanded, the box
+     grows downward with it since the Activity rows are already its own
+     flex children -- no separate "expanded" styling needed. */
+  overflow: hidden;
+  /* Same fix as .qdm-tabs: this box's own overflow:hidden (for the rounded
+     corners) makes flexbox treat it as zero-min-size, so when the sidebar's
+     full list of Projects doesn't fit, each group got individually
+     shrunk-and-clipped instead of the sidebar's own overflow-y: auto
+     kicking in to scroll past them. Pinning it to its content size makes
+     the list overflow the sidebar (as a whole) instead of each box
+     overflowing invisibly within itself. */
+  flex-shrink: 0;
+}
+
+.activity-project-header {
+  display: flex;
+  align-items: center;
+}
+
+.activity-project-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  padding: 7px 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.activity-project-name:hover {
+  color: var(--text-primary);
+}
+
+/* Hidden until the row is hovered, so the sidebar stays as quiet as it was
+   before this existed -- only reachable when you're already looking at
+   this specific Project. */
+.activity-project-add {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 4px 7px;
+  margin-right: 3px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.activity-project-header:hover .activity-project-add {
+  opacity: 1;
+}
+
+.activity-project-add:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.disclosure-arrow {
+  display: inline-block;
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+.disclosure-arrow-collapsed {
+  transform: rotate(-90deg);
+}
+
+.activity-row {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.activity-row:hover {
+  background: var(--surface);
+}
+
+.activity-row-armed {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.activity-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Hidden until its row is hovered, same reasoning as .activity-project-add. */
+.activity-row-edit {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 4px;
+  margin-right: 4px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.activity-row:hover .activity-row-edit {
+  opacity: 1;
+}
+
+.activity-row-edit:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.calendar-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Floating in the grid's own corner rather than the toolbar -- it's a view
+   preference for the grid (how tall an hour renders), not a navigation
+   action, so it stays out of the way of Prev/Today/Next and Apply Template
+   while still being exactly where you'd look for it. Anchored to
+   .calendar-wrapper (not .calendar-scroll) so it stays put regardless of
+   scroll position. */
+.calendar-zoom-control {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.calendar-zoom-control button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 7px 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.calendar-zoom-control button:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.calendar-zoom-control button + button {
+  border-left: 1px solid var(--border);
+}
+
+.calendar-header {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-day-header {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 6px 0;
+  border-left: 1px solid var(--border);
+}
+
+.calendar-day-header-today .calendar-day-date {
+  color: var(--accent);
+}
+
+.calendar-day-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.calendar-day-date {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.calendar-scroll {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+  /* Without this, WebKit (the Tauri webview) can start a native text
+     selection on mousedown-drag over the grid background, which visibly
+     highlights day/hour labels and can swallow the pointermove events the
+     drag logic depends on. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.calendar-gutter {
+  flex-shrink: 0;
+  position: relative;
+}
+
+.calendar-hour-label {
+  position: absolute;
+  right: 8px;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.calendar-days {
+  display: flex;
+  position: relative;
+}
+
+.calendar-day-col {
+  position: relative;
+  border-left: 1px solid var(--border);
+  flex-shrink: 0;
+  cursor: crosshair;
+}
+
+.calendar-hour-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+  opacity: 0.6;
+}
+
+.calendar-entry {
+  position: absolute;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.calendar-entry-grip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  cursor: ns-resize;
+}
+
+.calendar-entry-grip-top {
+  top: 0;
+}
+
+.calendar-entry-grip-bottom {
+  bottom: 0;
+}
+
+.calendar-entry-label {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-entry-time {
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.calendar-entry-notes {
+  opacity: 0.8;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.calendar-entry-selected {
+  outline: 2px solid white;
+  outline-offset: -2px;
+}
+
+.calendar-entry-preview {
+  background: var(--accent-soft);
+  border: 2px dashed var(--accent);
+  pointer-events: none;
+}
+
+.calendar-hover-preview {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.calendar-entry-dragging {
+  outline: 2px dashed white;
+  outline-offset: -2px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.calendar-entry-active {
+  /* Solid, not dashed -- dashes drawn straight over the label/notes text
+     inside a short block just cut through it and made it harder to read.
+     outlineColor/boxShadow are set inline per-block (see
+     CalendarGrid.tsx's activeNowAccent): whichever of black/white actually
+     contrasts with THIS block's own color, translucent, rather than a
+     fixed theme color that can land close to the block's own hue (an
+     orange "now" line on an orange block was nearly invisible). */
+  outline: 2px solid;
+  outline-offset: -2px;
+  filter: brightness(1.08);
+}
+
+/* Flagged by the last Upload to Jira attempt (see CalendarScreen's
+   missingNotesEntryIds) -- fixed danger red rather than a computed
+   per-block color like .calendar-entry-active, since this is an error
+   state that should read the same regardless of the block's own color. */
+.calendar-entry-missing-notes {
+  outline: 3px solid var(--danger);
+  outline-offset: -3px;
+}
+
+.calendar-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.calendar-now-dot {
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 5px 1px rgba(255, 255, 255, 0.5);
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Settings only (see SettingsScreen) -- the page can run long enough that
+   Save Settings scrolls out of reach; pinning the header keeps it (and the
+   Jira connected/not-connected status next to it) on screen the whole way
+   down. No background at rest -- at the top of the page there's nothing
+   scrolling underneath yet, so a visible fill just reads as a box sitting
+   on top of it; SettingsScreen adds .page-header-stuck the moment any
+   scrolling at all has happened.
+   Several fancier attempts at this (a fade, a mask, rounded corners meant
+   to look like the card's own top edge) each broke in their own way --
+   a WebKit-only bug dropping backdrop-filter entirely when paired with a
+   mask, geometry that never quite matched the real rendered layout, one
+   set of borders visibly clashing with another. This is deliberately the
+   plain, boring version instead: the exact same "solid/blurred bar with a
+   bottom border" treatment .shell-header already uses above it, which has
+   never had any of those problems, rather than trying to make this one
+   visually merge into the card below it. */
+.page-header-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 0;
+}
+
+/* --app-bg (the page's own background), not --panel-bg (the card/toolbar
+   tint) -- this should read as the page itself showing through solidly,
+   not a distinct panel sitting on top of it. In the Glassy theme APP_BG is
+   a gradient rather than a flat color, which is exactly why this needs
+   background-attachment: fixed here too: that ties the gradient to the
+   *viewport's* coordinates rather than this element's own box (matching
+   body's own fixed attachment in that theme -- see the data-glass rule
+   below), so once this box is actually pinned in place, the two are
+   painting the identical gradient pixels at the same screen position
+   rather than two independently-cropped samples of it that don't line up. */
+.page-header-stuck {
+  background: var(--app-bg);
+  background-attachment: fixed;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-header h1 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.field input[type="text"],
+.field input[type="password"],
+.field input[type="date"],
+.field textarea,
+.field select {
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.field input[type="text"]:focus,
+.field input[type="password"]:focus,
+.field input[type="date"]:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  padding-right: 32px;
+}
+
+/* `color` inherits from the select into its <option>s, but
+   background-color doesn't -- so without this, a dark theme's light text
+   drops into the dropdown's native default (white) background and
+   disappears. This is what was still broken on Windows after the
+   color-scheme fix: WebView2 doesn't fall back to color-scheme once the
+   select already declares its own colors, it just leaves <option>
+   unstyled. Setting both explicitly on the option itself is the part
+   Chromium actually honors in a native select popup. */
+.field select option {
+  background-color: var(--field-bg);
+  color: var(--text-primary);
+}
+
+.field textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+/* Jira Key: only the ticket number is ever user-editable -- the team's
+   prefix (QDM-/TISACC-) is fixed and shown inline, so there's no way to
+   type it wrong or under the other team's project by mistake. */
+.jira-key-input {
+  display: flex;
+  align-items: stretch;
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.jira-key-input:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.jira-key-prefix {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 9px 0 9px 10px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.jira-key-input input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 9px 10px 9px 2px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.jira-key-input input[type="text"]:focus {
+  outline: none;
+}
+
+/* Edit entry modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 380px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-card h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.field-inline {
+  flex: 1;
+}
+
+.field-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.field-color {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.field-color input[type="color"] {
+  width: 44px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  padding: 0;
+}
+
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-color-confirm {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.swatch-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.swatch-category {
+  display: contents;
+}
+
+.custom-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  padding-top: 4px;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.segment {
+  background: var(--field-bg);
+  color: var(--text-secondary);
+  border: none;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.segment + .segment {
+  border-left: 1px solid var(--border-strong);
+}
+
+.segment-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-accent:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: var(--danger-soft-active);
+}
+
+.link-button {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: -4px;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+/* Summary screen */
+.summary-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 14px;
+}
+
+.summary-card {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.summary-pie {
+  width: 100%;
+  max-width: 420px;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.summary-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.summary-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: 3px 6px;
+  border-radius: 6px;
+  transition: background 0.12s ease;
+}
+
+.summary-legend-row-active {
+  background: var(--surface);
+}
+
+.summary-legend-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-pie-segment {
+  cursor: pointer;
+  transition: stroke-width 0.15s ease, opacity 0.15s ease;
+}
+
+.summary-pie-label {
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.summary-expected {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.summary-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.summary-bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-bar-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.summary-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--field-bg);
+  overflow: hidden;
+}
+
+.summary-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.status {
+  font-size: 13px;
+  margin: 0;
+}
+
+.status-success {
+  color: #4ade80;
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.error-banner {
+  color: var(--danger);
+}
+
+.shortcut-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 13px;
+}
+
+.shortcut-keys {
+  flex: 0 0 220px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.settings-version {
+  text-align: center;
+  padding: 4px 0 20px;
+}
+
+/* Onboarding: mandatory first-run form */
+.onboarding-backdrop {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 32px 16px;
+}
+
+.onboarding-card {
+  width: 100%;
+  max-width: 480px;
+  gap: 10px;
+  /* Vertical centering via the item's own auto margins, not the
+     container's align-items -- align-items: center on an overflowing flex
+     item still centers it, but centers it by pushing the SAME amount off
+     both the top and bottom, and a plain overflow-y: auto container can't
+     be scrolled up far enough to reach that clipped top portion (this is a
+     well-documented flexbox/overflow interaction, not WebView2-specific --
+     it reproduced in every engine tested). margin: auto on the item itself
+     produces the same "centered when there's room" look but, being real
+     auto-margin space rather than cross-axis alignment, participates in
+     the container's scrollable overflow correctly in both directions. */
+  margin: auto 0;
+}
+
+.onboarding-title {
+  font-size: 22px;
+  margin: 0 0 2px;
+}
+
+.card-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.card-subsection h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.card-subsection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.jira-status {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.jira-status-connected {
+  color: #4ade80;
+}
+
+.onboarding-continue {
+  margin-top: 8px;
+  width: 100%;
+}
+
+/* Onboarding: guided tour overlay */
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+}
+
+/* OnboardingTour sets data-tour-active on <html> for as long as it's
+   mounted -- scrolling any of these while a step is showing would move the
+   real element out from under its spotlight (measured once per step, not
+   continuously), breaking the whole illusion of "this cutout is that
+   element". */
+:root[data-tour-active="true"] .shell-content,
+:root[data-tour-active="true"] .calendar-scroll,
+:root[data-tour-active="true"] .activity-sidebar {
+  overflow: hidden;
+}
+
+.tour-dim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.tour-cutout {
+  position: fixed;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease;
+}
+
+.tour-tooltip {
+  position: fixed;
+  pointer-events: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.tour-step-count {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.tour-tooltip h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.tour-tooltip p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.tour-skip {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tour-skip:hover {
+  color: var(--text-secondary);
+}
+
+/* Glassy theme -- ThemeProvider sets data-glass="true" on <html> only when
+   this theme is active (see theme/ThemeProvider.tsx). The palette itself
+   (--panel-bg etc, see theme/palettes.ts's GLASS_PALETTE) already supplies
+   translucent rgba colors; backdrop-filter is a real CSS property rather
+   than a color, so it can't ride along as a custom-property value and has
+   to live here instead. */
+:root[data-glass="true"] body {
+  background-attachment: fixed;
+}
+
+:root[data-glass="true"] .card,
+:root[data-glass="true"] .modal-card,
+:root[data-glass="true"] .activity-sidebar,
+:root[data-glass="true"] .calendar-wrapper,
+:root[data-glass="true"] .shell-header,
+:root[data-glass="true"] .calendar-resize-toggle,
+:root[data-glass="true"] .field input[type="text"],
+:root[data-glass="true"] .field input[type="password"],
+:root[data-glass="true"] .field textarea,
+:root[data-glass="true"] .field select,
+:root[data-glass="true"] .btn-secondary,
+:root[data-glass="true"] .segmented,
+:root[data-glass="true"] .tour-tooltip {
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+}
+
+/* A native select popup can't blur, so Glassy's translucent FIELD_BG would
+   just wash out against whatever the OS draws behind it -- give options a
+   solid stand-in (mid-tone from the theme's own gradient) instead. */
+:root[data-glass="true"] .field select option,
+:root[data-glass="true"] .timer-bar-select option,
+:root[data-glass="true"] .qdm-row-project option {
+  background-color: #12295c;
+  color: var(--text-primary);
+}
+
+/* A faint inset top edge reads as a light catching the glass's rim --
+   the small detail that sells the "frosted pane" look. */
+:root[data-glass="true"] .card,
+:root[data-glass="true"] .modal-card,
+:root[data-glass="true"] .activity-sidebar,
+:root[data-glass="true"] .calendar-wrapper,
+:root[data-glass="true"] .shell-header {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+:root[data-glass="true"] .modal-backdrop {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.edit-activity-card {
+  width: 480px;
+}
+
+.upload-jira-card {
+  width: 620px;
+  max-width: 92vw;
+  max-height: 84vh;
+  overflow: hidden;
+}
+
+/* Import QDMs modal */
+.import-qdm-card {
+  width: 760px;
+  max-width: 92vw;
+  height: 84vh;
+  /* .modal-card is already a column flexbox -- this just stops the fixed
+     header/footer from being pushed out of view, and hands all overflow to
+     .qdm-scroll-area below instead of the card itself trying (and failing)
+     to grow past the viewport. */
+  overflow: hidden;
+}
+
+/* The only part of the card that scrolls -- h2/intro paragraph above and
+   .modal-actions below stay pinned, matching how every other modal in the
+   app behaves, so Cancel/Import are always reachable regardless of how
+   many QDMs or Project groups there are. */
+.qdm-scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 2px;
+}
+
+/* .segmented's own `overflow: hidden` (for the rounded-corner clip) makes
+   flexbox treat its automatic minimum size as 0 -- inside .qdm-scroll-area's
+   shrinking flex column, that made this row the first thing sacrificed
+   whenever content ran long, collapsing it to a 2px sliver instead of
+   wrapping/scrolling like everything else. Pinning it to its natural size
+   keeps it from being singled out that way. */
+.qdm-tabs {
+  flex-shrink: 0;
+}
+
+.qdm-column-headers {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.qdm-column-headers span:last-child {
+  flex-shrink: 0;
+  width: 160px;
+  text-align: left;
+}
+
+.qdm-select-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qdm-select-controls .link-button {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11px;
+  align-self: auto;
+  margin-top: 0;
+}
+
+.qdm-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.qdm-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qdm-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  padding: 4px 6px;
+}
+
+.qdm-group-header-unsorted {
+  color: var(--danger);
+}
+
+.qdm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qdm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.qdm-row-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.qdm-row-label:hover {
+  background: var(--surface);
+}
+
+.qdm-row-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.qdm-row-disabled:hover {
+  background: none;
+}
+
+.qdm-row-summary {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.qdm-row-guess {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.qdm-row-project {
+  flex-shrink: 0;
+  width: 160px;
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 5px 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 12px 12px;
+  padding-right: 24px;
+}
+
+.qdm-row-project option {
+  background-color: var(--field-bg);
+  color: var(--text-primary);
+}
+
+.qdm-row-project-unsorted {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.import-ics-card {
+  /* Same footprint as the QDM importer -- both are "fetch a list, review,
+     assign, import" review panels, so keeping the width/height identical
+     stops the modal visibly resizing depending on which one was opened. */
+  width: 760px;
+  max-width: 92vw;
+  height: 84vh;
+  overflow: hidden;
+}
+
+.import-ics-source {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.import-ics-url-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.import-ics-url-row .field {
+  flex: 1;
+}
+
+.import-ics-paste-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.import-ics-paste-row .field {
+  flex: 1;
+}
+
+.import-ics-paste-row textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+/* Tasks screen (kanban board) */
+.tasks-title {
+  font-size: 22px;
+  margin: 0;
+  flex: 1;
+}
+
+.kanban-board {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+.kanban-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  min-height: 0;
+}
+
+.kanban-column-dragover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.kanban-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.kanban-column-count {
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.kanban-column-body {
+  flex: 1;
+  min-height: 40px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kanban-card {
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: grab;
+  text-align: left;
+}
+
+.kanban-card:hover {
+  border-color: var(--accent);
+}
+
+/* Follows the cursor while a card is being dragged, standing in for the
+   card itself -- which is lifted out of its column's flow entirely for the
+   duration (see TasksScreen), so this is the only visible copy of it. */
+.kanban-card-ghost {
+  position: fixed;
+  z-index: 20;
+  cursor: grabbing;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-color: var(--accent);
+  transform: rotate(-1.5deg);
+}
+
+/* Marks exactly where the card would land if dropped right now -- an empty
+   slot the same height a card would occupy, so the column's real cards
+   visibly part around it instead of just stacking up two separate hover
+   cues (the old whole-column highlight and this) that didn't say where. */
+.kanban-drop-indicator {
+  height: 8px;
+  border-radius: 4px;
+  border: 1.5px dashed var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Forces the "grabbing hand" cursor everywhere while a drag is in flight,
+   not just over the ghost (which has pointer-events: none and so would
+   otherwise show whatever's underneath it -- text cursors, link pointers). */
+.kanban-dragging,
+.kanban-dragging * {
+  cursor: grabbing !important;
+}
+
+.kanban-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.kanban-card-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.kanban-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.kanban-priority {
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.kanban-priority-low {
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.kanban-priority-medium {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.kanban-priority-high {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.kanban-deadline {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.kanban-deadline-overdue {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.kanban-add-btn {
+  flex-shrink: 0;
+  width: 100%;
+}
