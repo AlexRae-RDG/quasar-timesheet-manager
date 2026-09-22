@@ -173,7 +173,11 @@ export function ImportQdmModal({
       .then((r) => {
         setResults(r);
         const importableQdms = r.filter((q) => !existingKeys.has(q.jiraKey));
-        setSelected(new Set(importableQdms.map((q) => q.jiraKey)));
+        // Archived (Closed) ones default to unchecked -- they're unlikely
+        // to be wanted on a first import, and defaulting them on made it
+        // easy to import a pile of already-finished work by accident. Open
+        // ones still default to checked, same as before.
+        setSelected(new Set(importableQdms.filter((q) => q.status !== "Closed").map((q) => q.jiraKey)));
         setProjectAssignments(autoMatchAll(importableQdms, projects));
         setStatus("loaded");
       })
@@ -239,14 +243,19 @@ export function ImportQdmModal({
 
   const importable = results.filter((q) => !existingKeys.has(q.jiraKey));
   const alreadyImported = results.filter((q) => existingKeys.has(q.jiraKey));
-  const selectedCount = [...selected].filter(
-    (k) => !existingKeys.has(k) && projectAssignments[k] != null && projectAssignments[k] !== UNSORTED,
-  ).length;
 
   const activeQdms = importable.filter((q) => q.status !== "Closed");
   const archivedQdms = importable.filter((q) => q.status === "Closed");
   const visibleQdms = showArchived ? archivedQdms : activeQdms;
   const visibleAlreadyImported = alreadyImported.filter((q) => (q.status === "Closed") === showArchived);
+
+  // Scoped to the visible tab, not every selected row across both --
+  // Import Selected while on Active should only ever act on Active rows,
+  // never silently sweep in whatever's still checked on Archived (or vice
+  // versa) just because it happens to be selected in the background.
+  const selectedCount = visibleQdms.filter(
+    (q) => selected.has(q.jiraKey) && projectAssignments[q.jiraKey] != null && projectAssignments[q.jiraKey] !== UNSORTED,
+  ).length;
 
   // Grouped for display -- Unsorted (if non-empty) always leads, then any
   // Project that currently has at least one QDM assigned to it, in the
@@ -270,7 +279,7 @@ export function ImportQdmModal({
   // since it changes something in Jira beyond just creating a local
   // Activity.
   function qdmsPendingReopen(): QdmResult[] {
-    return importable.filter((q) => {
+    return visibleQdms.filter((q) => {
       if (!selected.has(q.jiraKey) || q.status !== "Closed") return false;
       const projectId = projectAssignments[q.jiraKey];
       if (projectId == null || projectId === UNSORTED) return false;
@@ -300,7 +309,7 @@ export function ImportQdmModal({
     // does for an already-imported one.
     const reopenFailures: string[] = [];
     try {
-      for (const q of importable) {
+      for (const q of visibleQdms) {
         if (!selected.has(q.jiraKey)) continue;
         const projectId = projectAssignments[q.jiraKey];
         if (projectId == null || projectId === UNSORTED) continue;
