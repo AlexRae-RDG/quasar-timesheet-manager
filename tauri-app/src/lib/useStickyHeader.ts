@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { getZoomFactor } from "./windowsScale";
 
 /** Adds .page-header-stuck to the header ref's element once the nearest
  * .shell-content ancestor has scrolled at all -- pair with .page-header
@@ -49,9 +50,18 @@ export function useStickyHeader<T extends HTMLElement>() {
 
     function syncGeometry() {
       if (!bg || !header) return;
+      // Windows scale compensation (windowsScale.ts) applies a CSS zoom to
+      // <html>, and Chromium applies that zoom a SECOND time to a raw
+      // getBoundingClientRect() number written straight back into an
+      // inline style on a position:fixed element -- dividing by it here
+      // cancels that back out. Without this, at 150% Windows scaling the
+      // bg layer rendered roughly 2/3 the size/offset it should have,
+      // uncovering the header's own text underneath it. See
+      // getZoomFactor's own comment for the full explanation.
+      const zoom = getZoomFactor();
       const headerRect = header.getBoundingClientRect();
-      bg.style.top = `${scrollEl?.getBoundingClientRect().top ?? 0}px`;
-      bg.style.height = `${headerRect.height}px`;
+      bg.style.top = `${(scrollEl?.getBoundingClientRect().top ?? 0) / zoom}px`;
+      bg.style.height = `${headerRect.height / zoom}px`;
       // The fill itself stays full-width (left:0/right:0 in CSS) -- it
       // renders the identical gradient the page itself would show there,
       // so a wider fill is invisible against the real background, and
@@ -64,8 +74,8 @@ export function useStickyHeader<T extends HTMLElement>() {
       // is deliberately narrowed to the header's own box via these custom
       // properties, so IT reads as part of the page's boxed content
       // instead of a full-width bar.
-      bg.style.setProperty("--page-header-fixed-bg-border-left", `${headerRect.left}px`);
-      bg.style.setProperty("--page-header-fixed-bg-border-width", `${headerRect.width}px`);
+      bg.style.setProperty("--page-header-fixed-bg-border-left", `${headerRect.left / zoom}px`);
+      bg.style.setProperty("--page-header-fixed-bg-border-width", `${headerRect.width / zoom}px`);
     }
     const resizeObserver = new ResizeObserver(syncGeometry);
     resizeObserver.observe(header);

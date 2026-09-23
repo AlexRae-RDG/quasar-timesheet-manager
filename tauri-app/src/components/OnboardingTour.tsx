@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import type { CSSProperties } from "react";
+import { getZoomFactor } from "../lib/windowsScale";
 
 interface TourStep {
   tab: string;
@@ -227,11 +228,36 @@ export function OnboardingTour({
       }
     : null;
 
-  const tooltipStyle = cutout ? placeTooltip(cutout) : CENTERED_TOOLTIP_STYLE;
+  const rawTooltipStyle = cutout ? placeTooltip(cutout) : CENTERED_TOOLTIP_STYLE;
+
+  // Both .tour-cutout and .tour-tooltip are position:fixed, and every
+  // number here (cutout's four fields, plus placeTooltip's left/top) was
+  // measured off a real element via getBoundingClientRect -- see
+  // getZoomFactor's comment for why writing a measured pixel value like
+  // that straight into a position:fixed element's inline style needs
+  // dividing by the current Windows-scale zoom first, or it renders
+  // shrunk and offset at anything other than 100% scaling. Percentages
+  // (CENTERED_TOOLTIP_STYLE's "50%") and authored constants
+  // (TOOLTIP_WIDTH) were never measured off anything, so they're left
+  // untouched.
+  const zoom = getZoomFactor();
+  const cutoutStyle: CSSProperties | null = cutout
+    ? {
+        top: cutout.top / zoom,
+        left: cutout.left / zoom,
+        width: cutout.width / zoom,
+        height: cutout.height / zoom,
+      }
+    : null;
+  const tooltipStyle: CSSProperties = {
+    ...rawTooltipStyle,
+    ...(typeof rawTooltipStyle.left === "number" ? { left: rawTooltipStyle.left / zoom } : {}),
+    ...(typeof rawTooltipStyle.top === "number" ? { top: rawTooltipStyle.top / zoom } : {}),
+  };
 
   return (
     <div className="tour-overlay">
-      {cutout ? <div className="tour-cutout" style={cutout} /> : <div className="tour-dim" />}
+      {cutoutStyle ? <div className="tour-cutout" style={cutoutStyle} /> : <div className="tour-dim" />}
       <div className="tour-tooltip" style={tooltipStyle}>
         <div className="tour-step-count">
           Step {stepIndex + 1} of {TOUR_STEPS.length}

@@ -108,6 +108,7 @@ textarea {
   margin: 0 20px 14px;
   padding: 10px 14px;
   background: var(--accent-soft);
+  border: 1px solid var(--border);
   border-radius: 10px;
 }
 
@@ -1567,6 +1568,7 @@ textarea {
 :root[data-glass="true"] .calendar-wrapper,
 :root[data-glass="true"] .shell-header,
 :root[data-glass="true"] .calendar-resize-toggle,
+:root[data-glass="true"] .timer-bar,
 :root[data-glass="true"] .field input[type="text"],
 :root[data-glass="true"] .field input[type="password"],
 :root[data-glass="true"] .field textarea,
@@ -1595,7 +1597,8 @@ textarea {
 :root[data-glass="true"] .modal-card,
 :root[data-glass="true"] .activity-sidebar,
 :root[data-glass="true"] .calendar-wrapper,
-:root[data-glass="true"] .shell-header {
+:root[data-glass="true"] .shell-header,
+:root[data-glass="true"] .timer-bar {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
@@ -1608,6 +1611,18 @@ textarea {
    into the backdrop the way a card floating over the gradient normally
    should -- solid background, no blur, same option-bg stand-in. */
 :root[data-glass="true"] .update-modal-card {
+  background: var(--option-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Import from Outlook and Import QDMs (.import-qdm-card, shared by both --
+   see ImportOutlookModal.tsx/ImportQdmModal.tsx) list rows of real content
+   over the calendar/QDM data still visible behind them -- translucent glass
+   there reads as illegible on Windows/WebView2, where the blur renders
+   noticeably weaker than on macOS. Same solid stand-in as the update popup
+   rather than the rest of the app's floating-glass look. */
+:root[data-glass="true"] .import-qdm-card {
   background: var(--option-bg);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;

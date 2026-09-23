@@ -13,6 +13,24 @@
  * renders using the monitor's full pixel density for the finer layout it
  * produces, rather than stretching a fixed-resolution bitmap.
  */
+/** The zoom factor applyWindowsScaleCompensation currently has applied to
+ * <html> (1 on macOS, or before it's run at all). Needed anywhere else in
+ * the app that measures a position via getBoundingClientRect/clientX/
+ * clientY and then writes that number back into an inline style on a
+ * position:fixed element (useStickyHeader.ts, OnboardingTour.tsx) --
+ * Chromium applies the zoom a SECOND time to a raw pixel value assigned
+ * this way, shrinking/misplacing the element (confirmed empirically: a
+ * fixed element's containing block is the viewport, but the style value
+ * itself still gets reinterpreted inside the zoomed root's authored pixel
+ * space on render). Dividing by this factor before assigning cancels that
+ * back out. Not needed for values that were never measured off a real
+ * element in the first place (percentages, authored constants like a
+ * tooltip's fixed width) -- only for numbers that came from a rect/event
+ * and are being written straight back into position:fixed geometry. */
+export function getZoomFactor(): number {
+  return Number(document.documentElement.style.zoom) || 1;
+}
+
 export function applyWindowsScaleCompensation() {
   if (typeof navigator === "undefined" || !navigator.userAgent.includes("Windows")) return;
   const root = document.documentElement;
