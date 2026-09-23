@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { Activity, Project } from "../api/activities";
+import { Dropdown, DropdownOption } from "./Dropdown";
 
 const NEW_ACTIVITY_SENTINEL = -1;
 
@@ -56,14 +57,14 @@ export function CreateEntryModal({
 
         <label className="field">
           <span>Activity</span>
-          <select value={activityId} onChange={(e) => setActivityId(Number(e.target.value))}>
+          <Dropdown value={activityId} onChange={(v) => setActivityId(Number(v))}>
             {activities.map((a) => (
-              <option key={a.id} value={a.id}>
+              <DropdownOption key={a.id} value={a.id}>
                 {a.name}
-              </option>
+              </DropdownOption>
             ))}
-            <option value={NEW_ACTIVITY_SENTINEL}>+ New Activity…</option>
-          </select>
+            <DropdownOption value={NEW_ACTIVITY_SENTINEL}>+ New Activity…</DropdownOption>
+          </Dropdown>
         </label>
 
         {creatingNew && (
@@ -80,13 +81,13 @@ export function CreateEntryModal({
             </label>
             <label className="field">
               <span>Project</span>
-              <select value={newActivityProjectId} onChange={(e) => setNewActivityProjectId(Number(e.target.value))}>
+              <Dropdown value={newActivityProjectId} onChange={(v) => setNewActivityProjectId(Number(v))}>
                 {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
+                  <DropdownOption key={p.id} value={p.id}>
                     {p.name}
-                  </option>
+                  </DropdownOption>
                 ))}
-              </select>
+              </Dropdown>
             </label>
           </>
         )}

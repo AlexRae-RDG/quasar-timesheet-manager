@@ -3,6 +3,7 @@ import { createActivity, createProject, type Activity, type Project } from "../a
 import { reopenJiraIssue } from "../api/jira";
 import { searchQdms, type QdmResult } from "../api/qdm";
 import { projectKeyForDepartment, type AppSettings } from "../api/settings";
+import { Dropdown, DropdownOption } from "./Dropdown";
 import { EditProjectModal } from "./EditProjectModal";
 
 type Status = "loading" | "loaded" | "error";
@@ -606,24 +607,19 @@ function QdmRow({
           )}
         </span>
       </label>
-      <select
+      <Dropdown
         className={"qdm-row-project" + (projectId == null ? " qdm-row-project-unsorted" : "")}
         value={projectId ?? ""}
-        onChange={(e) => onSelect(e.target.value)}
-        onClick={(e) => e.stopPropagation()}
+        onChange={onSelect}
+        placeholder="Choose a Project…"
       >
-        {projectId == null && (
-          <option value="" disabled>
-            Choose a Project…
-          </option>
-        )}
         {projects.map((p) => (
-          <option key={p.id} value={p.id}>
+          <DropdownOption key={p.id} value={p.id}>
             {p.name}
-          </option>
+          </DropdownOption>
         ))}
-        <option value={NEW_PROJECT_OPTION}>+ New Project…</option>
-      </select>
+        <DropdownOption value={NEW_PROJECT_OPTION}>+ New Project…</DropdownOption>
+      </Dropdown>
     </li>
   );
 }

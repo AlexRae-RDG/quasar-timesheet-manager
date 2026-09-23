@@ -4,6 +4,7 @@ import { createTimeEntry, type NewTimeEntry, type TimeEntry } from "../api/calen
 import type { Activity, Project } from "../api/activities";
 import { toISODate } from "../lib/date";
 import { occurrencesForDays, parseIcsEvents, type IcsOccurrence } from "../lib/ics";
+import { Dropdown, DropdownGroup, DropdownOption } from "./Dropdown";
 
 type Status = "idle" | "loading" | "loaded" | "error";
 
@@ -362,38 +363,35 @@ function OccurrenceRow({
         </span>
         <span className="qdm-row-summary">{occurrence.summary || "(no title)"}</span>
       </label>
-      <select
+      <Dropdown
         className={"qdm-row-project" + (activityId === UNASSIGNED ? " qdm-row-project-unsorted" : "")}
         value={activityId === UNASSIGNED ? "" : activityId}
-        onChange={(e) => onSelect(e.target.value)}
-        onClick={(e) => e.stopPropagation()}
+        onChange={onSelect}
+        placeholder="Choose an Activity…"
       >
-        <option value="" disabled>
-          Choose an Activity…
-        </option>
         {projects.map((project) => {
           const list = activitiesByProject.get(project.id);
           if (!list || list.length === 0) return null;
           return (
-            <optgroup key={project.id} label={project.name}>
+            <DropdownGroup key={project.id} label={project.name}>
               {list.map((a) => (
-                <option key={a.id} value={a.id}>
+                <DropdownOption key={a.id} value={a.id}>
                   {a.name}
-                </option>
+                </DropdownOption>
               ))}
-            </optgroup>
+            </DropdownGroup>
           );
         })}
         {unassignedActivities.length > 0 && (
-          <optgroup label="Other">
+          <DropdownGroup label="Other">
             {unassignedActivities.map((a) => (
-              <option key={a.id} value={a.id}>
+              <DropdownOption key={a.id} value={a.id}>
                 {a.name}
-              </option>
+              </DropdownOption>
             ))}
-          </optgroup>
+          </DropdownGroup>
         )}
-      </select>
+      </Dropdown>
     </li>
   );
 }

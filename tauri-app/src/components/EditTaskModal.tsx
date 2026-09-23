@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Task, TaskPriority, TaskStatus } from "../api/tasks";
+import { Dropdown, DropdownOption } from "./Dropdown";
 
 export interface TaskFormValues {
   title: string;
@@ -65,13 +66,13 @@ export function EditTaskModal({
         <div className="row">
           <label className="field field-inline">
             <span>Priority</span>
-            <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
+            <Dropdown value={priority} onChange={(v) => setPriority(v as TaskPriority)}>
               {PRIORITIES.map((p) => (
-                <option key={p.value} value={p.value}>
+                <DropdownOption key={p.value} value={p.value}>
                   {p.label}
-                </option>
+                </DropdownOption>
               ))}
-            </select>
+            </Dropdown>
           </label>
 
           <label className="field field-inline">
@@ -82,13 +83,13 @@ export function EditTaskModal({
 
         <label className="field">
           <span>Status</span>
-          <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
+          <Dropdown value={status} onChange={(v) => setStatus(v as TaskStatus)}>
             {STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>
+              <DropdownOption key={s.value} value={s.value}>
                 {s.label}
-              </option>
+              </DropdownOption>
             ))}
-          </select>
+          </Dropdown>
         </label>
 
         <div className="modal-actions">

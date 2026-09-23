@@ -12,6 +12,7 @@ import {
   verifyJiraCredentials,
   type AppSettings,
 } from "../api/settings";
+import { Dropdown, DropdownOption } from "../components/Dropdown";
 import { ThemeSwatch } from "../components/ThemeSwatch";
 import { UpdateAvailableModal } from "../components/UpdateAvailableModal";
 import { useStickyHeader } from "../lib/useStickyHeader";
@@ -369,29 +370,23 @@ export function SettingsScreen({
         <div className="row">
           <label className="field field-inline">
             <span>Start</span>
-            <select
-              value={settings.workStartHour}
-              onChange={(e) => onChange({ workStartHour: Number(e.target.value) })}
-            >
+            <Dropdown value={settings.workStartHour} onChange={(v) => onChange({ workStartHour: Number(v) })}>
               {HOUR_OPTIONS.map((h) => (
-                <option key={h} value={h}>
+                <DropdownOption key={h} value={h}>
                   {h.toString().padStart(2, "0")}:00
-                </option>
+                </DropdownOption>
               ))}
-            </select>
+            </Dropdown>
           </label>
           <label className="field field-inline">
             <span>End</span>
-            <select
-              value={settings.workEndHour}
-              onChange={(e) => onChange({ workEndHour: Number(e.target.value) })}
-            >
+            <Dropdown value={settings.workEndHour} onChange={(v) => onChange({ workEndHour: Number(v) })}>
               {HOUR_OPTIONS.map((h) => (
-                <option key={h} value={h}>
+                <DropdownOption key={h} value={h}>
                   {h.toString().padStart(2, "0")}:00
-                </option>
+                </DropdownOption>
               ))}
-            </select>
+            </Dropdown>
           </label>
         </div>
         <label className="field field-checkbox">

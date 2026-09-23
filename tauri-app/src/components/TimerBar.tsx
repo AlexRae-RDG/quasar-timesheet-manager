@@ -3,6 +3,7 @@ import { createTimeEntry } from "../api/calendar";
 import { listActivities, type Activity } from "../api/activities";
 import { toISODate } from "../lib/date";
 import type { AppSettings } from "../api/settings";
+import { Dropdown, DropdownOption } from "./Dropdown";
 
 const ROUND_TO_MINUTES = 15;
 
@@ -171,21 +172,19 @@ export function TimerBar({ settings, activeTab }: { settings: AppSettings; activ
       {settings.showTimerBar && activeTab === "timesheet" && (
         <div className="timer-bar">
           <span className="timer-bar-label">Timer</span>
-          <select
+          <Dropdown
             className="timer-bar-select"
             value={selectedActivityId}
-            onChange={(e) => setSelectedActivityId(e.target.value ? Number(e.target.value) : "")}
+            onChange={(v) => setSelectedActivityId(v ? Number(v) : "")}
             disabled={running}
+            placeholder="Select an Activity…"
           >
-            <option value="" disabled>
-              Select an Activity…
-            </option>
             {activities.map((a) => (
-              <option key={a.id} value={a.id}>
+              <DropdownOption key={a.id} value={a.id}>
                 {a.name}
-              </option>
+              </DropdownOption>
             ))}
-          </select>
+          </Dropdown>
           {running ? (
             <button type="button" className="btn btn-danger" onClick={handleStop}>
               Stop Timer

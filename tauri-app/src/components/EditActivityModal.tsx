@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Activity, Project } from "../api/activities";
 import { reopenJiraIssue } from "../api/jira";
 import { jiraProjectNameForDepartment, projectKeyForDepartment, type AppSettings } from "../api/settings";
+import { Dropdown, DropdownOption } from "./Dropdown";
 
 export interface ActivityFormValues {
   name: string;
@@ -92,13 +93,13 @@ export function EditActivityModal({
 
         <label className="field">
           <span>Project</span>
-          <select value={projectId} onChange={(e) => setProjectId(Number(e.target.value))}>
+          <Dropdown value={projectId} onChange={(v) => setProjectId(Number(v))}>
             {projects.map((p) => (
-              <option key={p.id} value={p.id}>
+              <DropdownOption key={p.id} value={p.id}>
                 {p.name}
-              </option>
+              </DropdownOption>
             ))}
-          </select>
+          </Dropdown>
         </label>
 
         <label className="field">

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { TimeEntry } from "../api/calendar";
 import type { Activity } from "../api/activities";
+import { Dropdown, DropdownOption } from "./Dropdown";
 
 export function EditEntryModal({
   entry,
@@ -42,13 +43,13 @@ export function EditEntryModal({
 
         <label className="field">
           <span>Activity</span>
-          <select value={activityId} onChange={(e) => setActivityId(Number(e.target.value))}>
+          <Dropdown value={activityId} onChange={(v) => setActivityId(Number(v))}>
             {activities.map((a) => (
-              <option key={a.id} value={a.id}>
+              <DropdownOption key={a.id} value={a.id}>
                 {a.name}
-              </option>
+              </DropdownOption>
             ))}
-          </select>
+          </Dropdown>
         </label>
 
         <label className="field">

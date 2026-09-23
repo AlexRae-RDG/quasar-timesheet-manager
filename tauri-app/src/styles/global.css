@@ -16,20 +16,18 @@
   --danger-soft-active: #2a1a34;
   --field-bg: #10162c;
   --surface: #10162c;
-  /* A select's dropdown arrow is otherwise entirely up to the OS -- fine
-     on macOS (WebKit draws a small, minimal one), but WebView2 on Windows
-     draws a much blockier, dated-looking one instead. appearance: none
-     strips that everywhere a <select> is used in this app, replaced by
-     this chevron drawn the same way on both platforms instead (see
-     .field select/.qdm-row-project/.timer-bar-select below). A fixed
-     color, not a CSS variable -- currentColor and var() aren't resolved
-     inside an embedded data-URI SVG's own attributes, so this can't
-     follow each theme's real --text-secondary the way inline text does;
-     this particular gray was picked as a middle ground that stays legible
-     against both the lightest and darkest themes rather than matching any
-     one of them exactly. This only ever restyles the *closed* select box
-     -- the dropdown's own open list of options is still drawn natively by
-     the OS either way, which no amount of CSS can reach. */
+  /* A native <select>'s dropdown arrow was otherwise entirely up to the
+     OS -- fine on macOS (WebKit draws a small, minimal one), but WebView2
+     on Windows drew a much blockier, dated-looking one instead. Used by
+     Dropdown.tsx's own trigger button (.dropdown-trigger and friends --
+     .qdm-row-project/.timer-bar-select) now that every <select> in the
+     app has been replaced by it, drawing this chevron the same way on
+     both platforms. A fixed color, not a CSS variable -- currentColor and
+     var() aren't resolved inside an embedded data-URI SVG's own
+     attributes, so this can't follow each theme's real --text-secondary
+     the way inline text does; this particular gray was picked as a middle
+     ground that stays legible against both the lightest and darkest
+     themes rather than matching any one of them exactly. */
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%238B93A7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 }
 
@@ -65,6 +63,115 @@ input,
 textarea {
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Dropdown.tsx's own trigger button -- replaces every <select> in the app
+   (see Dropdown.tsx's own comment for why: WebView2's native <select>
+   popup looks dated and can't be themed at all, unlike this). Deliberately
+   placed early in the file, before any of the more specific classes a
+   caller can pass alongside it (.timer-bar-select, .qdm-row-project) --
+   those come later in source order and win on shared properties like
+   padding/border/font-size, the same relationship .field select and
+   .timer-bar-select/.qdm-row-project already had. A caller with no extra
+   class (the common case -- Activity/Project/Status selects inside a
+   .field) gets exactly this look, matching what .field select used to
+   give a bare <select> in the same spot. */
+.dropdown {
+  display: contents;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 32px 9px 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+}
+
+.dropdown-trigger:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.dropdown-trigger:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.dropdown-trigger-label,
+.dropdown-trigger-placeholder {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-trigger-placeholder {
+  color: var(--text-muted);
+}
+
+/* The popup list itself -- portaled straight into <body> (see
+   Dropdown.tsx), so this is deliberately NOT scoped under .dropdown --
+   it isn't a descendant of it in the DOM once open. */
+.dropdown-list {
+  position: fixed;
+  z-index: 400;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.dropdown-group-label {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.dropdown-group-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dropdown-option {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.dropdown-option-highlighted {
+  background: var(--accent-soft);
+}
+
+.dropdown-option-selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dropdown-option-disabled {
+  color: var(--text-muted);
+  cursor: default;
 }
 
 /* WebView2's default scrollbar is the stock wide, square, light-gray
@@ -178,11 +285,6 @@ textarea {
 
 .timer-bar-select:disabled {
   opacity: 0.7;
-}
-
-.timer-bar-select option {
-  background-color: var(--field-bg);
-  color: var(--text-primary);
 }
 
 .timer-bar-dot {
@@ -1017,8 +1119,7 @@ textarea {
 .field input[type="text"],
 .field input[type="password"],
 .field input[type="date"],
-.field textarea,
-.field select {
+.field textarea {
   background: var(--field-bg);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -1030,33 +1131,9 @@ textarea {
 .field input[type="text"]:focus,
 .field input[type="password"]:focus,
 .field input[type="date"]:focus,
-.field textarea:focus,
-.field select:focus {
+.field textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
-}
-
-.field select {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: var(--select-chevron);
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 14px 14px;
-  padding-right: 32px;
-}
-
-/* `color` inherits from the select into its <option>s, but
-   background-color doesn't -- so without this, a dark theme's light text
-   drops into the dropdown's native default (white) background and
-   disappears. This is what was still broken on Windows after the
-   color-scheme fix: WebView2 doesn't fall back to color-scheme once the
-   select already declares its own colors, it just leaves <option>
-   unstyled. Setting both explicitly on the option itself is the part
-   Chromium actually honors in a native select popup. */
-.field select option {
-  background-color: var(--field-bg);
-  color: var(--text-primary);
 }
 
 .field textarea {
@@ -1612,22 +1689,11 @@ textarea {
 :root[data-glass="true"] .field input[type="text"],
 :root[data-glass="true"] .field input[type="password"],
 :root[data-glass="true"] .field textarea,
-:root[data-glass="true"] .field select,
+:root[data-glass="true"] .dropdown-trigger,
 :root[data-glass="true"] .btn-secondary,
 :root[data-glass="true"] .segmented {
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
-}
-
-/* A native select popup can't blur, so a glass theme's translucent
-   FIELD_BG would just wash out against whatever the OS draws behind it --
-   give options a solid stand-in instead (--option-bg: a solid color
-   picked from that theme's own gradient, see theme/palettes.ts). */
-:root[data-glass="true"] .field select option,
-:root[data-glass="true"] .timer-bar-select option,
-:root[data-glass="true"] .qdm-row-project option {
-  background-color: var(--option-bg);
-  color: var(--text-primary);
 }
 
 /* A faint inset top edge reads as a light catching the glass's rim --
@@ -1661,9 +1727,14 @@ textarea {
    covering the shared base class instead of chasing the next one someone
    finds. The welcome tour's tooltip (.tour-tooltip, not a .modal-card,
    a separate overlay) gets the same treatment for the same reason -- it
-   deliberately floats right next to whatever it's spotlighting. */
+   deliberately floats right next to whatever it's spotlighting. Same for
+   Dropdown.tsx's own popup list (.dropdown-list) -- it's the replacement
+   for a native <select> popup, which never had a translucency problem in
+   the first place (the OS draws it solidly); this custom one shouldn't
+   introduce one. */
 :root[data-glass="true"] .modal-card,
-:root[data-glass="true"] .tour-tooltip {
+:root[data-glass="true"] .tour-tooltip,
+:root[data-glass="true"] .dropdown-list {
   background: var(--option-bg);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -1841,11 +1912,6 @@ textarea {
   background-position: right 6px center;
   background-size: 12px 12px;
   padding-right: 24px;
-}
-
-.qdm-row-project option {
-  background-color: var(--field-bg);
-  color: var(--text-primary);
 }
 
 .qdm-row-project-unsorted {
