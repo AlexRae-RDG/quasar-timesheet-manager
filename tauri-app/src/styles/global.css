@@ -160,6 +160,14 @@ textarea {
   cursor: pointer;
 }
 
+/* Plain :hover -- mouse movement never touches the highlight state below
+   (that one only follows ArrowUp/ArrowDown), so without this, moving the
+   mouse over the list gave no feedback at all about which row a click
+   would land on. */
+.dropdown-option:not(.dropdown-option-disabled):hover {
+  background: var(--accent-soft);
+}
+
 .dropdown-option-highlighted {
   background: var(--accent-soft);
 }
