@@ -60,8 +60,11 @@ jobs:
       # Builds via `tauri build` under the hood and, only when triggered by
       # a tag push (tagName/releaseName set below), creates or updates a
       # GitHub Release for that tag and uploads every bundle it produced
-      # (macOS: .dmg + .app.tar.gz; Windows: NSIS and MSI installers) --
-      # left as a draft so the Release only goes live once both platforms'
+      # (macOS: .dmg + .app.tar.gz; Windows: NSIS .exe installer only --
+      # tauri.conf.json's bundle.targets deliberately excludes msi, since
+      # nobody's ever actually installed from it and every colleague is on
+      # the .exe already; one less confusing file in the Release) -- left
+      # as a draft so the Release only goes live once both platforms'
       # jobs have finished and someone's clicked Publish, rather than
       # colleagues seeing a release with just one OS's build attached
       # while the other is still running.
@@ -102,7 +105,6 @@ jobs:
             tauri-app/src-tauri/target/**/release/bundle/dmg/*.dmg
             tauri-app/src-tauri/target/**/release/bundle/macos/*.app.tar.gz
             tauri-app/src-tauri/target/**/release/bundle/nsis/*.exe
-            tauri-app/src-tauri/target/**/release/bundle/msi/*.msi
           if-no-files-found: ignore
 
   # tauri-action names each bundle after productName+version+arch
