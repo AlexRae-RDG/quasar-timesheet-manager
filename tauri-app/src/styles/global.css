@@ -1236,20 +1236,15 @@ textarea {
   font-size: 14px;
 }
 
+/* Settings' custom theme colors (Background/Panel/Text/Accent) -- label
+   above a preview-row (see .color-picker-preview-row, shared with
+   EditProjectModal's Color field), wide enough for the hex input next to
+   the swatch not to feel cramped. No preset swatches or Confirm button
+   here unlike that one: these four are structural seeds, not a "tell
+   projects apart" palette a shared preset list would suit, and there's
+   nothing to confirm -- this is a live preview, not a modal field. */
 .field-color {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.field-color input[type="color"] {
-  width: 44px;
-  height: 28px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: none;
-  padding: 0;
+  min-width: 150px;
 }
 
 /* EditProjectModal's Color field -- a visually bounded panel (its own

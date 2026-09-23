@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   clearJiraToken,
@@ -28,6 +28,8 @@ import {
   resolveThemeId,
   SOLAR_FLARE_THEME_ID,
 } from "../theme/palettes";
+
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
 
 const HEADER_STYLES: Array<{ id: AppSettings["headerStyle"]; label: string }> = [
   { id: "standard", label: "Standard" },
@@ -84,6 +86,31 @@ export function SettingsScreen({
 
   const setThemeId = (id: string) => onChange({ themeMode: id });
   const setCustomSeeds = (seeds: AppSettings["customTheme"]) => onChange({ customTheme: seeds });
+
+  // Lets each hex field hold a mid-edit string (e.g. backspaced down to
+  // "#4C") without that half-typed value ever reaching customTheme (and so
+  // the live theme preview) -- only a syntactically complete hex commits.
+  // Resyncs whenever customTheme changes from outside a completed edit here
+  // (switching themes away and back, Reset to default) -- a change that
+  // originated from typing a valid hex below just resyncs to the same
+  // value, a no-op.
+  const [customColorDrafts, setCustomColorDrafts] = useState<AppSettings["customTheme"]>(settings.customTheme);
+  useEffect(() => {
+    setCustomColorDrafts(settings.customTheme);
+  }, [settings.customTheme]);
+
+  function handleCustomColorChange(key: "appBg" | "panelBg" | "textPrimary" | "accent", value: string) {
+    setCustomColorDrafts({ ...customColorDrafts, [key]: value });
+    if (HEX_COLOR_RE.test(value)) setCustomSeeds({ ...settings.customTheme, [key]: value.toUpperCase() });
+  }
+
+  function handleCustomColorBlur(key: "appBg" | "panelBg" | "textPrimary" | "accent") {
+    const draft = customColorDrafts[key];
+    setCustomColorDrafts({
+      ...customColorDrafts,
+      [key]: HEX_COLOR_RE.test(draft) ? draft.toUpperCase() : settings.customTheme[key],
+    });
+  }
 
   // Sends the mandatory form + guided tour back through as if this were a
   // Keeps Email auto-filled as firstname.lastname@raildeliverygroup.com
@@ -345,13 +372,24 @@ export function SettingsScreen({
             ).map(([key, label]) => (
               <label key={key} className="field field-color">
                 <span>{label}</span>
-                <input
-                  type="color"
-                  value={settings.customTheme[key]}
-                  onChange={(e) =>
-                    setCustomSeeds({ ...settings.customTheme, [key]: e.target.value.toUpperCase() })
-                  }
-                />
+                <div className="color-picker-preview-row">
+                  <input
+                    type="color"
+                    className="color-swatch-input"
+                    value={settings.customTheme[key]}
+                    onChange={(e) => handleCustomColorChange(key, e.target.value.toUpperCase())}
+                    aria-label={`Choose a custom ${label.toLowerCase()} color`}
+                  />
+                  <input
+                    type="text"
+                    className="color-hex-input"
+                    value={customColorDrafts[key]}
+                    onChange={(e) => handleCustomColorChange(key, e.target.value)}
+                    onBlur={() => handleCustomColorBlur(key)}
+                    spellCheck={false}
+                    maxLength={7}
+                  />
+                </div>
               </label>
             ))}
             <button
