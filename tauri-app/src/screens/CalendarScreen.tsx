@@ -666,6 +666,7 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
             onMove={handleMove}
             onDuplicate={handleDuplicate}
             onEditEntry={setEditingEntry}
+            onDelete={handleDelete}
             missingNotesEntryIds={missingNotesEntryIds}
           />
         </div>

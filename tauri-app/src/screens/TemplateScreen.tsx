@@ -369,16 +369,6 @@ export function TemplateScreen({ settings }: { settings: AppSettings }) {
           </button>
         </div>
         <div className="calendar-main">
-          {selectedEntryId != null && (
-            <div className="calendar-toolbar">
-              <div className="calendar-toolbar-actions">
-                <button className="btn btn-danger" onClick={() => handleDelete(selectedEntryId)}>
-                  Delete selected block
-                </button>
-              </div>
-            </div>
-          )}
-
           {error && <p className="status status-error">{error}</p>}
 
           <CalendarGrid
@@ -399,6 +389,7 @@ export function TemplateScreen({ settings }: { settings: AppSettings }) {
             onMove={handleMove}
             onDuplicate={handleDuplicate}
             onEditEntry={setEditingEntry}
+            onDelete={handleDelete}
           />
         </div>
       </div>

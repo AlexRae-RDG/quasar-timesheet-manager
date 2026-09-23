@@ -736,8 +736,37 @@ textarea {
 }
 
 .calendar-entry-selected {
+  /* Base width/style/offset only -- the actual color is set inline per
+     block (see CalendarGrid.tsx's activeNowAccent reuse), since a plain
+     white ring drawn on a white/light-colored block was invisible. */
   outline: 2px solid white;
   outline-offset: -2px;
+}
+
+/* Quick-delete for the selected block -- a fixed dark chip + white icon
+   regardless of the block's own color, same reasoning as the selection
+   outline itself: this can't rely on currentColor/contrast computation
+   for something this small and still read clearly on every block color. */
+.calendar-entry-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  cursor: pointer;
+}
+
+.calendar-entry-delete:hover {
+  background: var(--danger);
 }
 
 .calendar-entry-preview {

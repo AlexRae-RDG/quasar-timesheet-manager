@@ -31,6 +31,7 @@ interface DragState {
   color?: string; // move/resize only: the dragged entry's own color, for its preview
   label?: string; // move/resize only: the dragged entry's activity name
   anchorMin: number; // create only: the slot where the drag began
+  rawAnchorMin?: number; // create only: unsnapped cursor position at grab, for centering a plain click's result
   startMin: number;
   endMin: number;
   durationMin: number; // move only: preserved duration
@@ -64,6 +65,7 @@ export function CalendarGrid({
   onMove,
   onDuplicate,
   onEditEntry,
+  onDelete,
   missingNotesEntryIds,
 }: {
   days: Date[];
@@ -96,6 +98,11 @@ export function CalendarGrid({
     options?: { openEdit?: boolean; date?: string; startTime?: string; endTime?: string },
   ) => void;
   onEditEntry: (entry: TimeEntry) => void;
+  /** Fired by the small bin icon shown in a selected block's corner --
+   * both screens already have their own handleDelete wired to the
+   * Delete/Backspace shortcut, this just gives it a second, no-keyboard
+   * way in. */
+  onDelete: (id: number) => void;
   /** Entries flagged as missing Notes by the last Upload to Jira attempt --
    * outlined in red until each one's actually fixed. Omitted on the
    * Template screen, which has no Jira upload concept. */
@@ -236,6 +243,32 @@ export function CalendarGrid({
     [clampMinutes, SLOT_HEIGHT_PX],
   );
 
+  const yToRawMinutes = useCallback(
+    (y: number) => ((y - GRID_TOP_PAD_PX) / SLOT_HEIGHT_PX) * SLOT_MINUTES,
+    [SLOT_HEIGHT_PX],
+  );
+
+  // Where a click-to-create (or its hover preview) should actually start:
+  // the cursor marks the *middle* of the new block, not its top edge --
+  // without this, a block armed with e.g. a 30-minute default duration
+  // would always start exactly at the cursor and extend 30 minutes below
+  // it, so the cursor only ever lined up with the block's top, not
+  // visually "where" you clicked. Takes raw (unsnapped) minutes rather
+  // than a y coordinate so the same centering math can run either live off
+  // the cursor (the hover preview) or off a stashed rawAnchorMin from
+  // grab-time (the eventual click result) without converting back and
+  // forth between pixels and minutes.
+  const centerMinutes = useCallback(
+    (rawMin: number, durationMin: number) =>
+      clampMinutes(Math.round((rawMin - durationMin / 2) / SLOT_MINUTES) * SLOT_MINUTES),
+    [clampMinutes],
+  );
+
+  const yToCenteredMinutes = useCallback(
+    (y: number, durationMin: number) => centerMinutes(yToRawMinutes(y), durationMin),
+    [yToRawMinutes, centerMinutes],
+  );
+
   const xToDayIndex = useCallback(
     (x: number) => {
       const idx = Math.floor(x / DAY_WIDTH_PX);
@@ -266,6 +299,7 @@ export function CalendarGrid({
       mode: "create",
       dayIndex,
       anchorMin: anchor,
+      rawAnchorMin: yToRawMinutes(y),
       startMin: anchor,
       endMin: clampMinutes(anchor + SLOT_MINUTES),
       durationMin: SLOT_MINUTES,
@@ -392,8 +426,9 @@ export function CalendarGrid({
           // A plain click (no drag): fall back to the armed Activity's own
           // default duration, or the generic default when nothing's armed
           // (armedDefaultDurationMinutes already carries that fallback --
-          // see CalendarScreen).
-          startMin = finalDrag.anchorMin;
+          // see CalendarScreen), centered on the click point -- same as the
+          // hover preview shown right up until this click landed.
+          startMin = centerMinutes(finalDrag.rawAnchorMin ?? finalDrag.anchorMin, armedDefaultDurationMinutes);
           endMin = clampMinutes(Math.max(startMin + SLOT_MINUTES, startMin + armedDefaultDurationMinutes));
         }
         const startTime = minutesToTime(startMin + startHour * 60);
@@ -481,7 +516,7 @@ export function CalendarGrid({
             return;
           }
           const dayIndex = xToDayIndex(point.x);
-          const startMin = yToMinutes(point.y);
+          const startMin = yToCenteredMinutes(point.y, armedDefaultDurationMinutes);
           setHover((prev) =>
             prev && prev.dayIndex === dayIndex && prev.startMin === startMin ? prev : { dayIndex, startMin },
           );
@@ -538,13 +573,14 @@ export function CalendarGrid({
                   const isActiveNow =
                     iso === todayIso && showNowLine && nowMinutesSinceStart >= startMin && nowMinutesSinceStart < endMin;
                   const isMissingNotes = !!missingNotesEntryIds?.has(entry.id) && !entry.notes.trim();
+                  const isSelected = selectedEntryId === entry.id;
 
                   return (
                     <div
                       key={entry.id}
                       className={
                         "calendar-entry" +
-                        (selectedEntryId === entry.id ? " calendar-entry-selected" : "") +
+                        (isSelected ? " calendar-entry-selected" : "") +
                         (isActiveNow ? " calendar-entry-active" : "") +
                         (isMissingNotes ? " calendar-entry-missing-notes" : "")
                       }
@@ -563,12 +599,19 @@ export function CalendarGrid({
                         background: entry.color,
                         color: blockTextColor(entry.color),
                         // Missing-notes takes visual priority over the
-                        // active-now halo when a block is both -- its color
-                        // is fixed (the theme's danger red), not computed
+                        // active-now halo, which in turn wins over a plain
+                        // selection outline, when a block is more than one
+                        // of these at once -- missing-notes' color is
+                        // fixed (the theme's danger red), not computed
                         // per-block like activeNowAccent, so it's set via
                         // the CSS class below instead of inline here; an
-                        // inline outlineColor from the active-now branch
-                        // would otherwise win over that class regardless.
+                        // inline outlineColor from either branch here would
+                        // otherwise win over that class regardless. The
+                        // selected outline reuses activeNowAccent too --
+                        // same "black or white, whichever actually shows
+                        // up against this specific block's own color"
+                        // logic, since a plain white ring drawn on a
+                        // white/light block used to be invisible.
                         ...(isMissingNotes
                           ? {}
                           : isActiveNow
@@ -576,7 +619,9 @@ export function CalendarGrid({
                                 outlineColor: activeNowAccent(entry.color),
                                 boxShadow: `0 0 8px 1px ${activeNowAccent(entry.color)}, 0 2px 8px rgba(0, 0, 0, 0.35)`,
                               }
-                            : {}),
+                            : isSelected
+                              ? { outlineColor: activeNowAccent(entry.color) }
+                              : {}),
                       }}
                       onPointerDown={(e) => {
                         e.stopPropagation();
@@ -609,6 +654,20 @@ export function CalendarGrid({
                           beginResize(entry, dayIndex, "top", e.clientX, e.clientY);
                         }}
                       />
+                      {isSelected && (
+                        <button
+                          type="button"
+                          className="calendar-entry-delete"
+                          title="Delete this block"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(entry.id);
+                          }}
+                        >
+                          <TrashGlyph />
+                        </button>
+                      )}
                       <div className="calendar-entry-label">{entry.activityName}</div>
                       <div className="calendar-entry-time">
                         {entry.startTime}–{entry.endTime}
@@ -735,6 +794,27 @@ function ZoomGlyph({ mode }: { mode: "in" | "out" }) {
       {mode === "in" && (
         <line x1="10" y1="7" x2="10" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       )}
+    </svg>
+  );
+}
+
+/** Plain trash-can outline, same inline-SVG/currentColor approach as
+ * ZoomGlyph -- shown on a selected block's own quick-delete button rather
+ * than a toolbar one, so deleting it doesn't depend on a toolbar row that
+ * appears/disappears around the selection state and resizes the grid
+ * underneath it (see TemplateScreen, which used to have exactly that). */
+function TrashGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+      <line x1="5" y1="7" x2="19" y2="7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-13"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
