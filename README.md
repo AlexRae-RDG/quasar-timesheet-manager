@@ -515,13 +515,25 @@ git push origin v1.10.0
 ```
 
 Check the **Actions** tab for the two build jobs (macOS builds a
-universal binary covering both Intel and Apple Silicon in one). Once both
-finish, **Releases** has a new **draft** release with the built installers
-attached — a macOS `.dmg` and Windows `.exe` (NSIS) / `.msi`, a `latest.json`
-manifest, plus a couple of secondary formats alongside them. It's left as
-a draft deliberately (rather than going live the moment the first of the
-two platform jobs finishes) so you can check both are attached before
-clicking **Publish** yourself. Tag names must match `v1.2.3` — there's no
+universal binary covering both Intel and Apple Silicon in one), then a
+third (`finalize-release-assets`) that only runs once both have finished.
+That job renames the installers to something a non-technical colleague can
+actually pick from at a glance — `QUASAR-Timesheet-Manager-for-Mac-1.10.0.dmg`,
+`-for-Windows-1.10.0.exe` (the one to recommend), `-for-Windows-1.10.0-MSI.msi`
+(an alternate installer format, for anyone whose machine needs it) — rather
+than the raw `QUASAR.Timesheet.Manager_1.10.0_x64-setup.exe`-style names
+`tauri-action` produces, which don't say which OS they're for. It also
+patches `latest.json`'s embedded download URLs to match (the in-app updater
+would 404 fetching the old name otherwise) and drops the redundant `.sig`
+files (each one's signature is already embedded directly in `latest.json`,
+which is all `src/api/updater.ts` actually reads — a `.sig` sitting in the
+Release just looks like another confusing download option). Once all three
+jobs finish, **Releases** has a new **draft** release with those renamed
+installers attached, plus `latest.json` and a Mac-only `.app.tar.gz`
+(`-Mac-AutoUpdate-1.10.0.app.tar.gz` — for the in-app updater's own use,
+not a manual download). It's left as a draft deliberately (rather than
+going live the moment the first of the two platform jobs finishes) so you
+can check both are attached before clicking **Publish** yourself. Tag names must match `v1.2.3` — there's no
 enforced versioning scheme beyond that. You can also trigger a build
 manually from **Actions → Build and release → Run workflow** without a
 tag (uploads as workflow artifacts instead of a Release — useful for

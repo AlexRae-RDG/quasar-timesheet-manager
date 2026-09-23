@@ -105,27 +105,73 @@ jobs:
             tauri-app/src-tauri/target/**/release/bundle/msi/*.msi
           if-no-files-found: ignore
 
-  # includeUpdaterJson's .sig files are only there for the updater's own
-  # benefit, and even then only in theory -- the signature each one holds
-  # is also embedded directly in latest.json's per-platform "signature"
-  # field, which is what src/api/updater.ts actually reads, so the updater
-  # never fetches these as separate files. Left in the Release they just
-  # sit in the asset list looking like another download option, confusing
-  # a colleague trying to pick the one installer for their OS. Runs after
-  # both matrix legs (needs: build) so it only deletes once both have
-  # finished uploading their own .sig files to the shared draft Release.
-  cleanup-sig-assets:
+  # tauri-action names each bundle after productName+version+arch
+  # ("QUASAR.Timesheet.Manager_2.0.8_x64-setup.exe"), which doesn't tell a
+  # non-technical colleague which file is theirs -- someone who doesn't
+  # know what a ".dmg" or ".exe" even is has no way to guess "that one's
+  # for my Mac". Runs after both matrix legs (needs: build) so it only
+  # touches the shared draft Release once both platforms have finished
+  # uploading their own assets to it. Also drops the .sig files here (see
+  # below) -- same job since both steps mutate the same Release's asset
+  # list and shouldn't race each other.
+  finalize-release-assets:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Remove .sig files from the release
+      - name: Rename installers for clarity, drop redundant .sig files
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" --json assets \
-            --jq '.assets[].name' | grep '\.sig$' | while read -r name; do
-              gh release delete-asset "${{ github.ref_name }}" "$name" --repo "${{ github.repository }}" --yes
-            done
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+
+          # gh release view's/gh api releases/tags's own asset listing can lag
+          # a few seconds behind a just-completed rename/delete (observed
+          # directly while testing this against a real draft release before
+          # trusting it here) -- doesn't affect correctness below, since
+          # every asset is looked up by its REST numeric id (releases/tags,
+          # not gh release view's GraphQL id, which the assets PATCH/DELETE
+          # endpoints below don't accept) captured ONCE up front, but it does
+          # mean a listing taken right after this job finishes may briefly
+          # still show old names.
+          MAP_FILE=$(mktemp)
+
+          while IFS=$'\t' read -r id name; do
+            case "$name" in
+              *.sig)
+                echo "Deleting $name (redundant -- signature is embedded in latest.json, see src/api/updater.ts)"
+                gh release delete-asset "$TAG" "$name" --repo "$REPO" --yes || echo "  (already gone)"
+                continue
+                ;;
+              *.app.tar.gz) newname="QUASAR-Timesheet-Manager-Mac-AutoUpdate-${VERSION}.app.tar.gz" ;;
+              *.dmg)        newname="QUASAR-Timesheet-Manager-for-Mac-${VERSION}.dmg" ;;
+              *-setup.exe)  newname="QUASAR-Timesheet-Manager-for-Windows-${VERSION}.exe" ;;
+              *.msi)        newname="QUASAR-Timesheet-Manager-for-Windows-${VERSION}-MSI.msi" ;;
+              *) continue ;;
+            esac
+            if [ "$name" = "$newname" ]; then
+              continue
+            fi
+            echo "Renaming $name -> $newname"
+            gh api -X PATCH "repos/$REPO/releases/assets/$id" -f name="$newname" >/dev/null
+            printf '%s\t%s\n' "$name" "$newname" >>"$MAP_FILE"
+          done < <(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | [.id, .name] | @tsv')
+
+          # latest.json (read by src/api/updater.ts) embeds each platform's
+          # download URL by the ORIGINAL filename -- rewrite those to match,
+          # or the in-app updater 404s fetching a file that's since been
+          # renamed out from under it.
+          if [ -s "$MAP_FILE" ]; then
+            echo "Patching latest.json's embedded URLs to match the renamed files"
+            gh release download "$TAG" --repo "$REPO" -p latest.json -O /tmp/latest.json --clobber
+            while IFS=$'\t' read -r old new; do
+              old_esc=$(printf '%s' "$old" | sed -e 's/[.[\*^$\/]/\\&/g')
+              sed -i "s/\/${old_esc}\"/\/${new}\"/g" /tmp/latest.json
+            done <"$MAP_FILE"
+            gh release upload "$TAG" /tmp/latest.json --repo "$REPO" --clobber
+          fi
