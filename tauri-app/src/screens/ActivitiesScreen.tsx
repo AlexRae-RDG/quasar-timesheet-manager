@@ -26,7 +26,21 @@ function isArchivedProject(projects: Project[], projectId: number | null): boole
 type ProjectModalState = { mode: "new" } | { mode: "edit"; project: Project } | null;
 type ActivityModalState = { mode: "new"; projectId: number | null } | { mode: "edit"; activity: Activity } | null;
 
-export function ActivitiesScreen({ settings }: { settings: AppSettings }) {
+export function ActivitiesScreen({
+  settings,
+  tourOpenImportModal,
+}: {
+  settings: AppSettings;
+  /** True while the welcome tour is on one of its two Import QDMs steps
+   * (see OnboardingTour's openModal) -- forces the modal open so there's
+   * something real to spotlight, and closes it again on the transition
+   * back to false (a Back click that lands on an earlier, non-modal step
+   * without the tab itself changing -- a tab change unmounts this screen
+   * and the modal along with it regardless). Never fights a real user's
+   * own open/close: outside the tour this prop is always false and never
+   * changes, so the effect below only ever runs its no-op initial pass. */
+  tourOpenImportModal?: boolean;
+}) {
   const teamKey = projectKeyForDepartment(settings.department);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -42,6 +56,10 @@ export function ActivitiesScreen({ settings }: { settings: AppSettings }) {
   };
 
   useEffect(refresh, []);
+
+  useEffect(() => {
+    setImportModalOpen(!!tourOpenImportModal);
+  }, [tourOpenImportModal]);
 
   async function handleSaveProject(name: string, color: string) {
     try {

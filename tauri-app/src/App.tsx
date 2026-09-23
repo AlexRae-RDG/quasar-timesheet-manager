@@ -35,6 +35,11 @@ function App() {
   const [activeTab, setActiveTab] = useState("timesheet");
   const [onboardingStage, setOnboardingStage] = useState<OnboardingStage | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  // Set by OnboardingTour's onRequestModal while a step names one (see
+  // TourStep's openModal) -- currently only "import-qdm", for the two
+  // steps that walk through Import QDMs itself. Read by ActivitiesScreen's
+  // tourOpenImportModal prop below.
+  const [tourModalRequest, setTourModalRequest] = useState<string | null>(null);
 
   useEffect(() => {
     getSettings()
@@ -111,14 +116,21 @@ function App() {
             settings={settings}
           >
             {activeTab === "timesheet" && <CalendarScreen settings={settings} />}
-            {activeTab === "activities" && <ActivitiesScreen settings={settings} />}
+            {activeTab === "activities" && (
+              <ActivitiesScreen settings={settings} tourOpenImportModal={tourModalRequest === "import-qdm"} />
+            )}
             {activeTab === "template" && <TemplateScreen settings={settings} />}
             {activeTab === "tasks" && <TasksScreen />}
             {activeTab === "summary" && <SummaryScreen settings={settings} />}
             {activeTab === "settings" && <SettingsScreen settings={settings} onChange={updateSettings} />}
           </AppShell>
           {onboardingStage === "tour" && (
-            <OnboardingTour activeTab={activeTab} onSelectTab={setActiveTab} onFinish={finishTour} />
+            <OnboardingTour
+              activeTab={activeTab}
+              onSelectTab={setActiveTab}
+              onRequestModal={setTourModalRequest}
+              onFinish={finishTour}
+            />
           )}
           {pendingUpdate && (
             <UpdateAvailableModal update={pendingUpdate} onDismiss={() => setPendingUpdate(null)} />

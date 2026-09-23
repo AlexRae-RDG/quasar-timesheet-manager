@@ -9,6 +9,13 @@ interface TourStep {
   selector?: string;
   title: string;
   body: string;
+  /** Names a modal ActivitiesScreen should force open for this step (see
+   * its own tourOpenImportModal prop) -- currently only "import-qdm", for
+   * the two steps that walk through the Import QDMs modal itself rather
+   * than just the button that opens it. Consecutive steps sharing the
+   * same value keep the modal open across the transition between them
+   * instead of closing and reopening it. */
+  openModal?: string;
 }
 
 // One entry per major feature -- a couple of screens get a second step for
@@ -70,6 +77,20 @@ const TOUR_STEPS: TourStep[] = [
     selector: '[data-tour="activities-import"]',
     title: "Import from Jira",
     body: "Pull in your assigned Jira sub-tasks automatically, then sort each one into the right Project -- already guessed for you where possible.",
+  },
+  {
+    tab: "activities",
+    openModal: "import-qdm",
+    selector: '[data-tour="qdm-select-controls"]',
+    title: "Selecting What to Import",
+    body: "Every match is checked by default. Uncheck any row you'd rather leave for next time, or use Select All / Deselect All to handle the whole list at once.",
+  },
+  {
+    tab: "activities",
+    openModal: "import-qdm",
+    selector: '[data-tour="qdm-row-project"]',
+    title: "Choosing a Project",
+    body: "Each row's already guessed a Project where it could -- open this dropdown on any row to change it, or pick \"+ New Project…\" to create one without leaving this screen. Import Selected sorts everything checked into the Project shown here.",
   },
   {
     tab: "template",
@@ -166,10 +187,15 @@ function placeTooltip(cutout: { top: number; left: number; width: number; height
 export function OnboardingTour({
   activeTab,
   onSelectTab,
+  onRequestModal,
   onFinish,
 }: {
   activeTab: string;
   onSelectTab: (id: string) => void;
+  /** Called with step.openModal on entering a step that names one, and
+   * with null on leaving it (including on unmount) -- see ActivitiesScreen's
+   * tourOpenImportModal prop, the only consumer so far. */
+  onRequestModal: (id: string | null) => void;
   onFinish: () => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
@@ -190,24 +216,45 @@ export function OnboardingTour({
     if (step.tab !== activeTab) onSelectTab(step.tab);
   }, [step.tab, activeTab, onSelectTab]);
 
+  useEffect(() => {
+    onRequestModal(step.openModal ?? null);
+    // Also clears it on unmount (tour skipped/finished) -- onFinish's own
+    // stage change already unmounts everything that would show the modal,
+    // but this keeps the request from lingering in App.tsx's state
+    // regardless.
+    return () => onRequestModal(null);
+  }, [step.openModal, onRequestModal]);
+
   useLayoutEffect(() => {
     if (step.tab !== activeTab || !step.selector) {
       setRect(null);
       return;
     }
+    let attempts = 0;
+    let timer: number | undefined;
     function measure() {
       const el = step.selector ? document.querySelector(step.selector) : null;
-      setRect(el ? el.getBoundingClientRect() : null);
+      if (el) {
+        setRect(el.getBoundingClientRect());
+        return;
+      }
+      // A tab switch renders synchronously, but a screen's own data fetch
+      // (or, for a step that opens a modal, that modal's own Jira search)
+      // can take real time to settle -- keep trying for a few seconds,
+      // falling back to a plain dim overlay (rect stays null) if the
+      // target genuinely never shows up.
+      if (attempts < 20) {
+        attempts++;
+        timer = window.setTimeout(measure, 250);
+      } else {
+        setRect(null);
+      }
     }
     measure();
-    // A tab switch renders synchronously, but a screen's own data fetch can
-    // still settle layout a frame later -- this catches that without
-    // needing a fixed delay.
-    const raf = requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
     return () => {
-      cancelAnimationFrame(raf);
       window.removeEventListener("resize", measure);
+      if (timer != null) clearTimeout(timer);
     };
   }, [step, activeTab]);
 

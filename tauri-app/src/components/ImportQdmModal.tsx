@@ -404,7 +404,7 @@ export function ImportQdmModal({
                     <>
                       {visibleQdms.length > 0 && (
                         <div className="qdm-column-headers">
-                          <span className="qdm-select-controls">
+                          <span className="qdm-select-controls" data-tour="qdm-select-controls">
                             {teamKey}
                             <button type="button" className="link-button" onClick={selectAll}>
                               Select All
@@ -612,6 +612,7 @@ function QdmRow({
         value={projectId ?? ""}
         onChange={onSelect}
         placeholder="Choose a Project…"
+        data-tour="qdm-row-project"
       >
         {projects.map((p) => (
           <DropdownOption key={p.id} value={p.id}>
