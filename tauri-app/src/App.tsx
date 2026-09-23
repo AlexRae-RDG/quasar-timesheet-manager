@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { completeOnboarding, getSettings, type AppSettings } from "./api/settings";
+import { checkForUpdate, type Update } from "./api/updater";
 import { AppShell, type Tab } from "./components/AppShell";
 import { OnboardingForm } from "./components/OnboardingForm";
 import { OnboardingTour } from "./components/OnboardingTour";
+import { UpdateAvailableModal } from "./components/UpdateAvailableModal";
 import { ActivitiesScreen } from "./screens/ActivitiesScreen";
 import { CalendarScreen } from "./screens/CalendarScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -32,6 +34,7 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("timesheet");
   const [onboardingStage, setOnboardingStage] = useState<OnboardingStage | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
 
   useEffect(() => {
     getSettings()
@@ -41,6 +44,34 @@ function App() {
       })
       .catch((e) => setLoadError(String(e)));
   }, []);
+
+  // A few seconds after launch, not immediately -- same pacing the Python
+  // app's own check used, so a slow/missing connection never delays
+  // startup or competes with the initial data fetches above. Only once
+  // onboarding is actually done: interrupting a brand-new install's
+  // mandatory form/tour with an update popup would be a bad first
+  // impression. Silent failure (offline, no releases published yet, or
+  // running outside a real Tauri window) mirrors the Python app's own
+  // "no internet right now" handling -- nothing shown, no error, just
+  // tries again next launch.
+  useEffect(() => {
+    if (onboardingStage !== "done") return;
+    const timer = setTimeout(() => {
+      checkForUpdate()
+        .then((update) => {
+          if (!update) return;
+          let declined: string | null = null;
+          try {
+            declined = localStorage.getItem("quasar-declined-update-version");
+          } catch {
+            // Private window / blocked storage -- treat as nothing declined.
+          }
+          if (declined !== update.version) setPendingUpdate(update);
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [onboardingStage]);
 
   if (loadError) {
     return <div className="app-shell error-banner">Couldn't load settings: {loadError}</div>;
@@ -88,6 +119,9 @@ function App() {
           </AppShell>
           {onboardingStage === "tour" && (
             <OnboardingTour activeTab={activeTab} onSelectTab={setActiveTab} onFinish={finishTour} />
+          )}
+          {pendingUpdate && (
+            <UpdateAvailableModal update={pendingUpdate} onDismiss={() => setPendingUpdate(null)} />
           )}
         </>
       )}

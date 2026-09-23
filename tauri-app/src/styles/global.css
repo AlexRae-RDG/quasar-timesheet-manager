@@ -1950,3 +1950,9 @@ textarea {
   flex-shrink: 0;
   width: 100%;
 }
+
+.update-notes {
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+}

@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "core:window:allow-destroy"
+    "core:window:allow-destroy",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

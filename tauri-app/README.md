@@ -29,6 +29,12 @@ export/import, nothing to migrate by hand.
 
 ## What's new (vs. the Python app)
 
+- **Automatic updates**: a few seconds after launch, the app checks
+  GitHub's latest Release for a newer, cryptographically signed build and
+  offers a one-click update (downloads, installs, restarts into it) --
+  see "Checking for updates" below. Declining remembers that version, same
+  as the Python app's own update popup did, so it won't ask again until
+  something newer ships; **Settings → Updates** has a manual check too.
 - **Tasks**: a personal kanban board (To Do / In Progress / Done),
   separate from Activities and the Timesheet — no Jira link, just a
   straightforward to-do list. Drag a card between columns or within one to
@@ -183,6 +189,22 @@ the worklog comment.
 **Theme** — Settings has Light, Dark, Glassy (translucent/blurred), and
 Custom (your own color pickers), applied instantly and remembered.
 
+**Checking for updates** — `src/api/updater.ts` asks GitHub's latest
+Release for a `latest.json` manifest (published alongside every release --
+see `.github/workflows/release.yml`) a few seconds after launch, comparing
+its version against this build's own. If it's newer, a popup offers to
+update; **Later** remembers that version (in this browser profile's local
+storage, not the database) so it won't ask again until something newer
+than *that* ships, and **Settings → Updates** has a manual check any time,
+which always shows the result regardless of what was previously declined.
+Choosing to update downloads the matching signed build for whatever OS
+it's running on, installs it, and restarts straight into it -- no zip to
+unpack or shortcut to fix by hand. This only works once a real Release has
+been published (a draft won't do -- see "Cutting a release" in the root
+README) and needs a real network connection to GitHub; either failing is
+treated the same as "no update right now," silently, same as the Python
+app's own update check did.
+
 **Keyboard shortcuts** (Settings has the full reference list)
 
 | Keys | Action |
@@ -279,7 +301,19 @@ npm run tauri build # full native app bundle for the current OS
 
 There is no cross-compiling — a native bundle has to be built on the same
 kind of machine it's meant to run on, same as the Python app's PyInstaller
-packaging. See "Status" above for why there's no CI doing this yet.
+packaging. `.github/workflows/release.yml` does this for both macOS and
+Windows on a version tag -- see the root README's "Cutting a release."
+
+`tauri.conf.json`'s `bundle.createUpdaterArtifacts: true` means
+`npm run tauri build` now needs a signing key to actually produce a
+bundle, not just to publish one -- without `TAURI_SIGNING_PRIVATE_KEY` (and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, if the key has one) set in the
+environment, the build fails outright rather than silently skipping
+update-artifact signing. CI has the real key as a repo secret; for a
+one-off local build, either export that same key material locally or
+temporarily flip `createUpdaterArtifacts` to `false` -- a build made that
+way just won't carry a valid update payload (fine for local testing, not
+for anything handed to a colleague).
 
 ### Tests
 

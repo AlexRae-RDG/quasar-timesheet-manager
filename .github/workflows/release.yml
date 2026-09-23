@@ -65,10 +65,22 @@ jobs:
       # jobs have finished and someone's clicked Publish, rather than
       # colleagues seeing a release with just one OS's build attached
       # while the other is still running.
+      #
+      # TAURI_SIGNING_PRIVATE_KEY signs the update artifacts with the
+      # keypair whose public half lives in tauri.conf.json's
+      # plugins.updater.pubkey -- the in-app updater (src/api/updater.ts)
+      # refuses anything that doesn't verify against that key, so losing
+      # this secret means generating a new keypair and re-pointing
+      # tauri.conf.json at it (see "Cutting a release" in the README).
+      # includeUpdaterJson makes this step also generate and attach
+      # latest.json, aggregating both platforms' signed artifacts into the
+      # one manifest tauri.conf.json's updater endpoint polls.
       - name: Build and (on a tag) release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: tauri-app
           args: ${{ matrix.args }}
@@ -76,6 +88,7 @@ jobs:
           releaseName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: true
 
       # Manual/test runs (no tag) don't get a Release to attach to -- upload
       # the same bundles as workflow artifacts instead, so the build can

@@ -13,7 +13,9 @@ import {
   type AppSettings,
 } from "../api/settings";
 import { ThemeSwatch } from "../components/ThemeSwatch";
+import { UpdateAvailableModal } from "../components/UpdateAvailableModal";
 import { useStickyHeader } from "../lib/useStickyHeader";
+import { checkForUpdate, type Update } from "../api/updater";
 import { APP_VERSION } from "../version";
 import {
   CUSTOM_THEME_ID,
@@ -54,6 +56,12 @@ type JiraVerifyState =
   | { kind: "verifying" }
   | { kind: "success"; displayName: string }
   | { kind: "error"; message: string };
+type UpdateCheckState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "upToDate" }
+  | { kind: "available"; update: Update }
+  | { kind: "error"; message: string };
 
 export function SettingsScreen({
   settings,
@@ -63,6 +71,7 @@ export function SettingsScreen({
   onChange: (patch: Partial<AppSettings>) => void;
 }) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({ kind: "idle" });
   const [jiraTokenInput, setJiraTokenInput] = useState("");
   const [jiraVerify, setJiraVerify] = useState<JiraVerifyState>({ kind: "idle" });
   const teamKey = projectKeyForDepartment(settings.department);
@@ -150,6 +159,16 @@ export function SettingsScreen({
   async function handleReplayTour() {
     await resetOnboarding();
     window.location.reload();
+  }
+
+  async function handleCheckForUpdates() {
+    setUpdateCheck({ kind: "checking" });
+    try {
+      const update = await checkForUpdate();
+      setUpdateCheck(update ? { kind: "available", update } : { kind: "upToDate" });
+    } catch (e) {
+      setUpdateCheck({ kind: "error", message: String(e) });
+    }
   }
 
   return (
@@ -419,6 +438,29 @@ export function SettingsScreen({
           </button>
         </div>
       </section>
+
+      <section className="card">
+        <h2>Updates</h2>
+        <p className="muted">Currently on v{APP_VERSION}. Checked automatically a few seconds after launch too.</p>
+        <div className="row">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleCheckForUpdates}
+            disabled={updateCheck.kind === "checking"}
+          >
+            {updateCheck.kind === "checking" ? "Checking…" : "Check for Updates"}
+          </button>
+          {updateCheck.kind === "upToDate" && <span className="status status-success">You're up to date.</span>}
+          {updateCheck.kind === "error" && (
+            <span className="status status-error">Couldn't check for updates -- {updateCheck.message}</span>
+          )}
+        </div>
+      </section>
+
+      {updateCheck.kind === "available" && (
+        <UpdateAvailableModal update={updateCheck.update} onDismiss={() => setUpdateCheck({ kind: "idle" })} />
+      )}
 
       {saveState === "error" && (
         <p className="status status-error">Couldn't save settings -- see the console for details.</p>

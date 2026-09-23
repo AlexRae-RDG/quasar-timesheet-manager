@@ -517,15 +517,26 @@ git push origin v1.10.0
 Check the **Actions** tab for the two build jobs (macOS builds a
 universal binary covering both Intel and Apple Silicon in one). Once both
 finish, **Releases** has a new **draft** release with the built installers
-attached — a macOS `.dmg` and Windows `.exe` (NSIS) / `.msi`, plus a couple
-of secondary formats alongside them. It's left as a draft deliberately
-(rather than going live the moment the first of the two platform jobs
-finishes) so you can check both are attached before clicking **Publish**
-yourself. Tag names must match `v1.2.3` — there's no enforced versioning
-scheme beyond that. You can also trigger a build manually from
-**Actions → Build and release → Run workflow** without a tag (uploads as
-workflow artifacts instead of a Release — useful for testing the build
-itself).
+attached — a macOS `.dmg` and Windows `.exe` (NSIS) / `.msi`, a `latest.json`
+manifest, plus a couple of secondary formats alongside them. It's left as
+a draft deliberately (rather than going live the moment the first of the
+two platform jobs finishes) so you can check both are attached before
+clicking **Publish** yourself. Tag names must match `v1.2.3` — there's no
+enforced versioning scheme beyond that. You can also trigger a build
+manually from **Actions → Build and release → Run workflow** without a
+tag (uploads as workflow artifacts instead of a Release — useful for
+testing the build itself).
+
+The build/signing step needs the `TAURI_SIGNING_PRIVATE_KEY` repo secret
+(**Settings → Secrets and variables → Actions** on GitHub) — this signs
+`latest.json` and the update artifacts it points at, which is what lets
+the app's own in-app updater (see "Checking for updates" below) trust
+what it downloads. It was generated once with `tauri signer generate` and
+only the private half was ever saved anywhere (as that secret); the
+public half lives in `tauri-app/src-tauri/tauri.conf.json`'s
+`plugins.updater.pubkey`. Losing the secret means generating a fresh
+keypair and updating both places to match — there's no way to recover the
+old one.
 
 ### Checking for updates on launch
 
@@ -538,13 +549,16 @@ something newer than *that* ships, and "Cancel" just asks again next
 launch.
 
 This whole mechanism (`update_check.py` and `auto_update.py` below) is
-Python-app-specific and hasn't been ported to the Tauri rewrite, which has
-no self-update check of its own yet. It also downloads by matching the
-exact `QUASAR-Timesheet-Manager-macOS.zip` / `-Windows.zip` filenames
-`release.yml` used to publish — once a release is cut under the new Tauri
-workflow (different filenames: `.dmg`, `.exe`, `.msi`), any still-running
-Python app's update check will see that newer tag but find no matching
-asset to download.
+Python-app-specific. It also downloads by matching the exact
+`QUASAR-Timesheet-Manager-macOS.zip` / `-Windows.zip` filenames
+`release.yml` used to publish — now that a release is cut under the new
+Tauri workflow instead (different filenames: `.dmg`, `.exe`, `.msi`), any
+still-running Python app's update check sees the newer tag but finds no
+matching asset to download. The Tauri app has since grown its own,
+separate update-check mechanism, built on Tauri's official updater plugin
+rather than a port of this one — see `tauri-app/README.md`'s "Checking
+for updates" for how that one actually works (signed artifacts, an
+in-app popup, a one-click download-and-restart).
 
 This only works once the repo is public — an unauthenticated request
 against a private repo's API 404s, which this app treats the same as "no
