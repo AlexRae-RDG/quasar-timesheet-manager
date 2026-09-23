@@ -34,7 +34,7 @@ export function ActivitiesScreen({ settings }: { settings: AppSettings }) {
   const [projectModal, setProjectModal] = useState<ProjectModalState>(null);
   const [activityModal, setActivityModal] = useState<ActivityModalState>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const headerRef = useStickyHeader<HTMLElement>();
+  const { headerRef, bgRef } = useStickyHeader<HTMLElement>();
 
   const refresh = () => {
     listProjects().then(setProjects).catch((e) => setError(String(e)));
@@ -137,6 +137,7 @@ export function ActivitiesScreen({ settings }: { settings: AppSettings }) {
   return (
     <div className="app-shell">
       <header ref={headerRef} className="page-header page-header-sticky">
+        <div ref={bgRef} className="page-header-fixed-bg" aria-hidden="true" />
         <h1>Activities</h1>
         <div className="row">
           <button

@@ -108,6 +108,29 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
     listTimeEntries(rangeStart, rangeEnd).then(setEntries).catch((e) => setError(String(e)));
   }, [rangeStart, rangeEnd]);
 
+  // Work hours are just the *default* visible range, not a hard clip --
+  // widened to cover any real entry this week falls outside of (an
+  // accidental Timer bar click before/after hours, most often), so
+  // there's never a block that exists in the database but is impossible
+  // to see, select, or delete because it's silently off the rendered
+  // grid. Nothing to widen for and no entries yet both fall back to the
+  // configured hours unchanged.
+  const gridStartHour = useMemo(() => {
+    let hour = settings.workStartHour;
+    for (const e of entries) {
+      hour = Math.min(hour, Math.floor(timeToMinutes(e.startTime) / 60));
+    }
+    return Math.max(0, hour);
+  }, [entries, settings.workStartHour]);
+
+  const gridEndHour = useMemo(() => {
+    let hour = settings.workEndHour;
+    for (const e of entries) {
+      hour = Math.max(hour, Math.ceil(timeToMinutes(e.endTime) / 60));
+    }
+    return Math.min(24, hour);
+  }, [entries, settings.workEndHour]);
+
   const refreshActivities = useCallback(() => {
     listProjects().then(setProjects).catch((e) => setError(String(e)));
     listActivities().then(setActivities).catch((e) => setError(String(e)));
@@ -650,8 +673,8 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
 
           <CalendarGrid
             days={days}
-            startHour={settings.workStartHour}
-            endHour={settings.workEndHour}
+            startHour={gridStartHour}
+            endHour={gridEndHour}
             entries={entries}
             zoom={zoom}
             onZoomIn={() => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)))}

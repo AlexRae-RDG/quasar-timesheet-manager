@@ -77,7 +77,7 @@ export function SettingsScreen({
   const [jiraTokenInput, setJiraTokenInput] = useState("");
   const [jiraVerify, setJiraVerify] = useState<JiraVerifyState>({ kind: "idle" });
   const teamKey = projectKeyForDepartment(settings.department);
-  const headerRef = useStickyHeader<HTMLElement>();
+  const { headerRef, bgRef } = useStickyHeader<HTMLElement>();
 
   const resolvedThemeId = resolveThemeId(settings.themeMode);
 
@@ -176,6 +176,7 @@ export function SettingsScreen({
   return (
     <div className="app-shell">
       <header ref={headerRef} className="page-header page-header-sticky">
+        <div ref={bgRef} className="page-header-fixed-bg" aria-hidden="true" />
         <h1>Settings</h1>
         <button className="btn btn-accent" onClick={handleSave} disabled={saveState === "saving"}>
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Save Settings"}

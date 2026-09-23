@@ -865,19 +865,49 @@ textarea {
   padding: 8px 0;
 }
 
-/* --app-bg (the page's own background), not --panel-bg (the card/toolbar
-   tint) -- this should read as the page itself showing through solidly,
-   not a distinct panel sitting on top of it. In the Glassy theme APP_BG is
-   a gradient rather than a flat color, which is exactly why this needs
-   background-attachment: fixed here too: that ties the gradient to the
-   *viewport's* coordinates rather than this element's own box (matching
-   body's own fixed attachment in that theme -- see the data-glass rule
-   below), so once this box is actually pinned in place, the two are
-   painting the identical gradient pixels at the same screen position
-   rather than two independently-cropped samples of it that don't line up. */
-.page-header-stuck {
+/* The actual "frozen background" layer -- see useStickyHeader.ts (which
+   renders this as real JSX, not a node it inserts imperatively) for why
+   this is a real position:fixed element rather than background-attachment:
+   fixed on the sticky header itself: Chromium (and so WebView2 on
+   Windows) doesn't reliably keep a fixed background still on a
+   position:sticky element, which on a glass theme's gradient showed up as
+   the background visibly sliding during scroll instead of staying put.
+   --app-bg (the page's own background, not --panel-bg's card/toolbar
+   tint) so this reads as the page itself showing through solidly. top and
+   height are both set live via ResizeObserver, not assumed here -- this
+   does NOT sit at the viewport's own top edge (.shell-header/.shell-tab-row
+   sit above .shell-content), and a plain `top: 0` here once visibly
+   misplaced the whole thing above the real header, the same class of
+   geometry mismatch a guessed height constant would have caused. */
+.page-header-fixed-bg {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
   background: var(--app-bg);
+  /* Without this, a gradient's own percentage-based positions (e.g.
+     Solar Flare's radial-gradient center) are computed relative to THIS
+     element's own small box, not the viewport -- rendering a visibly
+     different crop of the "same" gradient than body's own fixed-attachment
+     rendering, despite being the identical CSS value. Safe here
+     specifically because this element is position:fixed, not
+     position:sticky -- fixed positioning + fixed background-attachment is
+     the combination that doesn't have Chromium's rendering bug. */
   background-attachment: fixed;
+  /* Any positioned element -- even z-index:auto -- paints above normal-
+     flow siblings regardless of DOM order, so without this the header's
+     own <h1>/button (plain, unpositioned) were rendering *underneath*
+     this despite coming later in the markup. Safely scoped to just this
+     header, not the whole page: .page-header-sticky sets its own
+     z-index, which makes it a real stacking context. */
+  z-index: -1;
+}
+
+.page-header-stuck .page-header-fixed-bg {
+  opacity: 1;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1549,20 +1579,6 @@ textarea {
 :root[data-glass="true"] .modal-backdrop {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-}
-
-/* The sticky Settings header normally shows the page's own gradient
-   through it (background-attachment: fixed, matching body's -- see
-   .page-header-stuck above) so it reads as the page itself rather than a
-   panel sitting on top of it. On a glass theme, once actually stuck and
-   scrolling past cards with their own drop shadow just below it, that
-   shadow visibly bled through at the header's own edges -- a solid color
-   instead (the same option-bg stand-in used elsewhere a glass theme needs
-   something solid) blocks that outright rather than chasing the exact
-   cause of the bleed-through. */
-:root[data-glass="true"] .page-header-stuck {
-  background: var(--option-bg);
-  background-attachment: scroll;
 }
 
 /* The update-available popup needs to read clearly at a glance, not blend
