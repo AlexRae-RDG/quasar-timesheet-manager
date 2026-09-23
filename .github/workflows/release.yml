@@ -104,3 +104,28 @@ jobs:
             tauri-app/src-tauri/target/**/release/bundle/nsis/*.exe
             tauri-app/src-tauri/target/**/release/bundle/msi/*.msi
           if-no-files-found: ignore
+
+  # includeUpdaterJson's .sig files are only there for the updater's own
+  # benefit, and even then only in theory -- the signature each one holds
+  # is also embedded directly in latest.json's per-platform "signature"
+  # field, which is what src/api/updater.ts actually reads, so the updater
+  # never fetches these as separate files. Left in the Release they just
+  # sit in the asset list looking like another download option, confusing
+  # a colleague trying to pick the one installer for their OS. Runs after
+  # both matrix legs (needs: build) so it only deletes once both have
+  # finished uploading their own .sig files to the shared draft Release.
+  cleanup-sig-assets:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Remove .sig files from the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[].name' | grep '\.sig$' | while read -r name; do
+              gh release delete-asset "${{ github.ref_name }}" "$name" --repo "${{ github.repository }}" --yes
+            done
