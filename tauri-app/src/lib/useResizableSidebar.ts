@@ -10,10 +10,17 @@ export function useResizableSidebar({
   defaultWidth,
   minWidth,
   maxWidth,
+  onResizeEnd,
 }: {
   defaultWidth: number;
   minWidth: number;
   maxWidth: number;
+  /** Called once a drag-resize gesture ends, with the final width -- not
+   * on every pointermove, so a caller persisting this (see CalendarScreen/
+   * TemplateScreen's onChange({ sidebarWidth })) isn't hammered dozens of
+   * times per drag. Not fired by the plain collapse/expand click, only an
+   * actual resize. */
+  onResizeEnd?: (width: number) => void;
 }) {
   const [width, setWidth] = useState(defaultWidth);
   const [resizing, setResizing] = useState(false);
@@ -24,15 +31,22 @@ export function useResizableSidebar({
     const startX = e.clientX;
     const startWidth = width;
     setResizing(true);
+    // A plain closure variable, not the `width` state -- onUp needs the
+    // truly final value at the moment the pointer's released, and reading
+    // `width` there would see whatever it was when handleResizeStart ran
+    // (a stale closure), not the last value onMove computed during the drag.
+    let finalWidth = startWidth;
 
     function onMove(ev: PointerEvent) {
       const next = Math.max(minWidth, Math.min(maxWidth, startWidth + (ev.clientX - startX)));
+      finalWidth = next;
       setWidth(next);
     }
     function onUp() {
       setResizing(false);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      onResizeEnd?.(finalWidth);
     }
 
     window.addEventListener("pointermove", onMove);
@@ -54,6 +68,7 @@ export function useResizableSidebar({
     const startX = e.clientX;
     const startWidth = width;
     let moved = false;
+    let finalWidth = startWidth;
 
     function onMove(ev: PointerEvent) {
       const dx = ev.clientX - startX;
@@ -62,7 +77,8 @@ export function useResizableSidebar({
         setResizing(true);
       }
       if (moved) {
-        setWidth(Math.max(minWidth, Math.min(maxWidth, startWidth + dx)));
+        finalWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + dx));
+        setWidth(finalWidth);
       }
     }
     function onUp() {
@@ -70,6 +86,7 @@ export function useResizableSidebar({
       window.removeEventListener("pointerup", onUp);
       setResizing(false);
       if (!moved) setVisible((v) => !v);
+      else onResizeEnd?.(finalWidth);
     }
 
     window.addEventListener("pointermove", onMove);

@@ -97,6 +97,7 @@ export function OnboardingForm({
         jiraSiteUrl: settings.jiraSiteUrl,
         jiraEmail: settings.email,
         outlookIcsUrl: settings.outlookIcsUrl,
+        sidebarWidth: settings.sidebarWidth,
       });
       onSubmit();
     } catch (e) {

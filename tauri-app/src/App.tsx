@@ -115,11 +115,11 @@ function App() {
             headerStyle={settings.headerStyle}
             settings={settings}
           >
-            {activeTab === "timesheet" && <CalendarScreen settings={settings} />}
+            {activeTab === "timesheet" && <CalendarScreen settings={settings} onChange={updateSettings} />}
             {activeTab === "activities" && (
               <ActivitiesScreen settings={settings} tourOpenImportModal={tourModalRequest === "import-qdm"} />
             )}
-            {activeTab === "template" && <TemplateScreen settings={settings} />}
+            {activeTab === "template" && <TemplateScreen settings={settings} onChange={updateSettings} />}
             {activeTab === "tasks" && <TasksScreen />}
             {activeTab === "summary" && <SummaryScreen settings={settings} />}
             {activeTab === "settings" && <SettingsScreen settings={settings} onChange={updateSettings} />}

@@ -30,6 +30,7 @@ export function installDevMockIfRequested() {
     jiraSiteUrl: "raildeliverygroup.atlassian.net",
     jiraEmail: "",
     outlookIcsUrl: "",
+    sidebarWidth: 210,
     hasJiraToken: false,
     onboardingCompleted: onboarded,
   };
@@ -168,6 +169,9 @@ export function installDevMockIfRequested() {
         return null;
       case "reset_onboarding":
         settings.onboardingCompleted = false;
+        return null;
+      case "set_sidebar_width":
+        settings.sidebarWidth = args.width as number;
         return null;
       case "verify_jira_credentials": {
         const siteUrl = args.siteUrl as string;

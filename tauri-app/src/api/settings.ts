@@ -55,6 +55,12 @@ export interface AppSettings {
    * Timesheet's "Import from Outlook" so it doesn't have to be pasted in
    * every time. Optional -- "" until the user sets one. */
   outlookIcsUrl: string;
+  /** The Activity sidebar's drag-to-resize width, shared by Timesheet and
+   * Template (the same sidebar content, so one width for both). Kept in
+   * sync here (not just component-local state) so it survives switching
+   * tabs -- CalendarScreen/TemplateScreen fully unmount when the tab
+   * changes, which used to reset it back to the default every time. */
+  sidebarWidth: number;
   hasJiraToken: boolean;
   onboardingCompleted: boolean;
 }
@@ -110,4 +116,10 @@ export function saveJiraToken(token: string): Promise<void> {
 
 export function clearJiraToken(): Promise<void> {
   return invoke("clear_jira_token");
+}
+
+/** Persists immediately (unlike every other preference here, which waits
+ * for Settings' "Save Settings" click) -- see useResizableSidebar.ts. */
+export function setSidebarWidth(width: number): Promise<void> {
+  return invoke("set_sidebar_width", { width });
 }

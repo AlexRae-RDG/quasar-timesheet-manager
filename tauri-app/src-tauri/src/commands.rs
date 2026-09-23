@@ -33,6 +33,16 @@ pub fn reset_onboarding(state: State<AppState>) -> Result<(), String> {
     settings::reset_onboarding(&conn).map_err(|e| e.to_string())
 }
 
+/// Separate from the general save_settings path the same way onboarding's
+/// complete/reset are -- a sidebar drag should stick the moment the user
+/// lets go, not wait for them to visit Settings and click Save (which
+/// every OTHER preference here does wait for). See useResizableSidebar.ts.
+#[tauri::command]
+pub fn set_sidebar_width(state: State<AppState>, width: i32) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    settings::set_sidebar_width(&conn, width).map_err(|e| e.to_string())
+}
+
 /// Verifies Site URL / Email / API Token against Jira's `GET /myself`.
 /// `token` is `None` when the user hasn't retyped a new one -- in that case
 /// the previously-stored keychain token is used, so re-verifying (e.g.

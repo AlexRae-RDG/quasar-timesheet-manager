@@ -25,7 +25,7 @@ import { EditActivityModal, type ActivityFormValues } from "../components/EditAc
 import { EditEntryModal } from "../components/EditEntryModal";
 import { addDays, toISODate, WEEKDAY_LABELS } from "../lib/date";
 import { useResizableSidebar } from "../lib/useResizableSidebar";
-import type { AppSettings } from "../api/settings";
+import { setSidebarWidth, type AppSettings } from "../api/settings";
 
 type ActivityModalState = { mode: "new"; projectId: number } | { mode: "edit"; activity: Activity } | null;
 
@@ -33,7 +33,6 @@ const DEFAULT_DURATION_MINUTES = 30;
 const ZOOM_MIN = 0.7;
 const ZOOM_MAX = 1.3;
 const ZOOM_STEP = 0.1;
-const DEFAULT_SIDEBAR_WIDTH = 210;
 const MIN_SIDEBAR_WIDTH = 160;
 const MAX_SIDEBAR_WIDTH = 420;
 
@@ -73,7 +72,13 @@ function toFakeEntry(t: TemplateEntry): TimeEntry {
   };
 }
 
-export function TemplateScreen({ settings }: { settings: AppSettings }) {
+export function TemplateScreen({
+  settings,
+  onChange,
+}: {
+  settings: AppSettings;
+  onChange: (patch: Partial<AppSettings>) => void;
+}) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [templateEntries, setTemplateEntries] = useState<TemplateEntry[]>([]);
@@ -87,9 +92,13 @@ export function TemplateScreen({ settings }: { settings: AppSettings }) {
   const [error, setError] = useState<string | null>(null);
   const [activityModal, setActivityModal] = useState<ActivityModalState>(null);
   const sidebar = useResizableSidebar({
-    defaultWidth: DEFAULT_SIDEBAR_WIDTH,
+    defaultWidth: settings.sidebarWidth,
     minWidth: MIN_SIDEBAR_WIDTH,
     maxWidth: MAX_SIDEBAR_WIDTH,
+    onResizeEnd: (width) => {
+      onChange({ sidebarWidth: width });
+      setSidebarWidth(width).catch(() => {});
+    },
   });
 
   const entriesRef = useRef<TemplateEntry[]>([]);

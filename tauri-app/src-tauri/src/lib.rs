@@ -36,6 +36,7 @@ pub fn run() {
             commands::save_settings,
             commands::complete_onboarding,
             commands::reset_onboarding,
+            commands::set_sidebar_width,
             commands::verify_jira_credentials,
             commands::save_jira_token,
             commands::clear_jira_token,

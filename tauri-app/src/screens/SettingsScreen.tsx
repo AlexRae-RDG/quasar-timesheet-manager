@@ -152,6 +152,7 @@ export function SettingsScreen({
         jiraSiteUrl: settings.jiraSiteUrl,
         jiraEmail: settings.email,
         outlookIcsUrl: settings.outlookIcsUrl,
+        sidebarWidth: settings.sidebarWidth,
       });
 
       if (jiraTokenInput.trim()) {

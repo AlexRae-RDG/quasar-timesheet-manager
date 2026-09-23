@@ -54,6 +54,12 @@ pub struct AppSettings {
     /// stored so "Import from Outlook" on the Timesheet can fetch straight
     /// away instead of asking for it every time. Optional; empty until set.
     pub outlook_ics_url: String,
+    /// The Activity sidebar's drag-to-resize width, shared by Timesheet and
+    /// Template (the same sidebar content, so one width for both rather than
+    /// two independently-remembered ones). Previously component-local state
+    /// that reset to the default on every tab switch, since CalendarScreen/
+    /// TemplateScreen fully unmount when the tab changes.
+    pub sidebar_width: i32,
     /// Whether a Jira API token is currently stored in the OS keychain.
     /// The token value itself is never sent to the frontend once saved --
     /// only this presence flag -- so it can never be displayed in plain
@@ -84,6 +90,7 @@ pub struct SaveSettingsInput {
     pub jira_site_url: String,
     pub jira_email: String,
     pub outlook_ics_url: String,
+    pub sidebar_width: i32,
 }
 
 fn get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
@@ -143,6 +150,13 @@ pub fn load(conn: &Connection) -> rusqlite::Result<AppSettings> {
             .unwrap_or_else(|| DEFAULT_JIRA_SITE_URL.to_string()),
         jira_email: get(conn, "jira_email")?.unwrap_or_default(),
         outlook_ics_url: get(conn, "outlook_ics_url")?.unwrap_or_default(),
+        // Clamped defensively (the frontend's own drag handler already
+        // clamps to its min/max, this only guards a hand-edited DB value or
+        // a future bug from wedging the sidebar at an unusable width).
+        sidebar_width: get(conn, "sidebar_width")?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(210)
+            .clamp(100, 600),
         has_jira_token: crate::keychain::has_token(),
         onboarding_completed: get(conn, "onboarding_completed")?
             .map(|v| v == "1")
@@ -177,6 +191,7 @@ pub fn save(conn: &Connection, input: &SaveSettingsInput) -> rusqlite::Result<()
     set(conn, "jira_site_url", &input.jira_site_url)?;
     set(conn, "jira_email", &input.jira_email)?;
     set(conn, "outlook_ics_url", &input.outlook_ics_url)?;
+    set(conn, "sidebar_width", &input.sidebar_width.to_string())?;
     Ok(())
 }
 
@@ -193,6 +208,13 @@ pub fn complete_onboarding(conn: &Connection) -> rusqlite::Result<()> {
 /// any other data, for previewing what a brand new user sees.
 pub fn reset_onboarding(conn: &Connection) -> rusqlite::Result<()> {
     set(conn, "onboarding_completed", "0")
+}
+
+/// Clamped the same way load()'s own read of this key is, for the same
+/// reason -- a stray value here shouldn't be able to wedge the sidebar at
+/// an unusable width.
+pub fn set_sidebar_width(conn: &Connection, width: i32) -> rusqlite::Result<()> {
+    set(conn, "sidebar_width", &width.clamp(100, 600).to_string())
 }
 
 /// This app's database is the SAME file the old Python/Tkinter app used

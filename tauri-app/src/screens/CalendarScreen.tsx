@@ -24,7 +24,7 @@ import { JiraIcon } from "../components/JiraIcon";
 import { UploadToJiraModal } from "../components/UploadToJiraModal";
 import { addDays, minutesToTime, timeToMinutes, toISODate, weekStart } from "../lib/date";
 import { useResizableSidebar } from "../lib/useResizableSidebar";
-import { projectKeyForDepartment, type AppSettings } from "../api/settings";
+import { projectKeyForDepartment, setSidebarWidth, type AppSettings } from "../api/settings";
 
 type ActivityModalState = { mode: "new"; projectId: number } | { mode: "edit"; activity: Activity } | null;
 
@@ -34,7 +34,6 @@ const ZOOM_MIN = 0.7;
 const ZOOM_MAX = 1.3;
 const ZOOM_STEP = 0.1;
 const UNDO_LIMIT = 50;
-const DEFAULT_SIDEBAR_WIDTH = 210;
 const MIN_SIDEBAR_WIDTH = 160;
 const MAX_SIDEBAR_WIDTH = 420;
 
@@ -56,7 +55,13 @@ type Command =
   | { kind: "remove"; entry: TimeEntry }
   | { kind: "update"; id: number; before: EntryFields; after: EntryFields };
 
-export function CalendarScreen({ settings }: { settings: AppSettings }) {
+export function CalendarScreen({
+  settings,
+  onChange,
+}: {
+  settings: AppSettings;
+  onChange: (patch: Partial<AppSettings>) => void;
+}) {
   const navActionsSlot = useNavActionsSlot();
   const teamKey = projectKeyForDepartment(settings.department);
   const [anchorDate, setAnchorDate] = useState(() => new Date());
@@ -73,9 +78,13 @@ export function CalendarScreen({ settings }: { settings: AppSettings }) {
   const [error, setError] = useState<string | null>(null);
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
   const sidebar = useResizableSidebar({
-    defaultWidth: DEFAULT_SIDEBAR_WIDTH,
+    defaultWidth: settings.sidebarWidth,
     minWidth: MIN_SIDEBAR_WIDTH,
     maxWidth: MAX_SIDEBAR_WIDTH,
+    onResizeEnd: (width) => {
+      onChange({ sidebarWidth: width });
+      setSidebarWidth(width).catch(() => {});
+    },
   });
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [archivedBlock, setArchivedBlock] = useState<TimeEntry[] | null>(null);
