@@ -28,12 +28,22 @@ export function CreateEntryModal({
   const [newActivityName, setNewActivityName] = useState("");
   const [newActivityProjectId, setNewActivityProjectId] = useState(projects[0]?.id ?? 0);
   const [notes, setNotes] = useState("");
+  const [notesError, setNotesError] = useState(false);
 
   const creatingNew = activityId === NEW_ACTIVITY_SENTINEL;
   const canSubmit = creatingNew ? newActivityName.trim().length > 0 && newActivityProjectId : activityId > 0;
 
+  function handleNotesChange(value: string) {
+    setNotes(value);
+    if (notesError && value.trim()) setNotesError(false);
+  }
+
   function submit() {
     if (!canSubmit) return;
+    if (!notes.trim()) {
+      setNotesError(true);
+      return;
+    }
     if (creatingNew) {
       onCreateWithNewActivity(newActivityName.trim(), newActivityProjectId, notes);
     } else {
@@ -95,11 +105,13 @@ export function CreateEntryModal({
         <label className="field">
           <span>Notes</span>
           <textarea
+            className={notesError ? "field-invalid" : undefined}
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(e) => handleNotesChange(e.target.value)}
             rows={4}
             placeholder="Work description for this block"
           />
+          {notesError && <p className="status status-error">Enter a work description before creating this block.</p>}
         </label>
 
         <div className="modal-actions">

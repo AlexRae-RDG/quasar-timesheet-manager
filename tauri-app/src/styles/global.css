@@ -1149,6 +1149,15 @@ textarea {
   font-family: inherit;
 }
 
+/* CreateEntryModal's Notes field once the user's tried to submit without
+   one -- same red border language as .qdm-row-project-unsorted elsewhere,
+   paired with a .status-error message below explaining why. Selector
+   matches .field textarea's own specificity (class + type) so this reliably
+   wins by source order alone, no !important needed. */
+.field textarea.field-invalid {
+  border-color: var(--danger);
+}
+
 /* Jira Key: only the ticket number is ever user-editable -- the team's
    prefix (QDM-/TISACC-) is fixed and shown inline, so there's no way to
    type it wrong or under the other team's project by mistake. */

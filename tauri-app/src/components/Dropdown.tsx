@@ -169,7 +169,16 @@ export function Dropdown({
       if (triggerRef.current?.contains(target) || listRef.current?.contains(target)) return;
       close();
     }
-    function onWindowChange() {
+    function onWindowChange(e: Event) {
+      // Scroll doesn't bubble, so this is on document with capture:true
+      // specifically to catch it happening ANYWHERE, including inside the
+      // list's own scrollable area (a long list, e.g. Activity, needs to
+      // scroll internally) -- without this check, scrolling the list
+      // itself closed it before a mouse-wheel or scrollbar-drag ever
+      // reached the second option. Only a scroll OUTSIDE the list (the
+      // page behind it, a parent modal) still closes it, since that kind
+      // invalidates the popup's measured position the same way resize does.
+      if (e.target instanceof Node && listRef.current?.contains(e.target)) return;
       close();
     }
     // Document-level, not just the trigger's own onKeyDown below -- WebKit
