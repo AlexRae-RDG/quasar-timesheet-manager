@@ -1,9 +1,10 @@
 /**
  * Theme system: derivePalette() turns four seed colors into a full palette
  * (still the same mix()-based approach ported from the Python app's
- * app/theme.py), backing four theme choices -- Light, Dark, Custom
- * (user-picked seeds), and Glassy (a hand-built translucent palette, not
- * seed-derived -- see GLASS_PALETTE below).
+ * app/theme.py), backing Light, Dark, and Custom (user-picked seeds).
+ * Glassy, Nebula, and Solar Flare are hand-built translucent palettes
+ * instead, not seed-derived -- see GLASS_PALETTE/NEBULA_PALETTE/
+ * SOLAR_FLARE_PALETTE below.
  */
 
 export interface PaletteSeeds {
@@ -40,6 +41,14 @@ export interface Palette {
   PREVIEW_OUTLINE: string;
   FIELD_BG: string;
   SURFACE: string;
+  /** A solid (non-transparent) stand-in for FIELD_BG, used only for a
+   * native <select> popup's <option> background -- that's OS-rendered and
+   * can't blur, so a glass theme's real (translucent) FIELD_BG would just
+   * wash out against whatever's behind it. For the solid themes this is
+   * just FIELD_BG itself; for a glass theme it's a solid color picked from
+   * that theme's own gradient. See global.css's [data-glass="true"]
+   * option rules. */
+  OPTION_BG: string;
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -121,6 +130,7 @@ export function derivePalette(seeds: PaletteSeeds): Palette {
     PREVIEW_OUTLINE: accentHover,
     FIELD_BG: fieldBg,
     SURFACE: dark ? fieldBg : appBg,
+    OPTION_BG: fieldBg,
   };
 }
 
@@ -128,9 +138,26 @@ export const LIGHT_THEME_ID = "light";
 export const DARK_THEME_ID = "dark";
 export const CUSTOM_THEME_ID = "custom";
 export const GLASSY_THEME_ID = "glassy";
+export const NEBULA_THEME_ID = "nebula";
+export const SOLAR_FLARE_THEME_ID = "solar_flare";
 export const DEFAULT_THEME_ID = DARK_THEME_ID;
 
-export const THEME_ORDER = [LIGHT_THEME_ID, DARK_THEME_ID, GLASSY_THEME_ID, CUSTOM_THEME_ID];
+export const THEME_ORDER = [
+  LIGHT_THEME_ID,
+  DARK_THEME_ID,
+  GLASSY_THEME_ID,
+  NEBULA_THEME_ID,
+  SOLAR_FLARE_THEME_ID,
+  CUSTOM_THEME_ID,
+];
+
+/** Every hand-built translucent theme, not just Glassy -- ThemeProvider
+ * flags the document with these (data-glass="true") to turn on the
+ * backdrop-filter blur in global.css's [data-glass="true"] rules, and
+ * treats them all as dark for color-scheme purposes (their PANEL_BG is a
+ * translucent rgba(), which isDark() -- built for solid #RRGGBB seeds --
+ * can't parse, but all three are dark-styled regardless). */
+export const GLASS_THEME_IDS: string[] = [GLASSY_THEME_ID, NEBULA_THEME_ID, SOLAR_FLARE_THEME_ID];
 
 const LIGHT_SEEDS: PaletteSeeds = {
   appBg: "#F4F6FA",
@@ -176,6 +203,70 @@ const GLASS_PALETTE: Palette = {
   PREVIEW_OUTLINE: "#3396FF",
   FIELD_BG: "rgba(255, 255, 255, 0.14)",
   SURFACE: "rgba(255, 255, 255, 0.09)",
+  OPTION_BG: "#12295c",
+};
+
+// Vivid magenta-through-blue nebula backdrop, cyan primary accent with a
+// violet secondary (used for the "now" line, echoing the mockup's second
+// project-dot color) -- same white-tinted glass approach as GLASS_PALETTE.
+const NEBULA_PALETTE: Palette = {
+  APP_BG: "linear-gradient(160deg, #1a0b2e 0%, #4a1a6c 30%, #7a1f8a 55%, #1a3a6c 80%, #0a0e27 100%)",
+  PANEL_BG: "rgba(255, 255, 255, 0.08)",
+  BORDER: "rgba(255, 255, 255, 0.16)",
+  BORDER_STRONG: "rgba(255, 255, 255, 0.30)",
+  TEXT_PRIMARY: "#F5F3FF",
+  TEXT_SECONDARY: "rgba(245, 243, 255, 0.70)",
+  TEXT_MUTED: "rgba(245, 243, 255, 0.48)",
+  ACCENT: "#22D3EE",
+  ACCENT_HOVER: "#15B8D9",
+  ACCENT_SOFT: "rgba(34, 211, 238, 0.20)",
+  DANGER: "#FB7185",
+  DANGER_SOFT: "rgba(251, 113, 133, 0.16)",
+  DANGER_SOFT_ACTIVE: "rgba(251, 113, 133, 0.26)",
+  GRID_LINE: "rgba(255, 255, 255, 0.08)",
+  GRID_LINE_HOUR: "rgba(255, 255, 255, 0.16)",
+  HEADER_BG: "rgba(255, 255, 255, 0.06)",
+  TODAY_TINT: "rgba(34, 211, 238, 0.16)",
+  NOW_LINE: "#C084FC",
+  BLOCK_BORDER: "rgba(255, 255, 255, 0.14)",
+  SELECTION_OUTLINE: "#FFFFFF",
+  PREVIEW_FILL: "#22D3EE",
+  PREVIEW_OUTLINE: "#67E8F9",
+  FIELD_BG: "rgba(255, 255, 255, 0.14)",
+  SURFACE: "rgba(255, 255, 255, 0.09)",
+  OPTION_BG: "#4a1a6c",
+};
+
+// Dark space with a warm ember glow rather than the usual blue/violet --
+// panels are a translucent warm-dark tint (not white-tinted like the other
+// two glass themes), since a white overlay on this background read muddy
+// rather than frosted.
+const SOLAR_FLARE_PALETTE: Palette = {
+  APP_BG: "radial-gradient(circle at 75% 15%, #5c2a12 0%, #1a0e1f 35%, #0a0a16 70%)",
+  PANEL_BG: "rgba(40, 20, 20, 0.55)",
+  BORDER: "rgba(255, 255, 255, 0.14)",
+  BORDER_STRONG: "rgba(255, 255, 255, 0.26)",
+  TEXT_PRIMARY: "#FFF3EC",
+  TEXT_SECONDARY: "rgba(255, 243, 236, 0.70)",
+  TEXT_MUTED: "rgba(255, 243, 236, 0.48)",
+  ACCENT: "#FB923C",
+  ACCENT_HOVER: "#F97316",
+  ACCENT_SOFT: "rgba(251, 146, 60, 0.20)",
+  DANGER: "#F87171",
+  DANGER_SOFT: "rgba(248, 113, 113, 0.16)",
+  DANGER_SOFT_ACTIVE: "rgba(248, 113, 113, 0.26)",
+  GRID_LINE: "rgba(255, 255, 255, 0.08)",
+  GRID_LINE_HOUR: "rgba(255, 255, 255, 0.16)",
+  HEADER_BG: "rgba(20, 10, 15, 0.4)",
+  TODAY_TINT: "rgba(251, 146, 60, 0.16)",
+  NOW_LINE: "#FDE68A",
+  BLOCK_BORDER: "rgba(255, 255, 255, 0.12)",
+  SELECTION_OUTLINE: "#FFFFFF",
+  PREVIEW_FILL: "#FB923C",
+  PREVIEW_OUTLINE: "#FDBA74",
+  FIELD_BG: "rgba(255, 255, 255, 0.12)",
+  SURFACE: "rgba(30, 15, 15, 0.5)",
+  OPTION_BG: "#5c2a12",
 };
 
 // Anyone with a database from an earlier theme era (the old 7-mode set, or
@@ -216,7 +307,14 @@ const LEGACY_MODE_MAP: Record<string, string> = {
 };
 
 export function resolveThemeId(value: string | null | undefined): string {
-  if (value === LIGHT_THEME_ID || value === DARK_THEME_ID || value === CUSTOM_THEME_ID || value === GLASSY_THEME_ID) {
+  if (
+    value === LIGHT_THEME_ID ||
+    value === DARK_THEME_ID ||
+    value === CUSTOM_THEME_ID ||
+    value === GLASSY_THEME_ID ||
+    value === NEBULA_THEME_ID ||
+    value === SOLAR_FLARE_THEME_ID
+  ) {
     return value;
   }
   if (value && LEGACY_MODE_MAP[value]) {
@@ -246,6 +344,20 @@ export function getTheme(themeId: string, customSeeds: PaletteSeeds): ThemeInfo 
       label: "Glassy",
       description: "Translucent, frosted panels over a rich gradient backdrop.",
       palette: GLASS_PALETTE,
+    };
+  }
+  if (resolved === NEBULA_THEME_ID) {
+    return {
+      label: "Nebula",
+      description: "Vivid magenta-to-blue nebula backdrop with frosted glass panels.",
+      palette: NEBULA_PALETTE,
+    };
+  }
+  if (resolved === SOLAR_FLARE_THEME_ID) {
+    return {
+      label: "Solar Flare",
+      description: "Dark space with a warm ember glow instead of the usual blue.",
+      palette: SOLAR_FLARE_PALETTE,
     };
   }
   if (resolved === LIGHT_THEME_ID) {

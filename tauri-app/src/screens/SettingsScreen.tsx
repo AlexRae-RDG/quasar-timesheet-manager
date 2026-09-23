@@ -23,7 +23,9 @@ import {
   DEFAULT_CUSTOM_SEEDS,
   GLASSY_THEME_ID,
   LIGHT_THEME_ID,
+  NEBULA_THEME_ID,
   resolveThemeId,
+  SOLAR_FLARE_THEME_ID,
 } from "../theme/palettes";
 
 const HEADER_STYLES: Array<{ id: AppSettings["headerStyle"]; label: string }> = [
@@ -308,6 +310,18 @@ export function SettingsScreen({
             customSeeds={settings.customTheme}
             selected={resolvedThemeId === GLASSY_THEME_ID}
             onClick={() => setThemeId(GLASSY_THEME_ID)}
+          />
+          <ThemeSwatch
+            themeId={NEBULA_THEME_ID}
+            customSeeds={settings.customTheme}
+            selected={resolvedThemeId === NEBULA_THEME_ID}
+            onClick={() => setThemeId(NEBULA_THEME_ID)}
+          />
+          <ThemeSwatch
+            themeId={SOLAR_FLARE_THEME_ID}
+            customSeeds={settings.customTheme}
+            selected={resolvedThemeId === SOLAR_FLARE_THEME_ID}
+            onClick={() => setThemeId(SOLAR_FLARE_THEME_ID)}
           />
           <ThemeSwatch
             themeId={CUSTOM_THEME_ID}

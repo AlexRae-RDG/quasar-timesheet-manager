@@ -70,7 +70,7 @@ export/import, nothing to migrate by hand.
 - OS-native secret storage for the Jira API token (macOS Keychain/Windows
   Credential Manager/Secret Service) instead of an app-managed encrypted
   file.
-- Light/Dark/Glassy/Custom themes, a resizable/collapsible Activities
+- Light/Dark/Glassy/Nebula/Solar Flare/Custom themes, a resizable/collapsible Activities
   sidebar (drag the handle, or click it to collapse — Timesheet and
   Template both have their own independently), and a redesigned toolbar
   (segmented week nav, a corner zoom control, Apply Template inline).
@@ -186,8 +186,10 @@ Jira** on the Timesheet sends every linked, not-yet-uploaded block for the
 shown week as a worklog against its Jira Key, using each block's Notes as
 the worklog comment.
 
-**Theme** — Settings has Light, Dark, Glassy (translucent/blurred), and
-Custom (your own color pickers), applied instantly and remembered.
+**Theme** — Settings has Light, Dark, Glassy (translucent/blurred), Nebula
+(a vivid magenta-to-blue nebula backdrop), Solar Flare (dark space with a
+warm ember glow instead of the usual blue), and Custom (your own color
+pickers), applied instantly and remembered.
 
 **Checking for updates** — `src/api/updater.ts` asks GitHub's latest
 Release for a `latest.json` manifest (published alongside every release --

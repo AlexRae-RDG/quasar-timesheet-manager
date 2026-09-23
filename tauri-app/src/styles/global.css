@@ -1531,13 +1531,14 @@ textarea {
   -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
 
-/* A native select popup can't blur, so Glassy's translucent FIELD_BG would
-   just wash out against whatever the OS draws behind it -- give options a
-   solid stand-in (mid-tone from the theme's own gradient) instead. */
+/* A native select popup can't blur, so a glass theme's translucent
+   FIELD_BG would just wash out against whatever the OS draws behind it --
+   give options a solid stand-in instead (--option-bg: a solid color
+   picked from that theme's own gradient, see theme/palettes.ts). */
 :root[data-glass="true"] .field select option,
 :root[data-glass="true"] .timer-bar-select option,
 :root[data-glass="true"] .qdm-row-project option {
-  background-color: #12295c;
+  background-color: var(--option-bg);
   color: var(--text-primary);
 }
 

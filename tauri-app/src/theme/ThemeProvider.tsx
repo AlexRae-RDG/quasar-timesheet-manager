@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import { getTheme, GLASSY_THEME_ID, isDark, resolveThemeId, type PaletteSeeds } from "./palettes";
+import { getTheme, GLASS_THEME_IDS, isDark, resolveThemeId, type PaletteSeeds } from "./palettes";
 
 interface ThemeContextValue {
   themeId: string;
@@ -27,8 +27,10 @@ function applyPaletteToDocument(themeId: string, customSeeds: PaletteSeeds) {
   // Flags the frosted-glass CSS in global.css ([data-glass="true"]) --
   // backdrop-filter blur is a real CSS property, not a color, so it can't
   // ride along as a custom-property value the way the rest of the palette
-  // does.
-  if (resolved === GLASSY_THEME_ID) {
+  // does. Covers every hand-built translucent theme (Glassy, Nebula, Solar
+  // Flare), not just Glassy specifically.
+  const isGlassTheme = GLASS_THEME_IDS.includes(resolved);
+  if (isGlassTheme) {
     document.documentElement.setAttribute("data-glass", "true");
   } else {
     document.documentElement.removeAttribute("data-glass");
@@ -40,12 +42,12 @@ function applyPaletteToDocument(themeId: string, customSeeds: PaletteSeeds) {
   // on a dark theme meant white list-item text on the popup's own default
   // white background: unreadable, and nothing to do with the custom
   // chevron styling (that only ever reaches the closed select box, never
-  // this native popup). Glassy isn't run through derivePalette (its
-  // PANEL_BG is a translucent rgba(), which isDark() -- built for solid
-  // #RRGGBB seeds -- can't parse), but it's always the dark-styled one of
-  // the four themes regardless, so it's hardcoded true here rather than
-  // fed through that check.
-  const dark = resolved === GLASSY_THEME_ID ? true : isDark(palette.PANEL_BG);
+  // this native popup). The glass themes aren't run through derivePalette
+  // (their PANEL_BG is a translucent rgba(), which isDark() -- built for
+  // solid #RRGGBB seeds -- can't parse), but all three are always
+  // dark-styled regardless, so it's hardcoded true here rather than fed
+  // through that check.
+  const dark = isGlassTheme ? true : isDark(palette.PANEL_BG);
   root.setProperty("color-scheme", dark ? "dark" : "light");
 }
 
