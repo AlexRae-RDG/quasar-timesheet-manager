@@ -236,6 +236,8 @@ export function OnboardingTour({
       return;
     }
     let attempts = 0;
+    let settleAttempts = 0;
+    let lastRectKey: string | null = null;
     let timer: number | undefined;
     function measure() {
       const el = step.selector ? document.querySelector(step.selector) : null;
@@ -259,6 +261,20 @@ export function OnboardingTour({
           rect = el.getBoundingClientRect();
         }
         setRect(rect);
+        // The target itself can exist right away while a SIBLING above it
+        // (Settings' own Outlook Calendars list, fetched async) is still
+        // loading and hasn't pushed it down the page yet -- measuring once
+        // on first sight caught the target at its pre-shift position, which
+        // then stayed stale for the rest of the step (nothing here re-runs
+        // measure() on a plain layout reflow). Keep re-measuring for a bit
+        // after every change, stopping once the rect settles twice in a row.
+        const rectKey = `${rect.top},${rect.left},${rect.width},${rect.height}`;
+        if (rectKey === lastRectKey) return;
+        lastRectKey = rectKey;
+        if (settleAttempts < 10) {
+          settleAttempts++;
+          timer = window.setTimeout(measure, 250);
+        }
         return;
       }
       // A tab switch renders synchronously, but a screen's own data fetch

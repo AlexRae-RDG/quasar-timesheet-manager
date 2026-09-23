@@ -72,6 +72,11 @@ export function ImportOutlookModal({
   onClose: () => void;
 }) {
   const [url, setUrl] = useState("");
+  // null until the initial Settings-calendars lookup resolves -- tells the
+  // "nothing saved yet" hint below apart from the ordinary loading state,
+  // since fetchAndMergeAll leaves `status` at "idle" (not "loaded") when
+  // there's nothing to fetch, same as before any fetch has run at all.
+  const [hasSavedCalendars, setHasSavedCalendars] = useState<boolean | null>(null);
   const [showPaste, setShowPaste] = useState(false);
   const [pastedText, setPastedText] = useState("");
   const [status, setStatus] = useState<Status>("idle");
@@ -194,7 +199,10 @@ export function ImportOutlookModal({
   // none are saved yet, same as the old single-URL version's own guard.
   useEffect(() => {
     listOutlookCalendars()
-      .then(fetchAndMergeAll)
+      .then((cals) => {
+        setHasSavedCalendars(cals.length > 0);
+        return fetchAndMergeAll(cals);
+      })
       .catch((e) => {
         setError(String(e));
         setStatus("error");
@@ -330,6 +338,14 @@ export function ImportOutlookModal({
 
         <div className="qdm-scroll-area">
           {status === "error" && <p className="status status-error">{error}</p>}
+
+          {status === "idle" && hasSavedCalendars === false && (
+            <p className="muted">
+              No calendars saved yet -- add one under <strong>Settings → Outlook Calendars</strong> so
+              its events are fetched and merged in here automatically every time, or paste a one-off
+              link above for just this once.
+            </p>
+          )}
 
           {status === "loaded" && (
             <>
