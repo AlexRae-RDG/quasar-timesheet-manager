@@ -881,8 +881,11 @@ textarea {
    geometry mismatch a guessed height constant would have caused. */
 .page-header-fixed-bg {
   position: fixed;
-  /* left/width set live via ResizeObserver in useStickyHeader.ts, matching
-     the header's own rendered box rather than the full viewport. */
+  /* Deliberately full width, not clipped to the header's own box -- see
+     the ::after rule below for why the fill and the visible border line
+     are split into two different widths. */
+  left: 0;
+  right: 0;
   top: 0;
   height: 0;
   opacity: 0;
@@ -908,6 +911,26 @@ textarea {
 
 .page-header-stuck .page-header-fixed-bg {
   opacity: 1;
+}
+
+/* The visible divider under the stuck header, narrowed to the header's
+   own box (== the page's content column, set live via useStickyHeader.ts'
+   custom properties) rather than the fill's full viewport width -- a
+   full-width line looked like a bar slapped across the whole window,
+   out of step with the app's own boxed-content layout. The FILL above
+   stays full-width regardless: it renders the identical gradient the
+   page would show there anyway (invisible either way), and that extra
+   width is what catches a card's box-shadow when its rounded corners
+   scroll in close behind the header -- the shadow's blur radiates
+   sideways past the card's own edges, not just upward, so a fill no
+   wider than the header left slivers of it poking out right at the
+   corners, uncovered. */
+.page-header-stuck .page-header-fixed-bg::after {
+  content: "";
+  position: absolute;
+  left: var(--page-header-fixed-bg-border-left, 0);
+  width: var(--page-header-fixed-bg-border-width, 100%);
+  bottom: 0;
   border-bottom: 1px solid var(--border);
 }
 

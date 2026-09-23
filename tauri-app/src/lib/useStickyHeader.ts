@@ -52,12 +52,20 @@ export function useStickyHeader<T extends HTMLElement>() {
       const headerRect = header.getBoundingClientRect();
       bg.style.top = `${scrollEl?.getBoundingClientRect().top ?? 0}px`;
       bg.style.height = `${headerRect.height}px`;
-      // Match the header's own rendered width (== .app-shell's content box,
-      // since the header is an unpadded flex child that stretches to fill
-      // it) rather than the full viewport, so the frozen bar reads as part
-      // of the page's column of content instead of a full-width strip.
-      bg.style.left = `${headerRect.left}px`;
-      bg.style.width = `${headerRect.width}px`;
+      // The fill itself stays full-width (left:0/right:0 in CSS) -- it
+      // renders the identical gradient the page itself would show there,
+      // so a wider fill is invisible against the real background, and
+      // staying full-width is what safely covers a card's box-shadow when
+      // that card's rounded corners scroll close behind the header (the
+      // shadow's blur radiates sideways past the card's own edges, not
+      // just upward, so a fill only as wide as the header/card column left
+      // slivers of that shadow poking out beyond it, right at the
+      // corners). Only the visible border line (::after, see global.css)
+      // is deliberately narrowed to the header's own box via these custom
+      // properties, so IT reads as part of the page's boxed content
+      // instead of a full-width bar.
+      bg.style.setProperty("--page-header-fixed-bg-border-left", `${headerRect.left}px`);
+      bg.style.setProperty("--page-header-fixed-bg-border-width", `${headerRect.width}px`);
     }
     const resizeObserver = new ResizeObserver(syncGeometry);
     resizeObserver.observe(header);
