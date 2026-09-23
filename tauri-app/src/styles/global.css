@@ -398,12 +398,6 @@ textarea {
   background: var(--accent-soft);
 }
 
-.activity-sidebar-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
-
 .activity-project-group {
   display: flex;
   flex-direction: column;

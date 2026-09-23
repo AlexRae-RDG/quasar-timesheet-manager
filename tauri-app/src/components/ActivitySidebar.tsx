@@ -56,11 +56,6 @@ export function ActivitySidebar({
 
   return (
     <div className="activity-sidebar" data-tour="activity-sidebar" style={{ width }}>
-      <div className="activity-sidebar-hint">
-        {armedActivityId == null
-          ? "Select an Activity, then drag on the grid to log time."
-          : "Drag on the grid to create a block, or click a slot for the default duration."}
-      </div>
       {projects.map((project) => {
         const list = byProject.get(project.id) ?? [];
         if (list.length === 0) return null;
