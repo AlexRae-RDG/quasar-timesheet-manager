@@ -4090,7 +4090,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-app"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "dirs 5.0.1",
  "keyring",
