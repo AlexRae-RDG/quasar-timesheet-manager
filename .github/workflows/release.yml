@@ -130,16 +130,41 @@ jobs:
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
 
-          # gh release view's/gh api releases/tags's own asset listing can lag
-          # a few seconds behind a just-completed rename/delete (observed
-          # directly while testing this against a real draft release before
-          # trusting it here) -- doesn't affect correctness below, since
-          # every asset is looked up by its REST numeric id (releases/tags,
-          # not gh release view's GraphQL id, which the assets PATCH/DELETE
-          # endpoints below don't accept) captured ONCE up front, but it does
-          # mean a listing taken right after this job finishes may briefly
-          # still show old names.
+          # GET /repos/{owner}/{repo}/releases/tags/{tag} only resolves a
+          # PUBLISHED release -- this Release is still a draft at this point
+          # (see releaseDraft: true above), which has no real tag association
+          # yet, so that endpoint 404s and this whole step silently does
+          # nothing (confirmed the hard way: it looked like it worked when
+          # first tested against what turned out to be an already-published
+          # release, then quietly no-op'd on the very next real draft).
+          # Listing all releases and matching tag_name works for drafts too.
+          RELEASE_ID=$(gh api "repos/$REPO/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -1)
+          if [ -z "$RELEASE_ID" ]; then
+            echo "No release found for tag $TAG" >&2
+            exit 1
+          fi
+
+          # Every asset below is looked up by its REST numeric id (this
+          # release's own id above, and each asset's own id) -- gh release
+          # view's GraphQL-style id doesn't work with the PATCH/DELETE
+          # endpoints used here. A listing taken right after this job
+          # finishes can still lag a few seconds behind, so don't treat
+          # `gh release view`/`gh api .../releases/tags/...` as a source of
+          # truth for a few seconds after this runs.
           MAP_FILE=$(mktemp)
+          ASSETS_FILE=$(mktemp)
+          # Captured to a file rather than piped straight into the while
+          # loop below (`done < <(...)`) -- a failure inside that kind of
+          # process substitution does NOT trip `set -e` on the outer
+          # script, so an API error here would silently skip the whole
+          # rename with the job still reporting success (exactly how the
+          # releases/tags/{tag} 404 above went unnoticed the first time).
+          # This way a failure here stops the job for real.
+          gh api "repos/$REPO/releases/$RELEASE_ID" --jq '.assets[] | [.id, .name] | @tsv' >"$ASSETS_FILE"
+          if [ ! -s "$ASSETS_FILE" ]; then
+            echo "No assets found on release $TAG (id $RELEASE_ID) -- expected at least the installers tauri-action just uploaded" >&2
+            exit 1
+          fi
 
           while IFS=$'\t' read -r id name; do
             case "$name" in
@@ -160,7 +185,7 @@ jobs:
             echo "Renaming $name -> $newname"
             gh api -X PATCH "repos/$REPO/releases/assets/$id" -f name="$newname" >/dev/null
             printf '%s\t%s\n' "$name" "$newname" >>"$MAP_FILE"
-          done < <(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | [.id, .name] | @tsv')
+          done <"$ASSETS_FILE"
 
           # latest.json (read by src/api/updater.ts) embeds each platform's
           # download URL by the ORIGINAL filename -- rewrite those to match,
