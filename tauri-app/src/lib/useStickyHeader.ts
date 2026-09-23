@@ -48,9 +48,16 @@ export function useStickyHeader<T extends HTMLElement>() {
     if (!scrollEl || !header) return;
 
     function syncGeometry() {
-      if (!bg) return;
+      if (!bg || !header) return;
+      const headerRect = header.getBoundingClientRect();
       bg.style.top = `${scrollEl?.getBoundingClientRect().top ?? 0}px`;
-      bg.style.height = `${header?.getBoundingClientRect().height ?? 0}px`;
+      bg.style.height = `${headerRect.height}px`;
+      // Match the header's own rendered width (== .app-shell's content box,
+      // since the header is an unpadded flex child that stretches to fill
+      // it) rather than the full viewport, so the frozen bar reads as part
+      // of the page's column of content instead of a full-width strip.
+      bg.style.left = `${headerRect.left}px`;
+      bg.style.width = `${headerRect.width}px`;
     }
     const resizeObserver = new ResizeObserver(syncGeometry);
     resizeObserver.observe(header);

@@ -548,7 +548,7 @@ export function CalendarGrid({
                 className="calendar-day-col"
                 style={{ width: DAY_WIDTH_PX, height: gridHeight }}
               >
-                {hourMarks.slice(0, -1).map((h) => (
+                {hourMarks.map((h) => (
                   <div key={h} className="calendar-hour-line" style={{ top: minutesToPx((h - startHour) * 60) }} />
                 ))}
 

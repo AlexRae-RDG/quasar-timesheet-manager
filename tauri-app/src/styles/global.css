@@ -881,8 +881,8 @@ textarea {
    geometry mismatch a guessed height constant would have caused. */
 .page-header-fixed-bg {
   position: fixed;
-  left: 0;
-  right: 0;
+  /* left/width set live via ResizeObserver in useStickyHeader.ts, matching
+     the header's own rendered box rather than the full viewport. */
   top: 0;
   height: 0;
   opacity: 0;
