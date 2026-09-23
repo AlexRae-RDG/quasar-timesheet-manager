@@ -67,6 +67,47 @@ textarea {
   -webkit-user-select: text;
 }
 
+/* WebView2's default scrollbar is the stock wide, square, light-gray
+   Windows one -- clashes hard with this app's own styling and its dark
+   themes especially. macOS's WKWebView (also ::-webkit-scrollbar, that
+   property originated there) already draws thin overlay scrollbars that
+   auto-hide by default, so this mostly just formalizes what Mac users
+   already see, while doing the actual work on Windows. scrollbar-width/
+   -color are the standard-track equivalent, harmless to set alongside
+   even though neither engine this app ships on needs them. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  /* The transparent border + background-clip is what makes the thumb
+     look like a slim, padded pill floating inside the track rather than
+     a solid bar wedged flush against both edges. */
+  background: var(--border-strong);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .shell {
   height: 100%;
   display: flex;
@@ -1574,8 +1615,7 @@ textarea {
 :root[data-glass="true"] .field textarea,
 :root[data-glass="true"] .field select,
 :root[data-glass="true"] .btn-secondary,
-:root[data-glass="true"] .segmented,
-:root[data-glass="true"] .tour-tooltip {
+:root[data-glass="true"] .segmented {
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
@@ -1624,9 +1664,14 @@ textarea {
    rather than the rest of the app's floating-glass look. Edit Activity
    (.edit-activity-card, EditActivityModal.tsx) is the same story -- it's
    where a QDM's own Project/name/Jira link get edited after import, same
-   Windows-illegible complaint. */
+   Windows-illegible complaint. The welcome tour's tooltip
+   (.tour-tooltip) is the most extreme case of this -- it deliberately
+   floats right next to whatever real content it's spotlighting, often a
+   busy, colorful calendar full of blocks, so translucent glass there is
+   the hardest of all of these to read. */
 :root[data-glass="true"] .import-qdm-card,
-:root[data-glass="true"] .edit-activity-card {
+:root[data-glass="true"] .edit-activity-card,
+:root[data-glass="true"] .tour-tooltip {
   background: var(--option-bg);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
