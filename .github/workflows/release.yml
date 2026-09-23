@@ -107,15 +107,17 @@ jobs:
             tauri-app/src-tauri/target/**/release/bundle/nsis/*.exe
           if-no-files-found: ignore
 
-  # tauri-action names each bundle after productName+version+arch
-  # ("QUASAR.Timesheet.Manager_2.0.8_x64-setup.exe"), which doesn't tell a
-  # non-technical colleague which file is theirs -- someone who doesn't
-  # know what a ".dmg" or ".exe" even is has no way to guess "that one's
-  # for my Mac". Runs after both matrix legs (needs: build) so it only
-  # touches the shared draft Release once both platforms have finished
-  # uploading their own assets to it. Also drops the .sig files here (see
-  # below) -- same job since both steps mutate the same Release's asset
-  # list and shouldn't race each other.
+  # Three things every release needs that tauri-action doesn't do on its
+  # own: 1) a written description of what changed, generated from commit
+  # messages since the previous tag, since tauri-action leaves the Release
+  # body empty; 2) installer filenames that say which OS they're for
+  # (tauri-action names each bundle after productName+version+arch, e.g.
+  # "QUASAR.Timesheet.Manager_2.0.8_x64-setup.exe" -- meaningless to a
+  # non-technical colleague deciding which one is theirs); 3) dropping the
+  # redundant .sig files (see below). Runs after both matrix legs (needs:
+  # build) so it only touches the shared draft Release once both platforms
+  # have finished uploading their own assets to it -- all three in one job
+  # since each mutates the same Release and shouldn't race the others.
   finalize-release-assets:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
@@ -123,6 +125,31 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags, not the default shallow single-commit
+          # checkout -- the release-notes step below needs to walk back to
+          # the previous tag.
+          fetch-depth: 0
+
+      - name: Set release notes from commit history
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -Fxv "$TAG" | head -1)
+          RANGE=$([ -n "$PREV_TAG" ] && echo "${PREV_TAG}..${TAG}" || echo "$TAG")
+          # "Bump version to x.y.z" is the one commit every release has and
+          # says nothing a reader doesn't already know from the tag itself
+          # -- filtered out so it doesn't crowd out the notes that do.
+          NOTES=$(git log "$RANGE" --no-merges --pretty=format:'- %s' | grep -v '^- Bump version to ')
+          if [ -z "$NOTES" ]; then
+            NOTES="No notable changes."
+          fi
+          gh release edit "$TAG" --repo "$REPO" --notes "$NOTES"
+
       - name: Rename installers for clarity, drop redundant .sig files
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
