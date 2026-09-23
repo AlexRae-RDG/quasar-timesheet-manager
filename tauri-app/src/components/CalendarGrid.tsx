@@ -128,9 +128,24 @@ export function CalendarGrid({
   // leave dead space on the right at anything below 100%, since the fitted
   // width was computed for zoom 1 and then shrunk without the container
   // shrinking to match.
+  //
+  // Math.floor, not the raw division: each of the 5 day columns gets this
+  // exact width applied as its own inline style, and the browser rounds
+  // each one to a real device pixel independently -- a raw fractional
+  // value can round UP often enough that the 5 columns' summed width ends
+  // up a pixel wider than the space actually available, tipping
+  // .calendar-scroll's overflow:auto into showing a horizontal scrollbar
+  // it doesn't really need. That shrinks the container (ResizeObserver
+  // picks it up), which recomputes a *different* width, which can flip
+  // the scrollbar back off, regrowing the container, recomputing the
+  // original width again -- a genuine feedback loop, visible as the whole
+  // grid "vibrating" during anything that re-renders on every pointermove
+  // (a drag), worst right at the last (Friday) column where the summed
+  // rounding error is largest. Flooring guarantees the total is never
+  // larger than what's actually available, only ever equal or smaller.
   const DAY_WIDTH_PX =
     containerSize.width > 0
-      ? Math.max(MIN_DAY_WIDTH_PX, (containerSize.width - GUTTER_WIDTH_PX) / days.length)
+      ? Math.max(MIN_DAY_WIDTH_PX, Math.floor((containerSize.width - GUTTER_WIDTH_PX) / days.length))
       : BASE_DAY_WIDTH_PX;
 
   const totalMinutes = (endHour - startHour) * 60;
@@ -144,11 +159,19 @@ export function CalendarGrid({
   // via the toolbar's +/- buttons, same as day width scaling from its own
   // fitted baseline used to (now width no longer moves with zoom -- see
   // DAY_WIDTH_PX above -- only height does).
+  // Floored for the same reason DAY_WIDTH_PX is -- at zoom 1 this is meant
+  // to fit with no vertical scrollbar at all, and a raw fractional value
+  // rounding up by even one device pixel per slot can sum to just enough
+  // extra height to trigger one anyway, feeding the same
+  // ResizeObserver-vs-overflow oscillation loop described there.
   const fitSlotHeight =
     containerSize.height > 0
       ? Math.max(
           MIN_SLOT_HEIGHT_PX,
-          Math.min(MAX_SLOT_HEIGHT_PX, (containerSize.height - GRID_TOP_PAD_PX - GRID_BOTTOM_PAD_PX) / totalSlots),
+          Math.min(
+            MAX_SLOT_HEIGHT_PX,
+            Math.floor((containerSize.height - GRID_TOP_PAD_PX - GRID_BOTTOM_PAD_PX) / totalSlots),
+          ),
         )
       : BASE_SLOT_HEIGHT_PX;
   const SLOT_HEIGHT_PX = fitSlotHeight * zoom;
