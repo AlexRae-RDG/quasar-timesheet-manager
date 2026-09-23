@@ -1664,7 +1664,12 @@ textarea {
   width: 100%;
 }
 
-/* Onboarding: guided tour overlay */
+/* Onboarding: guided tour overlay -- purely a positioning container, not a
+   hit-blocker itself (see .tour-block-band below for why: pointer-events:
+   none on a CHILD only skips that child during hit-testing, it doesn't
+   also skip an ANCESTOR whose own box happens to cover the same point --
+   the .tour-overlay parent would still intercept the click even with a
+   pointer-events:none cutout sitting on top of it). */
 .tour-overlay {
   position: fixed;
   inset: 0;
@@ -1687,10 +1692,32 @@ textarea {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.72);
+  pointer-events: auto;
 }
 
+/* Four of these tile the viewport around the cutout (top/bottom/left/
+   right -- see OnboardingTour.tsx), the actual click/scroll/drag blocker
+   for everything except the spotlighted element itself. Invisible (the
+   dimming is .tour-cutout's own box-shadow, painted separately) -- these
+   only exist for hit-testing, tiled so there's no band covering the
+   cutout's own box for a colleague going through onboarding to
+   accidentally interact with the real app behind the dimmed backdrop
+   through. */
+.tour-block-band {
+  position: fixed;
+  pointer-events: auto;
+}
+
+/* The gap the four bands leave uncovered. Several steps (Import QDMs'
+   "uncheck a row", "open this dropdown") are written to have the user
+   actually try the real control while it's spotlighted, not just look at
+   it -- pointer-events: none here, plus no band covering this exact box,
+   means a click landing inside it skips both this div AND .tour-overlay
+   entirely and reaches the real element underneath, same as if the tour
+   weren't running at all. */
 .tour-cutout {
   position: fixed;
+  pointer-events: none;
   border-radius: 10px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72);
   outline: 2px solid var(--accent);

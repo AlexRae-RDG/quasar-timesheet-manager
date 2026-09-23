@@ -404,7 +404,7 @@ export function ImportQdmModal({
                     <>
                       {visibleQdms.length > 0 && (
                         <div className="qdm-column-headers">
-                          <span className="qdm-select-controls" data-tour="qdm-select-controls">
+                          <span className="qdm-select-controls">
                             {teamKey}
                             <button type="button" className="link-button" onClick={selectAll}>
                               Select All

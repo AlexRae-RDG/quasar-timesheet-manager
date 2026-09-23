@@ -81,7 +81,12 @@ const TOUR_STEPS: TourStep[] = [
   {
     tab: "activities",
     openModal: "import-qdm",
-    selector: '[data-tour="qdm-select-controls"]',
+    // The whole scrollable list, not just the Select All/Deselect All
+    // controls -- this step's own body invites unchecking ANY row, and
+    // the tour now genuinely blocks clicks outside whatever it spotlights
+    // (see .tour-block-band), so the spotlight has to cover every row a
+    // colleague might actually try that on, not just the header above them.
+    selector: ".qdm-scroll-area",
     title: "Selecting What to Import",
     body: "Every match is checked by default. Uncheck any row you'd rather leave for next time, or use Select All / Deselect All to handle the whole list at once.",
   },
@@ -235,7 +240,25 @@ export function OnboardingTour({
     function measure() {
       const el = step.selector ? document.querySelector(step.selector) : null;
       if (el) {
-        setRect(el.getBoundingClientRect());
+        let rect = el.getBoundingClientRect();
+        // The target can be scrolled out of view inside .shell-content
+        // (Settings' Theme section, well below the fold on a shorter
+        // window) -- data-tour-active's own overflow:hidden (below) then
+        // stops the user from scrolling it into view themselves, which is
+        // exactly what got a colleague stuck unable to reach Finish on the
+        // last step. Scrolling programmatically here, before ever
+        // measuring/positioning the spotlight off of it, means the
+        // element (and so the tooltip anchored to it) is always grounded
+        // somewhere actually visible -- scrollIntoView walks every
+        // scrollable ancestor as needed, not just the window, so this
+        // works the same whether the target's inside .shell-content, a
+        // modal, or nested deeper than that.
+        const inView = rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth;
+        if (!inView) {
+          el.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+          rect = el.getBoundingClientRect();
+        }
+        setRect(rect);
         return;
       }
       // A tab switch renders synchronously, but a screen's own data fetch
@@ -288,7 +311,7 @@ export function OnboardingTour({
   // (TOOLTIP_WIDTH) were never measured off anything, so they're left
   // untouched.
   const zoom = getZoomFactor();
-  const cutoutStyle: CSSProperties | null = cutout
+  const cutoutBox = cutout
     ? {
         top: cutout.top / zoom,
         left: cutout.left / zoom,
@@ -302,9 +325,31 @@ export function OnboardingTour({
     ...(typeof rawTooltipStyle.top === "number" ? { top: rawTooltipStyle.top / zoom } : {}),
   };
 
+  // Four bands tiling the viewport around the cutout -- see
+  // .tour-block-band's own comment for why this, rather than just
+  // pointer-events on .tour-overlay/.tour-cutout, is what actually blocks
+  // clicks everywhere except the spotlighted element itself.
+  const bands: CSSProperties[] = cutoutBox
+    ? [
+        { top: 0, left: 0, right: 0, height: Math.max(0, cutoutBox.top) },
+        { top: cutoutBox.top + cutoutBox.height, left: 0, right: 0, bottom: 0 },
+        { top: cutoutBox.top, height: cutoutBox.height, left: 0, width: Math.max(0, cutoutBox.left) },
+        { top: cutoutBox.top, height: cutoutBox.height, left: cutoutBox.left + cutoutBox.width, right: 0 },
+      ]
+    : [];
+
   return (
     <div className="tour-overlay">
-      {cutoutStyle ? <div className="tour-cutout" style={cutoutStyle} /> : <div className="tour-dim" />}
+      {cutoutBox ? (
+        <>
+          {bands.map((band, i) => (
+            <div key={i} className="tour-block-band" style={band} />
+          ))}
+          <div className="tour-cutout" style={cutoutBox} />
+        </>
+      ) : (
+        <div className="tour-dim" />
+      )}
       <div className="tour-tooltip" style={tooltipStyle}>
         <div className="tour-step-count">
           Step {stepIndex + 1} of {TOUR_STEPS.length}
