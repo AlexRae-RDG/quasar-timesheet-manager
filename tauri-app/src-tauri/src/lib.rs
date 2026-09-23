@@ -5,6 +5,7 @@ mod db;
 mod ics;
 mod jira;
 mod keychain;
+mod outlook_calendars;
 mod qdm;
 mod settings;
 mod tasks;
@@ -23,6 +24,8 @@ pub fn run() {
     let conn = db::connect().expect("failed to open the local SQLite database");
     settings::ensure_onboarding_for_pre_v2(&conn, env!("CARGO_PKG_VERSION"))
         .expect("failed to check onboarding version gate");
+    outlook_calendars::migrate_from_legacy_url(&conn)
+        .expect("failed to migrate the legacy outlook_ics_url setting");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -52,6 +55,10 @@ pub fn run() {
             commands::update_project,
             commands::delete_project,
             commands::set_project_collapsed,
+            commands::list_outlook_calendars,
+            commands::create_outlook_calendar,
+            commands::update_outlook_calendar,
+            commands::delete_outlook_calendar,
             commands::create_activity,
             commands::update_activity,
             commands::archive_activity,

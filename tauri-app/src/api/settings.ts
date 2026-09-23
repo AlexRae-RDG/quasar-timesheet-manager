@@ -51,10 +51,6 @@ export interface AppSettings {
    * through untouched on every save so it can't be broken by accident. */
   jiraSiteUrl: string;
   jiraEmail: string;
-  /** Published Outlook/Google shared-calendar .ics link, used by the
-   * Timesheet's "Import from Outlook" so it doesn't have to be pasted in
-   * every time. Optional -- "" until the user sets one. */
-  outlookIcsUrl: string;
   /** The Activity sidebar's drag-to-resize width, shared by Timesheet and
    * Template (the same sidebar content, so one width for both). Kept in
    * sync here (not just component-local state) so it survives switching

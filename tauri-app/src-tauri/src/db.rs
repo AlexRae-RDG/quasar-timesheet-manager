@@ -113,6 +113,19 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+
+-- No Python-app equivalent (same story as tasks above) -- support for more
+-- than one Outlook/Google shared-calendar link was added directly here.
+-- Superseded the single outlook_ics_url settings key, which a migration in
+-- outlook_calendars.rs carries forward into this table's first row so an
+-- existing saved link isn't silently dropped on upgrade.
+CREATE TABLE IF NOT EXISTS outlook_calendars (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    label       TEXT NOT NULL,
+    ics_url     TEXT NOT NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
 "#;
 
 /// Columns added after each table's initial CREATE TABLE, mirroring the

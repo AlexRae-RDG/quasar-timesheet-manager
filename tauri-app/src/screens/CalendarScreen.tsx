@@ -745,7 +745,6 @@ export function CalendarScreen({
           projects={projects}
           entries={entries}
           days={days}
-          savedIcsUrl={settings.outlookIcsUrl}
           onImported={refreshEntries}
           onClose={() => setImportOutlookOpen(false)}
         />

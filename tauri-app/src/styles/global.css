@@ -1359,6 +1359,56 @@ textarea {
   padding-top: 4px;
 }
 
+/* Settings' Outlook Calendars list -- one row per saved calendar. */
+.outlook-calendar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outlook-calendar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.outlook-calendar-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.outlook-calendar-row-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.outlook-calendar-row-url {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outlook-calendar-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 12px;
+}
+
 .segmented {
   display: inline-flex;
   border: 1px solid var(--border-strong);
@@ -2001,6 +2051,16 @@ textarea {
 .qdm-row-guess {
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* Which saved calendar an Outlook occurrence came from, now that more than
+   one can be merged into the same review list -- see ImportOutlookModal's
+   SourcedOccurrence. */
+.qdm-row-source {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .qdm-row-project {

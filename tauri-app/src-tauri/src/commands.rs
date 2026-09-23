@@ -3,6 +3,7 @@
 use crate::activities::{self, Activity, NewActivity, NewProject, Project, UpdateActivity, UpdateProject};
 use crate::calendar::{self, NewTimeEntry, TimeEntry, UpdateTimeEntry};
 use crate::keychain;
+use crate::outlook_calendars::{self, NewOutlookCalendar, OutlookCalendar, UpdateOutlookCalendar};
 use crate::settings::{self, AppSettings, SaveSettingsInput};
 use crate::tasks::{self, NewTask, Task, UpdateTask};
 use crate::templates::{self, ApplyTemplateResult, NewTemplateEntry, TemplateEntry, UpdateTemplateEntry};
@@ -190,6 +191,36 @@ pub fn delete_project(state: State<AppState>, id: i64) -> Result<(), String> {
 pub fn set_project_collapsed(state: State<AppState>, id: i64, collapsed: bool) -> Result<Project, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     activities::set_project_collapsed(&conn, id, collapsed).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_outlook_calendars(state: State<AppState>) -> Result<Vec<OutlookCalendar>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    outlook_calendars::list(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_outlook_calendar(
+    state: State<AppState>,
+    input: NewOutlookCalendar,
+) -> Result<OutlookCalendar, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    outlook_calendars::create(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_outlook_calendar(
+    state: State<AppState>,
+    input: UpdateOutlookCalendar,
+) -> Result<OutlookCalendar, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    outlook_calendars::update(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_outlook_calendar(state: State<AppState>, id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    outlook_calendars::delete(&conn, id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

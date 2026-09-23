@@ -10,6 +10,7 @@ import {
   verifyJiraCredentials,
   type AppSettings,
 } from "../api/settings";
+import { createOutlookCalendar } from "../api/outlookCalendars";
 
 type JiraVerifyState =
   | { kind: "idle" }
@@ -36,6 +37,11 @@ export function OnboardingForm({
   const [jiraVerify, setJiraVerify] = useState<JiraVerifyState>({ kind: "idle" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Settings can now hold several calendars (see Settings' own "Outlook
+  // Calendars" card) -- onboarding just offers a quick single one to get
+  // started with, kept as local state (not settings.outlookIcsUrl, which no
+  // longer exists) and turned into a real outlook_calendars row on Continue.
+  const [outlookIcsUrl, setOutlookIcsUrl] = useState("");
   const teamKey = projectKeyForDepartment(settings.department);
 
   const jiraSatisfied = settings.hasJiraToken || jiraVerify.kind === "success";
@@ -96,9 +102,11 @@ export function OnboardingForm({
         showTimerBar: settings.showTimerBar,
         jiraSiteUrl: settings.jiraSiteUrl,
         jiraEmail: settings.email,
-        outlookIcsUrl: settings.outlookIcsUrl,
         sidebarWidth: settings.sidebarWidth,
       });
+      if (outlookIcsUrl.trim()) {
+        await createOutlookCalendar({ label: "Outlook Calendar", icsUrl: outlookIcsUrl.trim() });
+      }
       onSubmit();
     } catch (e) {
       setError(String(e));
@@ -213,8 +221,8 @@ export function OnboardingForm({
             <span>Calendar link (.ics)</span>
             <input
               type="text"
-              value={settings.outlookIcsUrl}
-              onChange={(e) => onChange({ outlookIcsUrl: e.target.value })}
+              value={outlookIcsUrl}
+              onChange={(e) => setOutlookIcsUrl(e.target.value)}
               placeholder="https://outlook.office.com/owa/calendar/.../calendar.ics"
             />
           </label>

@@ -29,7 +29,6 @@ export function installDevMockIfRequested() {
     showTimerBar: false,
     jiraSiteUrl: "raildeliverygroup.atlassian.net",
     jiraEmail: "",
-    outlookIcsUrl: "",
     sidebarWidth: 210,
     hasJiraToken: false,
     onboardingCompleted: onboarded,
@@ -120,6 +119,9 @@ export function installDevMockIfRequested() {
     { id: 1, name: "Project Alpha", color: "#4C6EF5", sortOrder: 0, collapsed: false },
     { id: 2, name: "Project Beta", color: "#12B886", sortOrder: 1, collapsed: false },
   ];
+
+  let nextOutlookCalendarId = 1;
+  let outlookCalendars: Record<string, unknown>[] = [];
 
   let nextTaskId = 1;
   let tasks: Record<string, unknown>[] = [
@@ -339,6 +341,26 @@ END:VCALENDAR`;
         }
         return p;
       }
+      case "list_outlook_calendars":
+        return outlookCalendars;
+      case "create_outlook_calendar": {
+        const input = args.input as Record<string, unknown>;
+        const c = { id: nextOutlookCalendarId++, label: input.label, icsUrl: input.icsUrl };
+        outlookCalendars.push(c);
+        return c;
+      }
+      case "update_outlook_calendar": {
+        const input = args.input as Record<string, unknown>;
+        const c = outlookCalendars.find((x) => x.id === input.id);
+        if (c) {
+          c.label = input.label;
+          c.icsUrl = input.icsUrl;
+        }
+        return c;
+      }
+      case "delete_outlook_calendar":
+        outlookCalendars = outlookCalendars.filter((c) => c.id !== args.id);
+        return null;
       case "set_project_collapsed": {
         const p = projects.find((x) => x.id === args.id);
         if (p) p.collapsed = args.collapsed;

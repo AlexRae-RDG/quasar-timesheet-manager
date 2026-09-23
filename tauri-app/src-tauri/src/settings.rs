@@ -50,10 +50,6 @@ pub struct AppSettings {
     pub show_timer_bar: bool,
     pub jira_site_url: String,
     pub jira_email: String,
-    /// The user's published Outlook (or Google) shared-calendar .ics link --
-    /// stored so "Import from Outlook" on the Timesheet can fetch straight
-    /// away instead of asking for it every time. Optional; empty until set.
-    pub outlook_ics_url: String,
     /// The Activity sidebar's drag-to-resize width, shared by Timesheet and
     /// Template (the same sidebar content, so one width for both rather than
     /// two independently-remembered ones). Previously component-local state
@@ -89,7 +85,6 @@ pub struct SaveSettingsInput {
     pub show_timer_bar: bool,
     pub jira_site_url: String,
     pub jira_email: String,
-    pub outlook_ics_url: String,
     pub sidebar_width: i32,
 }
 
@@ -149,7 +144,6 @@ pub fn load(conn: &Connection) -> rusqlite::Result<AppSettings> {
         jira_site_url: get(conn, "jira_site_url")?
             .unwrap_or_else(|| DEFAULT_JIRA_SITE_URL.to_string()),
         jira_email: get(conn, "jira_email")?.unwrap_or_default(),
-        outlook_ics_url: get(conn, "outlook_ics_url")?.unwrap_or_default(),
         // Clamped defensively (the frontend's own drag handler already
         // clamps to its min/max, this only guards a hand-edited DB value or
         // a future bug from wedging the sidebar at an unusable width).
@@ -190,7 +184,6 @@ pub fn save(conn: &Connection, input: &SaveSettingsInput) -> rusqlite::Result<()
     )?;
     set(conn, "jira_site_url", &input.jira_site_url)?;
     set(conn, "jira_email", &input.jira_email)?;
-    set(conn, "outlook_ics_url", &input.outlook_ics_url)?;
     set(conn, "sidebar_width", &input.sidebar_width.to_string())?;
     Ok(())
 }

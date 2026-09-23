@@ -13,6 +13,13 @@ import {
   type AppSettings,
 } from "../api/settings";
 import { Dropdown, DropdownOption } from "../components/Dropdown";
+import {
+  createOutlookCalendar,
+  deleteOutlookCalendar,
+  listOutlookCalendars,
+  updateOutlookCalendar,
+  type OutlookCalendar,
+} from "../api/outlookCalendars";
 import { ThemeSwatch } from "../components/ThemeSwatch";
 import { UpdateAvailableModal } from "../components/UpdateAvailableModal";
 import { useStickyHeader } from "../lib/useStickyHeader";
@@ -112,6 +119,72 @@ export function SettingsScreen({
     });
   }
 
+  // A real list now (see outlook_calendars.rs), not a single settings
+  // field -- fetched here the same way Activities fetches Projects, rather
+  // than folded into the settings object App.tsx already holds, since nothing
+  // else on this screen needs to react to it living there.
+  const [calendars, setCalendars] = useState<OutlookCalendar[]>([]);
+  const [calendarForm, setCalendarForm] = useState<{ mode: "new" } | { mode: "edit"; id: number } | null>(null);
+  const [calendarLabel, setCalendarLabel] = useState("");
+  const [calendarUrl, setCalendarUrl] = useState("");
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listOutlookCalendars().then(setCalendars).catch(() => {});
+  }, []);
+
+  function openNewCalendarForm() {
+    setCalendarForm({ mode: "new" });
+    setCalendarLabel("");
+    setCalendarUrl("");
+    setCalendarError(null);
+  }
+
+  function openEditCalendarForm(cal: OutlookCalendar) {
+    setCalendarForm({ mode: "edit", id: cal.id });
+    setCalendarLabel(cal.label);
+    setCalendarUrl(cal.icsUrl);
+    setCalendarError(null);
+  }
+
+  function cancelCalendarForm() {
+    setCalendarForm(null);
+  }
+
+  async function saveCalendarForm() {
+    if (!calendarForm) return;
+    if (!calendarLabel.trim() || !calendarUrl.trim()) {
+      setCalendarError("Enter both a name and a calendar link.");
+      return;
+    }
+    try {
+      if (calendarForm.mode === "new") {
+        const created = await createOutlookCalendar({ label: calendarLabel.trim(), icsUrl: calendarUrl.trim() });
+        // React StrictMode can invoke a functional setState updater more
+        // than once in dev -- guarding on the id already being present
+        // keeps a double-invoke from adding the same freshly created
+        // calendar twice (same root cause as ActivitiesScreen's own
+        // onProjectCreated guard).
+        setCalendars((prev) => (prev.some((c) => c.id === created.id) ? prev : [...prev, created]));
+      } else {
+        const updated = await updateOutlookCalendar({
+          id: calendarForm.id,
+          label: calendarLabel.trim(),
+          icsUrl: calendarUrl.trim(),
+        });
+        setCalendars((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      }
+      setCalendarForm(null);
+    } catch (e) {
+      setCalendarError(String(e));
+    }
+  }
+
+  async function removeCalendar(id: number) {
+    await deleteOutlookCalendar(id);
+    setCalendars((prev) => prev.filter((c) => c.id !== id));
+  }
+
   // Sends the mandatory form + guided tour back through as if this were a
   // Keeps Email auto-filled as firstname.lastname@raildeliverygroup.com
   // while it's still in sync with the current name -- the moment someone
@@ -151,7 +224,6 @@ export function SettingsScreen({
         showTimerBar: settings.showTimerBar,
         jiraSiteUrl: settings.jiraSiteUrl,
         jiraEmail: settings.email,
-        outlookIcsUrl: settings.outlookIcsUrl,
         sidebarWidth: settings.sidebarWidth,
       });
 
@@ -303,21 +375,70 @@ export function SettingsScreen({
       </section>
 
       <section className="card">
-        <h2>Outlook Calendar Import</h2>
+        <h2>Outlook Calendars</h2>
         <p className="muted">
-          Paste your shared calendar's published link so <strong>Import from Outlook</strong> on the
-          Timesheet can fetch it straight away. In Outlook: Calendar settings → Shared calendars →
-          Publish a calendar → copy the ICS link.
+          Add one or more published shared-calendar links -- <strong>Import from Outlook</strong> on
+          the Timesheet fetches from all of them at once and merges the results. In Outlook: Calendar
+          settings → Shared calendars → Publish a calendar → copy the ICS link.
         </p>
-        <label className="field">
-          <span>Calendar link (.ics)</span>
-          <input
-            type="text"
-            value={settings.outlookIcsUrl}
-            onChange={(e) => onChange({ outlookIcsUrl: e.target.value })}
-            placeholder="https://outlook.office.com/owa/calendar/.../calendar.ics"
-          />
-        </label>
+
+        {calendars.length > 0 && (
+          <ul className="outlook-calendar-list">
+            {calendars.map((cal) => (
+              <li key={cal.id} className="outlook-calendar-row">
+                <div className="outlook-calendar-row-text">
+                  <span className="outlook-calendar-row-label">{cal.label}</span>
+                  <span className="outlook-calendar-row-url muted">{cal.icsUrl}</span>
+                </div>
+                <div className="row">
+                  <button type="button" className="btn btn-secondary" onClick={() => openEditCalendarForm(cal)}>
+                    Edit
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => removeCalendar(cal.id)}>
+                    Remove
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {calendarForm ? (
+          <div className="outlook-calendar-form">
+            <label className="field">
+              <span>Name</span>
+              <input
+                type="text"
+                autoFocus
+                value={calendarLabel}
+                onChange={(e) => setCalendarLabel(e.target.value)}
+                placeholder="e.g. Work Calendar"
+              />
+            </label>
+            <label className="field">
+              <span>Calendar link (.ics)</span>
+              <input
+                type="text"
+                value={calendarUrl}
+                onChange={(e) => setCalendarUrl(e.target.value)}
+                placeholder="https://outlook.office.com/owa/calendar/.../calendar.ics"
+              />
+            </label>
+            {calendarError && <p className="status status-error">{calendarError}</p>}
+            <div className="row">
+              <button type="button" className="btn btn-secondary" onClick={cancelCalendarForm}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-accent" onClick={saveCalendarForm}>
+                {calendarForm.mode === "new" ? "Add Calendar" : "Save"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="btn btn-secondary" onClick={openNewCalendarForm}>
+            + Add Calendar
+          </button>
+        )}
       </section>
 
       <section className="card" data-tour="settings-theme">
