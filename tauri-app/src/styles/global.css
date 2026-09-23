@@ -1604,7 +1604,6 @@ textarea {
 }
 
 :root[data-glass="true"] .card,
-:root[data-glass="true"] .modal-card,
 :root[data-glass="true"] .activity-sidebar,
 :root[data-glass="true"] .calendar-wrapper,
 :root[data-glass="true"] .shell-header,
@@ -1647,30 +1646,23 @@ textarea {
   -webkit-backdrop-filter: blur(4px);
 }
 
-/* The update-available popup needs to read clearly at a glance, not blend
-   into the backdrop the way a card floating over the gradient normally
-   should -- solid background, no blur, same option-bg stand-in. */
-:root[data-glass="true"] .update-modal-card {
-  background: var(--option-bg);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* Import from Outlook and Import QDMs (.import-qdm-card, shared by both --
-   see ImportOutlookModal.tsx/ImportQdmModal.tsx) list rows of real content
-   over the calendar/QDM data still visible behind them -- translucent glass
-   there reads as illegible on Windows/WebView2, where the blur renders
-   noticeably weaker than on macOS. Same solid stand-in as the update popup
-   rather than the rest of the app's floating-glass look. Edit Activity
-   (.edit-activity-card, EditActivityModal.tsx) is the same story -- it's
-   where a QDM's own Project/name/Jira link get edited after import, same
-   Windows-illegible complaint. The welcome tour's tooltip
-   (.tour-tooltip) is the most extreme case of this -- it deliberately
-   floats right next to whatever real content it's spotlighting, often a
-   busy, colorful calendar full of blocks, so translucent glass there is
-   the hardest of all of these to read. */
-:root[data-glass="true"] .import-qdm-card,
-:root[data-glass="true"] .edit-activity-card,
+/* Every modal (.modal-card, the shared base class every one of them
+   renders -- see EditEntryModal/CreateEntryModal/ImportQdmModal/
+   EditActivityModal/UpdateAvailableModal/etc.) floats over whatever real
+   content was on screen when it opened -- a calendar full of colorful
+   blocks behind Edit Time Block, QDM/activity rows behind the import
+   modals, and so on. Translucent glass there reads as illegible on
+   Windows/WebView2 in particular, where the blur renders noticeably
+   weaker than on macOS -- solid background, no blur, same option-bg
+   stand-in used for native <select> popups, rather than the rest of the
+   app's floating-glass look. This used to be an allowlist of individual
+   modals added one at a time as each was reported illegible (Update
+   Available, then Import QDMs/Outlook, then Edit Activity) -- switched to
+   covering the shared base class instead of chasing the next one someone
+   finds. The welcome tour's tooltip (.tour-tooltip, not a .modal-card,
+   a separate overlay) gets the same treatment for the same reason -- it
+   deliberately floats right next to whatever it's spotlighting. */
+:root[data-glass="true"] .modal-card,
 :root[data-glass="true"] .tour-tooltip {
   background: var(--option-bg);
   backdrop-filter: none;
