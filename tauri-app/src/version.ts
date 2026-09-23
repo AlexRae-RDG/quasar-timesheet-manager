@@ -2,4 +2,4 @@
 // src-tauri/Cargo.toml by hand (all four should be bumped together on
 // release) -- not read from any of them at runtime, so the Settings
 // footer doesn't need an IPC round trip just to show a version number.
-export const APP_VERSION = "2.0.5";
+export const APP_VERSION = "2.0.6";
