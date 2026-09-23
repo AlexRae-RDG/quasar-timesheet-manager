@@ -21,6 +21,8 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let conn = db::connect().expect("failed to open the local SQLite database");
+    settings::ensure_onboarding_for_pre_v2(&conn, env!("CARGO_PKG_VERSION"))
+        .expect("failed to check onboarding version gate");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

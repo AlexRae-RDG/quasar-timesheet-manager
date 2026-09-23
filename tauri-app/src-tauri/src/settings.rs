@@ -194,3 +194,33 @@ pub fn complete_onboarding(conn: &Connection) -> rusqlite::Result<()> {
 pub fn reset_onboarding(conn: &Connection) -> rusqlite::Result<()> {
     set(conn, "onboarding_completed", "0")
 }
+
+/// This app's database is the SAME file the old Python/Tkinter app used
+/// (see db.rs) -- versions v1.0.0 through v1.9.3 were that app, which had
+/// no onboarding concept at all, so a colleague migrating straight from
+/// one of those already gets the form/tour today via onboarding_completed
+/// simply defaulting to false. What that can't catch on its own: someone
+/// who already ran an EARLY v2.x.x build of *this* app (this rewrite
+/// started its own v1.x.x-style churn before "v2.0.0" -- see the git tag
+/// history) and clicked through onboarding back then, on a build from
+/// before a lot of this session's bug fixes landed. Called once at
+/// startup (see lib.rs), this force-resets onboarding_completed the first
+/// time a database's recorded last-run version is missing or pre-2.x --
+/// covering both that case and a genuine v1.x Python migrator, at the
+/// (accepted) cost of also re-prompting anyone already on a v2.0.x build
+/// from before this tracking existed, since there's no way to tell those
+/// two apart retroactively. Only ever fires once per database: after
+/// this runs, last_run_version is always >= the current version, so every
+/// launch after the first never re-triggers it.
+pub fn ensure_onboarding_for_pre_v2(conn: &Connection, current_version: &str) -> rusqlite::Result<()> {
+    let last_seen = get(conn, "last_run_version")?.unwrap_or_default();
+    let last_major: u32 = last_seen
+        .split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    if last_major < 2 {
+        set(conn, "onboarding_completed", "0")?;
+    }
+    set(conn, "last_run_version", current_version)
+}

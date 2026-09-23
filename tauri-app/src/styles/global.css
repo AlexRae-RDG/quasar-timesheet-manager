@@ -1621,8 +1621,12 @@ textarea {
    over the calendar/QDM data still visible behind them -- translucent glass
    there reads as illegible on Windows/WebView2, where the blur renders
    noticeably weaker than on macOS. Same solid stand-in as the update popup
-   rather than the rest of the app's floating-glass look. */
-:root[data-glass="true"] .import-qdm-card {
+   rather than the rest of the app's floating-glass look. Edit Activity
+   (.edit-activity-card, EditActivityModal.tsx) is the same story -- it's
+   where a QDM's own Project/name/Jira link get edited after import, same
+   Windows-illegible complaint. */
+:root[data-glass="true"] .import-qdm-card,
+:root[data-glass="true"] .edit-activity-card {
   background: var(--option-bg);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
