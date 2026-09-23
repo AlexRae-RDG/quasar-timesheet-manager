@@ -40,7 +40,7 @@ export function UpdateAvailableModal({ update, onDismiss }: { update: Update; on
 
   return (
     <div className="modal-backdrop">
-      <div className="modal-card">
+      <div className="modal-card update-modal-card">
         <h2>Update available -- v{update.version}</h2>
         {update.body && <p className="muted update-notes">{update.body}</p>}
 

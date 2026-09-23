@@ -1557,6 +1557,29 @@ textarea {
   -webkit-backdrop-filter: blur(4px);
 }
 
+/* The sticky Settings header normally shows the page's own gradient
+   through it (background-attachment: fixed, matching body's -- see
+   .page-header-stuck above) so it reads as the page itself rather than a
+   panel sitting on top of it. On a glass theme, once actually stuck and
+   scrolling past cards with their own drop shadow just below it, that
+   shadow visibly bled through at the header's own edges -- a solid color
+   instead (the same option-bg stand-in used elsewhere a glass theme needs
+   something solid) blocks that outright rather than chasing the exact
+   cause of the bleed-through. */
+:root[data-glass="true"] .page-header-stuck {
+  background: var(--option-bg);
+  background-attachment: scroll;
+}
+
+/* The update-available popup needs to read clearly at a glance, not blend
+   into the backdrop the way a card floating over the gradient normally
+   should -- solid background, no blur, same option-bg stand-in. */
+:root[data-glass="true"] .update-modal-card {
+  background: var(--option-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .edit-activity-card {
   width: 480px;
 }
