@@ -1252,10 +1252,78 @@ textarea {
   padding: 0;
 }
 
-.color-picker-row {
+/* EditProjectModal's Color field -- a visually bounded panel (its own
+   background/border, distinct from the plain form fields around it) so
+   the preview, hex input, presets, and Confirm button read as one
+   self-contained unit rather than a loose row that happens to end with a
+   button that looks just like the modal's own Cancel/Save. */
+.color-picker-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.color-picker-preview-row {
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+/* A real <input type="color">, not a decorative div -- clicking it still
+   opens the OS's own picker for full, unrestricted customization, just
+   styled as a large preview tile instead of a small native control. */
+.color-swatch-input {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.color-hex-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+}
+
+.color-picker-presets {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.color-preset-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0;
+  cursor: pointer;
+}
+
+.color-preset-swatch-selected {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.color-picker-footer {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
 }
 
 .btn-color-confirm {
