@@ -4,6 +4,7 @@ import type { TimeEntry } from "../api/calendar";
 import { minutesToTime, timeToMinutes, toISODate } from "../lib/date";
 import { layoutDayEntries } from "../lib/overlapLayout";
 import { blockTextColor, BLOCK_TEXT_LIGHT } from "../theme/palettes";
+import { getZoomFactor } from "../lib/windowsScale";
 
 const SLOT_MINUTES = 15;
 const BASE_SLOT_HEIGHT_PX = 30;
@@ -280,13 +281,26 @@ export function CalendarGrid({
   // Coordinates relative to the top-left of the day-column area: the
   // header row is a sibling *outside* calendar-scroll, so only the
   // gutter (a real child inside it) needs to be subtracted from x.
+  //
+  // clientX/clientY and getBoundingClientRect() report the pointer's real,
+  // post-zoom position on screen, but GUTTER_WIDTH_PX/DAY_WIDTH_PX (and so
+  // el.scrollLeft/scrollTop, and containerSize above) are all authored/
+  // unzoomed CSS pixels -- ResizeObserver's contentRect reports the
+  // pre-zoom size (a Chromium quirk, unlike getBoundingClientRect), which
+  // is what containerSize/DAY_WIDTH_PX are built from. Left unconverted, a
+  // pointer's real on-screen movement was read as `1/zoom` times bigger
+  // than the grid's own column math expected -- at 150% Windows scaling
+  // (zoom 2/3) a drag to Friday only reached Wednesday. Dividing the
+  // clientX/clientY delta by zoom here brings it into the same authored-
+  // pixel space as everything it's compared against below.
   const gridPointFromEvent = useCallback((e: PointerEvent | ReactPointerEvent) => {
     const el = containerRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
+    const zoom = getZoomFactor();
     return {
-      x: e.clientX - rect.left - GUTTER_WIDTH_PX + el.scrollLeft,
-      y: e.clientY - rect.top + el.scrollTop,
+      x: (e.clientX - rect.left) / zoom - GUTTER_WIDTH_PX + el.scrollLeft,
+      y: (e.clientY - rect.top) / zoom + el.scrollTop,
     };
   }, []);
 
