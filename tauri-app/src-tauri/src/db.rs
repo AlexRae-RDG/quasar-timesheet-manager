@@ -126,6 +126,16 @@ CREATE TABLE IF NOT EXISTS outlook_calendars (
     sort_order  INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
 );
+
+-- Free-form notes for the optional Notes tab (see notes.rs). Timestamps are
+-- stored as UTC ISO-8601 strings so the frontend can parse them directly.
+CREATE TABLE IF NOT EXISTS notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL DEFAULT '',
+    body        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
 "#;
 
 /// Columns added after each table's initial CREATE TABLE, mirroring the

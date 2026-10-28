@@ -5,6 +5,7 @@ mod db;
 mod ics;
 mod jira;
 mod keychain;
+mod notes;
 mod outlook_calendars;
 mod qdm;
 mod settings;
@@ -59,6 +60,10 @@ pub fn run() {
             commands::create_outlook_calendar,
             commands::update_outlook_calendar,
             commands::delete_outlook_calendar,
+            commands::list_notes,
+            commands::create_note,
+            commands::update_note,
+            commands::delete_note,
             commands::create_activity,
             commands::update_activity,
             commands::archive_activity,

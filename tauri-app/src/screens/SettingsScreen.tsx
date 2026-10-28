@@ -20,8 +20,11 @@ import {
   updateOutlookCalendar,
   type OutlookCalendar,
 } from "../api/outlookCalendars";
+import { NumberField } from "../components/NumberField";
 import { ThemeSwatch } from "../components/ThemeSwatch";
 import { UpdateAvailableModal } from "../components/UpdateAvailableModal";
+import { WEEKDAY_LABELS, WEEKEND_LABELS } from "../lib/date";
+import { isWorkingDay } from "../lib/workHours";
 import { useStickyHeader } from "../lib/useStickyHeader";
 import { checkForUpdate, type Update } from "../api/updater";
 import { APP_VERSION } from "../version";
@@ -44,7 +47,8 @@ const HEADER_STYLES: Array<{ id: AppSettings["headerStyle"]; label: string }> = 
   { id: "hidden", label: "Hidden" },
 ];
 
-const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i);
+const START_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i);
+const DAY_LABELS = [...WEEKDAY_LABELS, ...WEEKEND_LABELS];
 
 const SHORTCUTS: Array<{ keys: string; description: string }> = [
   { keys: "Click + drag", description: "Create a time block (or move/resize an existing one)" },
@@ -217,11 +221,18 @@ export function SettingsScreen({
         department: settings.department,
         themeMode: settings.themeMode,
         customTheme: settings.customTheme,
-        workStartHour: settings.workStartHour,
-        workEndHour: settings.workEndHour,
+        workHours: settings.workHours,
         showWeekends: settings.showWeekends,
         headerStyle: settings.headerStyle,
         showTimerBar: settings.showTimerBar,
+        notesEnabled: settings.notesEnabled,
+        tasksEnabled: settings.tasksEnabled,
+        pomodoroEnabled: settings.pomodoroEnabled,
+        pomodoroFocusMinutes: settings.pomodoroFocusMinutes,
+        pomodoroShortBreakMinutes: settings.pomodoroShortBreakMinutes,
+        pomodoroLongBreakMinutes: settings.pomodoroLongBreakMinutes,
+        pomodoroSessionsBeforeLong: settings.pomodoroSessionsBeforeLong,
+        pomodoroSound: settings.pomodoroSound,
         jiraSiteUrl: settings.jiraSiteUrl,
         jiraEmail: settings.email,
         sidebarWidth: settings.sidebarWidth,
@@ -259,6 +270,28 @@ export function SettingsScreen({
   // the mandatory form, same path a genuinely new install takes. Existing
   // Profile/Jira/theme settings aren't touched, so the form comes back
   // pre-filled rather than blank.
+  // A working day always has end > start (the End dropdown only offers
+  // later hours than Start), so the one way to get end <= start is the
+  // "Working" checkbox below -- which stores a day off as start == end.
+  function setDayHours(index: number, patch: { start?: number; end?: number; working?: boolean }) {
+    const current = settings.workHours[index];
+    let next = { ...current };
+    if (patch.working === false) {
+      next = { start: current.start, end: current.start };
+    } else if (patch.working === true) {
+      next = { start: 9, end: 17 };
+    } else {
+      next = { start: patch.start ?? current.start, end: patch.end ?? current.end };
+      if (next.end <= next.start) next.end = Math.min(24, next.start + 1);
+    }
+    onChange({ workHours: settings.workHours.map((h, i) => (i === index ? next : h)) });
+  }
+
+  function applyMondayToAllDays() {
+    const monday = settings.workHours[0];
+    onChange({ workHours: settings.workHours.map(() => ({ ...monday })) });
+  }
+
   async function handleReplayTour() {
     await resetOnboarding();
     window.location.reload();
@@ -527,28 +560,53 @@ export function SettingsScreen({
 
       <section className="card">
         <h2>Work Hours</h2>
-        <div className="row">
-          <label className="field field-inline">
-            <span>Start</span>
-            <Dropdown value={settings.workStartHour} onChange={(v) => onChange({ workStartHour: Number(v) })}>
-              {HOUR_OPTIONS.map((h) => (
-                <DropdownOption key={h} value={h}>
-                  {h.toString().padStart(2, "0")}:00
-                </DropdownOption>
-              ))}
-            </Dropdown>
-          </label>
-          <label className="field field-inline">
-            <span>End</span>
-            <Dropdown value={settings.workEndHour} onChange={(v) => onChange({ workEndHour: Number(v) })}>
-              {HOUR_OPTIONS.map((h) => (
-                <DropdownOption key={h} value={h}>
-                  {h.toString().padStart(2, "0")}:00
-                </DropdownOption>
-              ))}
-            </Dropdown>
-          </label>
-        </div>
+        <p className="muted">
+          Set each day's hours separately. Time outside a day's hours is shaded on the Timesheet and
+          Template, and the Summary's expected total uses each weekday's own hours.
+        </p>
+        <ul className="work-hours-list">
+          {DAY_LABELS.slice(0, settings.showWeekends ? 7 : 5).map((label, i) => {
+            const hours = settings.workHours[i];
+            const working = isWorkingDay(hours);
+            return (
+              <li key={label} className="work-hours-row">
+                <span className="work-hours-day">{label}</span>
+                <label className="work-hours-working">
+                  <input
+                    type="checkbox"
+                    checked={working}
+                    onChange={(e) => setDayHours(i, { working: e.target.checked })}
+                  />
+                  <span>Working</span>
+                </label>
+                {working ? (
+                  <div className="work-hours-range">
+                    <Dropdown value={hours.start} onChange={(v) => setDayHours(i, { start: Number(v) })}>
+                      {START_HOUR_OPTIONS.map((h) => (
+                        <DropdownOption key={h} value={h}>
+                          {h.toString().padStart(2, "0")}:00
+                        </DropdownOption>
+                      ))}
+                    </Dropdown>
+                    <span className="muted">to</span>
+                    <Dropdown value={hours.end} onChange={(v) => setDayHours(i, { end: Number(v) })}>
+                      {Array.from({ length: 24 - hours.start }, (_, k) => hours.start + 1 + k).map((h) => (
+                        <DropdownOption key={h} value={h}>
+                          {h.toString().padStart(2, "0")}:00
+                        </DropdownOption>
+                      ))}
+                    </Dropdown>
+                  </div>
+                ) : (
+                  <span className="muted">Day off</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <button type="button" className="btn btn-secondary" onClick={applyMondayToAllDays}>
+          Apply Monday's hours to every day
+        </button>
         <label className="field field-checkbox">
           <input
             type="checkbox"
@@ -557,14 +615,89 @@ export function SettingsScreen({
           />
           <span>Show weekends on the calendar</span>
         </label>
+      </section>
+
+      <section className="card">
+        <h2>Optional Features</h2>
+        <p className="muted">
+          Switch these on or off to keep the interface as lean as you like -- each one is a tab (or, for
+          the timer bar, a strip on the Timesheet) that only appears while it's on. Remember to save.
+        </p>
         <label className="field field-checkbox">
           <input
             type="checkbox"
             checked={settings.showTimerBar}
             onChange={(e) => onChange({ showTimerBar: e.target.checked })}
           />
-          <span>Show the timer bar</span>
+          <span>Timer bar -- start/stop a live timer above the Timesheet that logs a block when you stop</span>
         </label>
+        <label className="field field-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.tasksEnabled}
+            onChange={(e) => onChange({ tasksEnabled: e.target.checked })}
+          />
+          <span>Tasks -- the kanban board tab (your cards are kept if you switch it off)</span>
+        </label>
+        <label className="field field-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.notesEnabled}
+            onChange={(e) => onChange({ notesEnabled: e.target.checked })}
+          />
+          <span>Notes -- a scratchpad tab for quick work notes</span>
+        </label>
+        <label className="field field-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.pomodoroEnabled}
+            onChange={(e) => onChange({ pomodoroEnabled: e.target.checked })}
+          />
+          <span>Pomodoro -- a focus/break timer tab</span>
+        </label>
+        {settings.pomodoroEnabled && (
+          <div className="pomodoro-settings">
+            <NumberField
+              label="Focus"
+              suffix="min"
+              min={1}
+              max={180}
+              value={settings.pomodoroFocusMinutes}
+              onCommit={(v) => onChange({ pomodoroFocusMinutes: v })}
+            />
+            <NumberField
+              label="Short break"
+              suffix="min"
+              min={1}
+              max={60}
+              value={settings.pomodoroShortBreakMinutes}
+              onCommit={(v) => onChange({ pomodoroShortBreakMinutes: v })}
+            />
+            <NumberField
+              label="Long break"
+              suffix="min"
+              min={1}
+              max={120}
+              value={settings.pomodoroLongBreakMinutes}
+              onCommit={(v) => onChange({ pomodoroLongBreakMinutes: v })}
+            />
+            <NumberField
+              label="Sessions before long break"
+              min={1}
+              max={12}
+              value={settings.pomodoroSessionsBeforeLong}
+              onCommit={(v) => onChange({ pomodoroSessionsBeforeLong: v })}
+            />
+            <label className="field field-checkbox pomodoro-sound">
+              <input
+                type="checkbox"
+                checked={settings.pomodoroSound}
+                onChange={(e) => onChange({ pomodoroSound: e.target.checked })}
+              />
+              <span>Play a sound when a session ends</span>
+            </label>
+          </div>
+        )}
       </section>
 
       <section className="card">

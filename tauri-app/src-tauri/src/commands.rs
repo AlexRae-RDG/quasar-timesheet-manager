@@ -3,6 +3,7 @@
 use crate::activities::{self, Activity, NewActivity, NewProject, Project, UpdateActivity, UpdateProject};
 use crate::calendar::{self, NewTimeEntry, TimeEntry, UpdateTimeEntry};
 use crate::keychain;
+use crate::notes::{self, Note, UpdateNote};
 use crate::outlook_calendars::{self, NewOutlookCalendar, OutlookCalendar, UpdateOutlookCalendar};
 use crate::settings::{self, AppSettings, SaveSettingsInput};
 use crate::tasks::{self, NewTask, Task, UpdateTask};
@@ -321,4 +322,28 @@ pub fn update_task(state: State<AppState>, input: UpdateTask) -> Result<Task, St
 pub fn delete_task(state: State<AppState>, id: i64) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     tasks::delete_task(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_notes(state: State<AppState>) -> Result<Vec<Note>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    notes::list(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_note(state: State<AppState>) -> Result<Note, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    notes::create(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_note(state: State<AppState>, input: UpdateNote) -> Result<Note, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    notes::update(&conn, &input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_note(state: State<AppState>, id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    notes::delete(&conn, id).map_err(|e| e.to_string())
 }

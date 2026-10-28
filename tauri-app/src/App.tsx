@@ -7,20 +7,39 @@ import { OnboardingTour } from "./components/OnboardingTour";
 import { UpdateAvailableModal } from "./components/UpdateAvailableModal";
 import { ActivitiesScreen } from "./screens/ActivitiesScreen";
 import { CalendarScreen } from "./screens/CalendarScreen";
+import { NotesScreen } from "./screens/NotesScreen";
+import { PomodoroScreen, PomodoroTabLabel } from "./screens/PomodoroScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { SummaryScreen } from "./screens/SummaryScreen";
 import { TasksScreen } from "./screens/TasksScreen";
 import { TemplateScreen } from "./screens/TemplateScreen";
+import { pomodoro } from "./lib/pomodoro";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
-const TABS: Tab[] = [
+// Tasks, Notes and Pomodoro are switchable from Settings → Optional Features
+// (see buildTabs below); everything else is always shown.
+const TIMESHEET_TABS: Tab[] = [
   { id: "timesheet", label: "Timesheet" },
   { id: "activities", label: "Activities" },
   { id: "template", label: "Template" },
-  { id: "tasks", label: "Tasks" },
+];
+const TASKS_TAB: Tab = { id: "tasks", label: "Tasks" };
+const NOTES_TAB: Tab = { id: "notes", label: "Notes" };
+const POMODORO_TAB: Tab = { id: "pomodoro", label: <PomodoroTabLabel /> };
+const CLOSING_TABS: Tab[] = [
   { id: "summary", label: "Summary" },
   { id: "settings", label: "Settings" },
 ];
+
+function buildTabs(settings: AppSettings): Tab[] {
+  return [
+    ...TIMESHEET_TABS,
+    ...(settings.tasksEnabled ? [TASKS_TAB] : []),
+    ...(settings.notesEnabled ? [NOTES_TAB] : []),
+    ...(settings.pomodoroEnabled ? [POMODORO_TAB] : []),
+    ...CLOSING_TABS,
+  ];
+}
 
 // "form" blocks the whole app behind the mandatory-fields form; "tour"
 // shows the real app with a guided spotlight overlay on top; "done" is
@@ -49,6 +68,22 @@ function App() {
       })
       .catch((e) => setLoadError(String(e)));
   }, []);
+
+  // Hands the Pomodoro engine its durations whenever Settings changes them
+  // (and once settings first load) -- a timer mid-run keeps its end time,
+  // so a change only takes effect from the next phase.
+  const pomodoroConfig = settings && {
+    focusMinutes: settings.pomodoroFocusMinutes,
+    shortBreakMinutes: settings.pomodoroShortBreakMinutes,
+    longBreakMinutes: settings.pomodoroLongBreakMinutes,
+    sessionsBeforeLong: settings.pomodoroSessionsBeforeLong,
+    soundEnabled: settings.pomodoroSound,
+  };
+  const pomodoroConfigKey = pomodoroConfig ? Object.values(pomodoroConfig).join(",") : "";
+  useEffect(() => {
+    if (pomodoroConfig) pomodoro.setConfig(pomodoroConfig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pomodoroConfigKey]);
 
   // A few seconds after launch, not immediately -- same pacing the Python
   // app's own check used, so a slow/missing connection never delays
@@ -97,6 +132,8 @@ function App() {
     }
   }
 
+  const tabs = buildTabs(settings);
+
   return (
     <ThemeProvider
       themeId={settings.themeMode}
@@ -109,7 +146,7 @@ function App() {
       ) : (
         <>
           <AppShell
-            tabs={TABS}
+            tabs={tabs}
             activeTab={activeTab}
             onSelectTab={setActiveTab}
             headerStyle={settings.headerStyle}
@@ -120,13 +157,16 @@ function App() {
               <ActivitiesScreen settings={settings} tourOpenImportModal={tourModalRequest === "import-qdm"} />
             )}
             {activeTab === "template" && <TemplateScreen settings={settings} onChange={updateSettings} />}
-            {activeTab === "tasks" && <TasksScreen />}
+            {activeTab === "tasks" && settings.tasksEnabled && <TasksScreen />}
+            {activeTab === "notes" && settings.notesEnabled && <NotesScreen />}
+            {activeTab === "pomodoro" && settings.pomodoroEnabled && <PomodoroScreen />}
             {activeTab === "summary" && <SummaryScreen settings={settings} />}
             {activeTab === "settings" && <SettingsScreen settings={settings} onChange={updateSettings} />}
           </AppShell>
           {onboardingStage === "tour" && (
             <OnboardingTour
               activeTab={activeTab}
+              availableTabs={tabs.map((t) => t.id)}
               onSelectTab={setActiveTab}
               onRequestModal={setTourModalRequest}
               onFinish={finishTour}

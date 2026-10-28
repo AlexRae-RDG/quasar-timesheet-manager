@@ -13,6 +13,10 @@ export function installDevMockIfRequested() {
   // ?mock=1&onboarded=1 skips straight past the onboarding flow, for
   // testing the rest of the app without re-running it every reload.
   const onboarded = new URLSearchParams(window.location.search).get("onboarded") === "1";
+  // ?tasks=0 starts with the Tasks tab switched off, for checking the tour
+  // skips its Tasks step (there's no other way to reach that state before
+  // the onboarding tour has run).
+  const tasksEnabled = new URLSearchParams(window.location.search).get("tasks") !== "0";
 
   const settings: Record<string, unknown> = {
     displayName: "",
@@ -22,11 +26,18 @@ export function installDevMockIfRequested() {
     department: "",
     themeMode: "dark",
     customTheme: { appBg: "#05070F", panelBg: "#0B1020", textPrimary: "#EAF0FF", accent: "#2F6FED" },
-    workStartHour: 9,
-    workEndHour: 17,
+    workHours: Array.from({ length: 7 }, () => ({ start: 9, end: 17 })),
     showWeekends: false,
     headerStyle: "compact",
     showTimerBar: false,
+    notesEnabled: false,
+    tasksEnabled,
+    pomodoroEnabled: false,
+    pomodoroFocusMinutes: 25,
+    pomodoroShortBreakMinutes: 5,
+    pomodoroLongBreakMinutes: 15,
+    pomodoroSessionsBeforeLong: 4,
+    pomodoroSound: true,
     jiraSiteUrl: "raildeliverygroup.atlassian.net",
     jiraEmail: "",
     sidebarWidth: 210,
@@ -120,6 +131,8 @@ export function installDevMockIfRequested() {
     { id: 2, name: "Project Beta", color: "#12B886", sortOrder: 1, collapsed: false },
   ];
 
+  let nextNoteId = 1;
+  let notes: Record<string, unknown>[] = [];
   let nextOutlookCalendarId = 1;
   let outlookCalendars: Record<string, unknown>[] = [];
 
@@ -341,6 +354,22 @@ END:VCALENDAR`;
         }
         return p;
       }
+      case "list_notes":
+        return notes;
+      case "create_note": {
+        const note = { id: nextNoteId++, title: "", body: "", updatedAt: new Date().toISOString() };
+        notes = [note, ...notes];
+        return note;
+      }
+      case "update_note": {
+        const input = (args as { input: { id: number; title: string; body: string } }).input;
+        const updated = { id: input.id, title: input.title, body: input.body, updatedAt: new Date().toISOString() };
+        notes = notes.map((n) => (n.id === input.id ? updated : n));
+        return updated;
+      }
+      case "delete_note":
+        notes = notes.filter((n) => n.id !== (args as { id: number }).id);
+        return null;
       case "list_outlook_calendars":
         return outlookCalendars;
       case "create_outlook_calendar": {

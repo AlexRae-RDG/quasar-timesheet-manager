@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { TimeEntry } from "../api/calendar";
+import type { DayHours } from "../api/settings";
 import { minutesToTime, timeToMinutes, toISODate } from "../lib/date";
 import { layoutDayEntries } from "../lib/overlapLayout";
 import { blockTextColor, BLOCK_TEXT_LIGHT } from "../theme/palettes";
@@ -14,6 +15,7 @@ const BASE_DAY_WIDTH_PX = 168;
 const MIN_DAY_WIDTH_PX = 90;
 const GUTTER_WIDTH_PX = 52;
 const HEADER_HEIGHT_PX = 40;
+const HEADER_HEIGHT_WITH_TOTALS_PX = 58;
 const RESIZE_GRIP_PX = 7;
 const DRAG_THRESHOLD_PX = 4;
 const BLOCK_GAP_PX = 2;
@@ -48,10 +50,33 @@ interface DragState {
   duplicateSource?: TimeEntry;
 }
 
+function formatHours(minutes: number): string {
+  return `${Math.round((minutes / 60) * 10) / 10}`;
+}
+
+/** "6.5 / 8h" under a day's date -- turns green once the day's own target is
+ * met. A day off just says so (or shows what was logged anyway). */
+function DayTotal({ logged, target }: { logged: number; target: number }) {
+  if (target === 0) {
+    return (
+      <div className="calendar-day-total calendar-day-total-off">
+        {logged > 0 ? `${formatHours(logged)}h` : "Day off"}
+      </div>
+    );
+  }
+  return (
+    <div className={"calendar-day-total" + (logged >= target ? " calendar-day-total-met" : "")}>
+      {formatHours(logged)} / {formatHours(target)}h
+    </div>
+  );
+}
+
 export function CalendarGrid({
   days,
   startHour,
   endHour,
+  dayHours,
+  showDayTotals,
   entries,
   zoom,
   onZoomIn,
@@ -72,6 +97,15 @@ export function CalendarGrid({
   days: Date[];
   startHour: number;
   endHour: number;
+  /** Each column's own working hours, aligned with `days` -- the rows
+   * (startHour..endHour) are shared by every column, so a day whose hours
+   * are narrower than that gets its off-hours shaded rather than the grid
+   * trying to render a different range per column. Omit for no shading. */
+  dayHours?: DayHours[];
+  /** Adds a "logged / target" line under each day's date, measured against
+   * that day's own hours from `dayHours`. Timesheet only -- the Template
+   * screen is a pattern, not a record of time actually logged. */
+  showDayTotals?: boolean;
   entries: TimeEntry[];
   zoom: number;
   /** Omitted on the Template screen, which keeps its own zoom buttons in
@@ -229,6 +263,17 @@ export function CalendarGrid({
     }
     return map;
   }, [entries, dayIso]);
+
+  const dayLoggedMinutes = useMemo(
+    () =>
+      dayIso.map((iso) =>
+        (entriesByDay.get(iso) ?? []).reduce(
+          (sum, e) => sum + Math.max(0, timeToMinutes(e.endTime) - timeToMinutes(e.startTime)),
+          0,
+        ),
+      ),
+    [dayIso, entriesByDay],
+  );
 
   const clampMinutes = useCallback(
     (m: number) => Math.max(0, Math.min(totalMinutes, m)),
@@ -494,7 +539,10 @@ export function CalendarGrid({
 
   return (
     <div className="calendar-wrapper" data-tour="calendar-grid">
-      <div className="calendar-header" style={{ paddingLeft: GUTTER_WIDTH_PX, height: HEADER_HEIGHT_PX }}>
+      <div
+        className="calendar-header"
+        style={{ paddingLeft: GUTTER_WIDTH_PX, height: showDayTotals ? HEADER_HEIGHT_WITH_TOTALS_PX : HEADER_HEIGHT_PX }}
+      >
         {days.map((d, i) => (
           <div
             key={i}
@@ -503,6 +551,9 @@ export function CalendarGrid({
           >
             <div className="calendar-day-name">{d.toLocaleDateString(undefined, { weekday: "short" })}</div>
             <div className="calendar-day-date">{d.getDate()}</div>
+            {showDayTotals && dayHours?.[i] && (
+              <DayTotal logged={dayLoggedMinutes[i] ?? 0} target={Math.max(0, dayHours[i].end - dayHours[i].start) * 60} />
+            )}
           </div>
         ))}
       </div>
@@ -562,6 +613,26 @@ export function CalendarGrid({
                 className="calendar-day-col"
                 style={{ width: DAY_WIDTH_PX, height: gridHeight }}
               >
+                {dayHours?.[dayIndex] &&
+                  (dayHours[dayIndex].end > dayHours[dayIndex].start ? (
+                    <>
+                      {dayHours[dayIndex].start > startHour && (
+                        <div
+                          className="calendar-off-hours"
+                          style={{ top: 0, height: minutesToPx((dayHours[dayIndex].start - startHour) * 60) }}
+                        />
+                      )}
+                      {dayHours[dayIndex].end < endHour && (
+                        <div
+                          className="calendar-off-hours"
+                          style={{ top: minutesToPx((dayHours[dayIndex].end - startHour) * 60), bottom: 0 }}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <div className="calendar-off-hours" style={{ top: 0, bottom: 0 }} />
+                  ))}
+
                 {hourMarks.map((h) => (
                   <div key={h} className="calendar-hour-line" style={{ top: minutesToPx((h - startHour) * 60) }} />
                 ))}

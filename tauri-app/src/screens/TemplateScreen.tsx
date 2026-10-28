@@ -25,6 +25,7 @@ import { EditActivityModal, type ActivityFormValues } from "../components/EditAc
 import { EditEntryModal } from "../components/EditEntryModal";
 import { addDays, toISODate, WEEKDAY_LABELS } from "../lib/date";
 import { useResizableSidebar } from "../lib/useResizableSidebar";
+import { gridHourRange, hoursForDate } from "../lib/workHours";
 import { setSidebarWidth, type AppSettings } from "../api/settings";
 
 type ActivityModalState = { mode: "new"; projectId: number } | { mode: "edit"; activity: Activity } | null;
@@ -89,6 +90,11 @@ export function TemplateScreen({
     null,
   );
   const [zoom, setZoom] = useState(1);
+  const templateHours = useMemo(() => gridHourRange(settings.workHours, REFERENCE_DAYS), [settings.workHours]);
+  const templateDayHours = useMemo(
+    () => REFERENCE_DAYS.map((d) => hoursForDate(settings.workHours, d)),
+    [settings.workHours],
+  );
   const [error, setError] = useState<string | null>(null);
   const [activityModal, setActivityModal] = useState<ActivityModalState>(null);
   const sidebar = useResizableSidebar({
@@ -382,8 +388,9 @@ export function TemplateScreen({
 
           <CalendarGrid
             days={REFERENCE_DAYS}
-            startHour={settings.workStartHour}
-            endHour={settings.workEndHour}
+            startHour={templateHours.start}
+            endHour={templateHours.end}
+            dayHours={templateDayHours}
             entries={entries}
             zoom={zoom}
             onZoomIn={() => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)))}

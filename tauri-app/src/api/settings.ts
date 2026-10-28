@@ -31,6 +31,13 @@ export function jiraProjectNameForDepartment(department: Department): string {
   return DEPARTMENTS.find((d) => d.id === department)?.projectName ?? DEFAULT_PROJECT_NAME;
 }
 
+/** One weekday's working window in whole hours (0-24). A day with
+ * `end <= start` is a day off. */
+export interface DayHours {
+  start: number;
+  end: number;
+}
+
 export interface AppSettings {
   displayName: string;
   firstName: string;
@@ -42,11 +49,26 @@ export interface AppSettings {
   department: Department;
   themeMode: string;
   customTheme: PaletteSeeds;
-  workStartHour: number;
-  workEndHour: number;
+  /** Seven entries, Monday first -- see lib/workHours.ts for the weekday
+   * indexing helpers every consumer should go through. */
+  workHours: DayHours[];
   showWeekends: boolean;
   headerStyle: "standard" | "compact" | "hidden";
   showTimerBar: boolean;
+  /** Whether the optional Notes tab is shown -- off by default so the main
+   * interface stays uncluttered for anyone who doesn't want it. */
+  notesEnabled: boolean;
+  /** Whether the Tasks (kanban board) tab is shown -- on by default, so an
+   * existing install keeps the tab it already uses until it's switched off. */
+  tasksEnabled: boolean;
+  /** Whether the optional Pomodoro tab is shown, and its tunables. */
+  pomodoroEnabled: boolean;
+  pomodoroFocusMinutes: number;
+  pomodoroShortBreakMinutes: number;
+  pomodoroLongBreakMinutes: number;
+  pomodoroSessionsBeforeLong: number;
+  /** Whether the end-of-session beep plays. */
+  pomodoroSound: boolean;
   /** No longer user-editable (see SettingsScreen/OnboardingForm) -- carried
    * through untouched on every save so it can't be broken by accident. */
   jiraSiteUrl: string;

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { getZoomFactor } from "../lib/windowsScale";
 
@@ -191,11 +191,14 @@ function placeTooltip(cutout: { top: number; left: number; width: number; height
 
 export function OnboardingTour({
   activeTab,
+  availableTabs,
   onSelectTab,
   onRequestModal,
   onFinish,
 }: {
   activeTab: string;
+  /** Ids of the tabs currently shown -- tour steps for any other tab are skipped. */
+  availableTabs: string[];
   onSelectTab: (id: string) => void;
   /** Called with step.openModal on entering a step that names one, and
    * with null on leaving it (including on unmount) -- see ActivitiesScreen's
@@ -205,8 +208,16 @@ export function OnboardingTour({
 }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
-  const step = TOUR_STEPS[stepIndex];
-  const isLast = stepIndex === TOUR_STEPS.length - 1;
+  // A step whose tab is switched off in Settings (Tasks, today) has nothing
+  // to point at, so it's left out rather than shown as a dead spotlight.
+  const availableKey = availableTabs.join("|");
+  const steps = useMemo(
+    () => TOUR_STEPS.filter((s) => availableTabs.includes(s.tab)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [availableKey],
+  );
+  const step = steps[stepIndex];
+  const isLast = stepIndex === steps.length - 1;
 
   // Scrolling any of the app's own scroll areas while a step is showing
   // would carry the real element out from under its spotlight (measured
@@ -368,7 +379,7 @@ export function OnboardingTour({
       )}
       <div className="tour-tooltip" style={tooltipStyle}>
         <div className="tour-step-count">
-          Step {stepIndex + 1} of {TOUR_STEPS.length}
+          Step {stepIndex + 1} of {steps.length}
         </div>
         <h3>{step.title}</h3>
         <p>{step.body}</p>

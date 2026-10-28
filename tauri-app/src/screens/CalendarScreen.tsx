@@ -23,6 +23,7 @@ import { ImportOutlookModal } from "../components/ImportOutlookModal";
 import { JiraIcon } from "../components/JiraIcon";
 import { UploadToJiraModal } from "../components/UploadToJiraModal";
 import { addDays, minutesToTime, timeToMinutes, toISODate, weekStart } from "../lib/date";
+import { gridHourRange, hoursForDate } from "../lib/workHours";
 import { useResizableSidebar } from "../lib/useResizableSidebar";
 import { projectKeyForDepartment, setSidebarWidth, type AppSettings } from "../api/settings";
 
@@ -124,21 +125,23 @@ export function CalendarScreen({
   // to see, select, or delete because it's silently off the rendered
   // grid. Nothing to widen for and no entries yet both fall back to the
   // configured hours unchanged.
+  const dayHours = useMemo(() => days.map((d) => hoursForDate(settings.workHours, d)), [days, settings.workHours]);
+
   const gridStartHour = useMemo(() => {
-    let hour = settings.workStartHour;
+    let hour = gridHourRange(settings.workHours, days).start;
     for (const e of entries) {
       hour = Math.min(hour, Math.floor(timeToMinutes(e.startTime) / 60));
     }
     return Math.max(0, hour);
-  }, [entries, settings.workStartHour]);
+  }, [entries, days, settings.workHours]);
 
   const gridEndHour = useMemo(() => {
-    let hour = settings.workEndHour;
+    let hour = gridHourRange(settings.workHours, days).end;
     for (const e of entries) {
       hour = Math.max(hour, Math.ceil(timeToMinutes(e.endTime) / 60));
     }
     return Math.min(24, hour);
-  }, [entries, settings.workEndHour]);
+  }, [entries, days, settings.workHours]);
 
   const refreshActivities = useCallback(() => {
     listProjects().then(setProjects).catch((e) => setError(String(e)));
@@ -684,6 +687,8 @@ export function CalendarScreen({
             days={days}
             startHour={gridStartHour}
             endHour={gridEndHour}
+            dayHours={dayHours}
+            showDayTotals
             entries={entries}
             zoom={zoom}
             onZoomIn={() => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)))}

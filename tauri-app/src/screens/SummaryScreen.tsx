@@ -4,7 +4,6 @@ import { listAllActivities, listProjects, type Activity, type Project } from "..
 import {
   addDays,
   addMonths,
-  countWeekdays,
   monthEnd,
   monthStart,
   timeToMinutes,
@@ -13,6 +12,7 @@ import {
 } from "../lib/date";
 import { blockTextColor } from "../theme/palettes";
 import type { AppSettings } from "../api/settings";
+import { expectedMinutesBetween } from "../lib/workHours";
 
 type Mode = "week" | "month";
 
@@ -117,20 +117,19 @@ export function SummaryScreen({ settings }: { settings: AppSettings }) {
   const byActivity = useMemo(() => groupByActivity(entries), [entries]);
   const totalMinutes = useMemo(() => entries.reduce((sum, e) => sum + entryMinutes(e), 0), [entries]);
 
-  // Expected capacity is Mon-Fri x the Settings work-hours window --
-  // "showWeekends" only controls whether weekend days are visible/loggable
-  // on the calendar, not whether they count as expected work time. This is
-  // a placeholder baseline; a real per-person expected-hours source (e.g.
-  // pulled from Jira) can replace it later without touching the rest of
-  // this screen.
+  // Expected capacity is Mon-Fri, each weekday using its own Settings work
+  // hours -- "showWeekends" only controls whether weekend days are
+  // visible/loggable on the calendar, not whether they count as expected
+  // work time. This is a placeholder baseline; a real per-person
+  // expected-hours source (e.g. pulled from Jira) can replace it later
+  // without touching the rest of this screen.
   const expectedMinutes = useMemo(() => {
-    const hoursPerDay = Math.max(0, settings.workEndHour - settings.workStartHour);
     if (mode === "week") {
       const start = weekStart(anchor);
-      return countWeekdays(start, addDays(start, 4)) * hoursPerDay * 60;
+      return expectedMinutesBetween(settings.workHours, start, addDays(start, 4));
     }
-    return countWeekdays(monthStart(anchor), monthEnd(anchor)) * hoursPerDay * 60;
-  }, [mode, anchor, settings.workStartHour, settings.workEndHour]);
+    return expectedMinutesBetween(settings.workHours, monthStart(anchor), monthEnd(anchor));
+  }, [mode, anchor, settings.workHours]);
 
   function shiftPrev() {
     setAnchor((d) => (mode === "week" ? addDays(d, -7) : addMonths(d, -1)));

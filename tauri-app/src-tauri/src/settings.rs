@@ -28,6 +28,16 @@ impl Default for CustomThemeSeeds {
     }
 }
 
+/// One weekday's working window, in whole hours (0-24). `workHours` below
+/// holds seven of these, Monday first -- the same order the Settings screen
+/// and the calendar's own weekday indexing use.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DayHours {
+    pub start: i32,
+    pub end: i32,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -43,11 +53,25 @@ pub struct AppSettings {
     pub department: String,
     pub theme_mode: String,
     pub custom_theme: CustomThemeSeeds,
-    pub work_start_hour: i32,
-    pub work_end_hour: i32,
+    pub work_hours: Vec<DayHours>,
     pub show_weekends: bool,
     pub header_style: String,
     pub show_timer_bar: bool,
+    /// Whether the optional Notes tab is shown. Off by default so the main
+    /// interface stays uncluttered for anyone who doesn't want it.
+    pub notes_enabled: bool,
+    /// Whether the Tasks (kanban board) tab is shown. On by default so an
+    /// existing install doesn't lose a tab it already uses -- it can now be
+    /// switched off from Settings → Optional Features.
+    pub tasks_enabled: bool,
+    /// Whether the optional Pomodoro tab is shown, plus its four tunables.
+    pub pomodoro_enabled: bool,
+    pub pomodoro_focus_minutes: i32,
+    pub pomodoro_short_break_minutes: i32,
+    pub pomodoro_long_break_minutes: i32,
+    pub pomodoro_sessions_before_long: i32,
+    /// Whether the end-of-session beep plays.
+    pub pomodoro_sound: bool,
     pub jira_site_url: String,
     pub jira_email: String,
     /// The Activity sidebar's drag-to-resize width, shared by Timesheet and
@@ -78,11 +102,19 @@ pub struct SaveSettingsInput {
     pub department: String,
     pub theme_mode: String,
     pub custom_theme: CustomThemeSeeds,
-    pub work_start_hour: i32,
-    pub work_end_hour: i32,
+    pub work_hours: Vec<DayHours>,
     pub show_weekends: bool,
     pub header_style: String,
     pub show_timer_bar: bool,
+    pub notes_enabled: bool,
+    pub tasks_enabled: bool,
+    pub pomodoro_enabled: bool,
+    pub pomodoro_focus_minutes: i32,
+    pub pomodoro_short_break_minutes: i32,
+    pub pomodoro_long_break_minutes: i32,
+    pub pomodoro_sessions_before_long: i32,
+    /// Whether the end-of-session beep plays.
+    pub pomodoro_sound: bool,
     pub jira_site_url: String,
     pub jira_email: String,
     pub sidebar_width: i32,
@@ -101,6 +133,63 @@ fn set(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         rusqlite::params![key, value],
     )?;
+    Ok(())
+}
+
+/// An integer setting read back through the same bounds it's saved with, so
+/// a hand-edited database value can't produce a zero-length timer.
+fn get_clamped(conn: &Connection, key: &str, default: i32, min: i32, max: i32) -> rusqlite::Result<i32> {
+    Ok(get(conn, key)?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+        .clamp(min, max))
+}
+
+const DEFAULT_WORK_START: i32 = 9;
+const DEFAULT_WORK_END: i32 = 17;
+
+/// Each weekday has its own `work_start_hour_N` / `work_end_hour_N` pair
+/// (N = 0 for Monday ... 6 for Sunday). A day that has never been saved
+/// individually falls back to the single `work_start_hour` / `work_end_hour`
+/// pair every version before per-day hours wrote -- so an upgrading install
+/// keeps exactly the hours it already had, on every day, until it's edited.
+fn load_work_hours(conn: &Connection) -> rusqlite::Result<Vec<DayHours>> {
+    let legacy_start = get(conn, "work_start_hour")?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_WORK_START);
+    let legacy_end = get(conn, "work_end_hour")?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_WORK_END);
+    (0..7)
+        .map(|day| {
+            let start = get(conn, &format!("work_start_hour_{day}"))?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(legacy_start);
+            let end = get(conn, &format!("work_end_hour_{day}"))?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(legacy_end);
+            Ok(normalize_day_hours(DayHours { start, end }))
+        })
+        .collect()
+}
+
+/// Clamped to a real 0-24 window with end never before start, so a
+/// hand-edited database value can't produce a negative-height grid.
+fn normalize_day_hours(hours: DayHours) -> DayHours {
+    let start = hours.start.clamp(0, 24);
+    let end = hours.end.clamp(start, 24);
+    DayHours { start, end }
+}
+
+fn save_work_hours(conn: &Connection, hours: &[DayHours]) -> rusqlite::Result<()> {
+    for day in 0..7 {
+        let h = normalize_day_hours(hours.get(day).copied().unwrap_or(DayHours {
+            start: DEFAULT_WORK_START,
+            end: DEFAULT_WORK_END,
+        }));
+        set(conn, &format!("work_start_hour_{day}"), &h.start.to_string())?;
+        set(conn, &format!("work_end_hour_{day}"), &h.end.to_string())?;
+    }
     Ok(())
 }
 
@@ -128,17 +217,28 @@ pub fn load(conn: &Connection) -> rusqlite::Result<AppSettings> {
         department: get(conn, "department")?.unwrap_or_default(),
         theme_mode: get(conn, "theme_mode")?.unwrap_or_else(|| "dark".to_string()),
         custom_theme,
-        work_start_hour: get(conn, "work_start_hour")?
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(9),
-        work_end_hour: get(conn, "work_end_hour")?
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(17),
+        work_hours: load_work_hours(conn)?,
         show_weekends: get(conn, "show_weekends")?
             .map(|v| v == "1")
             .unwrap_or(false),
         header_style,
         show_timer_bar: get(conn, "show_timer_bar")?
+            .map(|v| v == "1")
+            .unwrap_or(true),
+        notes_enabled: get(conn, "notes_enabled")?
+            .map(|v| v == "1")
+            .unwrap_or(false),
+        tasks_enabled: get(conn, "tasks_enabled")?
+            .map(|v| v == "1")
+            .unwrap_or(true),
+        pomodoro_enabled: get(conn, "pomodoro_enabled")?
+            .map(|v| v == "1")
+            .unwrap_or(false),
+        pomodoro_focus_minutes: get_clamped(conn, "pomodoro_focus_minutes", 25, 1, 180)?,
+        pomodoro_short_break_minutes: get_clamped(conn, "pomodoro_short_break_minutes", 5, 1, 60)?,
+        pomodoro_long_break_minutes: get_clamped(conn, "pomodoro_long_break_minutes", 15, 1, 120)?,
+        pomodoro_sessions_before_long: get_clamped(conn, "pomodoro_sessions_before_long", 4, 1, 12)?,
+        pomodoro_sound: get(conn, "pomodoro_sound")?
             .map(|v| v == "1")
             .unwrap_or(true),
         jira_site_url: get(conn, "jira_site_url")?
@@ -169,8 +269,7 @@ pub fn save(conn: &Connection, input: &SaveSettingsInput) -> rusqlite::Result<()
     set(conn, "custom_theme_panel_bg", &input.custom_theme.panel_bg)?;
     set(conn, "custom_theme_text", &input.custom_theme.text_primary)?;
     set(conn, "custom_theme_accent", &input.custom_theme.accent)?;
-    set(conn, "work_start_hour", &input.work_start_hour.to_string())?;
-    set(conn, "work_end_hour", &input.work_end_hour.to_string())?;
+    save_work_hours(conn, &input.work_hours)?;
     set(
         conn,
         "show_weekends",
@@ -181,6 +280,42 @@ pub fn save(conn: &Connection, input: &SaveSettingsInput) -> rusqlite::Result<()
         conn,
         "show_timer_bar",
         if input.show_timer_bar { "1" } else { "0" },
+    )?;
+    set(
+        conn,
+        "notes_enabled",
+        if input.notes_enabled { "1" } else { "0" },
+    )?;
+    set(
+        conn,
+        "tasks_enabled",
+        if input.tasks_enabled { "1" } else { "0" },
+    )?;
+    set(
+        conn,
+        "pomodoro_enabled",
+        if input.pomodoro_enabled { "1" } else { "0" },
+    )?;
+    set(conn, "pomodoro_focus_minutes", &input.pomodoro_focus_minutes.clamp(1, 180).to_string())?;
+    set(
+        conn,
+        "pomodoro_short_break_minutes",
+        &input.pomodoro_short_break_minutes.clamp(1, 60).to_string(),
+    )?;
+    set(
+        conn,
+        "pomodoro_long_break_minutes",
+        &input.pomodoro_long_break_minutes.clamp(1, 120).to_string(),
+    )?;
+    set(
+        conn,
+        "pomodoro_sessions_before_long",
+        &input.pomodoro_sessions_before_long.clamp(1, 12).to_string(),
+    )?;
+    set(
+        conn,
+        "pomodoro_sound",
+        if input.pomodoro_sound { "1" } else { "0" },
     )?;
     set(conn, "jira_site_url", &input.jira_site_url)?;
     set(conn, "jira_email", &input.jira_email)?;
@@ -238,4 +373,84 @@ pub fn ensure_onboarding_for_pre_v2(conn: &Connection, current_version: &str) ->
         set(conn, "onboarding_completed", "0")?;
     }
     set(conn, "last_run_version", current_version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn work_hours_default_to_nine_to_five_every_day() {
+        let hours = load_work_hours(&conn()).unwrap();
+        assert_eq!(hours.len(), 7);
+        assert!(hours.iter().all(|h| h.start == 9 && h.end == 17));
+    }
+
+    #[test]
+    fn upgrading_install_keeps_its_single_legacy_hours_on_every_day() {
+        let conn = conn();
+        set(&conn, "work_start_hour", "8").unwrap();
+        set(&conn, "work_end_hour", "16").unwrap();
+        let hours = load_work_hours(&conn).unwrap();
+        assert!(hours.iter().all(|h| h.start == 8 && h.end == 16));
+    }
+
+    #[test]
+    fn saved_per_day_hours_override_legacy_and_round_trip() {
+        let conn = conn();
+        set(&conn, "work_start_hour", "8").unwrap();
+        set(&conn, "work_end_hour", "16").unwrap();
+        let mut custom = vec![DayHours { start: 9, end: 17 }; 7];
+        custom[1] = DayHours { start: 8, end: 16 };
+        custom[2] = DayHours { start: 10, end: 10 };
+        save_work_hours(&conn, &custom).unwrap();
+        let loaded = load_work_hours(&conn).unwrap();
+        assert_eq!((loaded[0].start, loaded[0].end), (9, 17));
+        assert_eq!((loaded[1].start, loaded[1].end), (8, 16));
+        assert_eq!((loaded[2].start, loaded[2].end), (10, 10));
+    }
+
+    #[test]
+    fn out_of_range_or_inverted_hours_are_clamped() {
+        let conn = conn();
+        let mut custom = vec![DayHours { start: 9, end: 17 }; 7];
+        custom[0] = DayHours { start: -3, end: 99 };
+        custom[1] = DayHours { start: 15, end: 6 };
+        save_work_hours(&conn, &custom).unwrap();
+        let loaded = load_work_hours(&conn).unwrap();
+        assert_eq!((loaded[0].start, loaded[0].end), (0, 24));
+        assert_eq!((loaded[1].start, loaded[1].end), (15, 15));
+    }
+
+    #[test]
+    fn pomodoro_and_tasks_defaults_and_clamping() {
+        let conn = conn();
+        assert_eq!(get_clamped(&conn, "pomodoro_focus_minutes", 25, 1, 180).unwrap(), 25);
+        set(&conn, "pomodoro_focus_minutes", "0").unwrap();
+        assert_eq!(get_clamped(&conn, "pomodoro_focus_minutes", 25, 1, 180).unwrap(), 1);
+        set(&conn, "pomodoro_focus_minutes", "9999").unwrap();
+        assert_eq!(get_clamped(&conn, "pomodoro_focus_minutes", 25, 1, 180).unwrap(), 180);
+        set(&conn, "pomodoro_focus_minutes", "banana").unwrap();
+        assert_eq!(get_clamped(&conn, "pomodoro_focus_minutes", 25, 1, 180).unwrap(), 25);
+    }
+
+    #[test]
+    fn a_short_list_is_padded_with_defaults() {
+        let conn = conn();
+        save_work_hours(&conn, &[DayHours { start: 7, end: 15 }]).unwrap();
+        let loaded = load_work_hours(&conn).unwrap();
+        assert_eq!(loaded.len(), 7);
+        assert_eq!((loaded[0].start, loaded[0].end), (7, 15));
+        assert_eq!((loaded[6].start, loaded[6].end), (9, 17));
+    }
 }

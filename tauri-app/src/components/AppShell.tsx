@@ -5,7 +5,9 @@ import { TimerBar } from "./TimerBar";
 
 export interface Tab {
   id: string;
-  label: string;
+  /** A node, not just text, so a tab can show live state in its own label
+   * (the Pomodoro tab's running countdown). */
+  label: ReactNode;
 }
 
 // Lets a screen (e.g. CalendarScreen's "Upload to Jira") render a button

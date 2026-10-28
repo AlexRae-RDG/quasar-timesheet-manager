@@ -782,6 +782,22 @@ textarea {
   color: var(--text-primary);
 }
 
+.calendar-day-total {
+  margin-top: 1px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.calendar-day-total-met {
+  color: #2fbf71;
+  font-weight: 600;
+}
+
+.calendar-day-total-off {
+  font-style: italic;
+}
+
 .calendar-scroll {
   flex: 1;
   overflow: auto;
@@ -820,6 +836,339 @@ textarea {
   border-left: 1px solid var(--border);
   flex-shrink: 0;
   cursor: crosshair;
+}
+
+.work-hours-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.work-hours-row {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  gap: 16px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.work-hours-day {
+  width: 96px;
+  font-weight: 600;
+}
+
+.work-hours-working {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 90px;
+  cursor: pointer;
+}
+
+.work-hours-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notes-screen {
+  display: flex;
+  gap: 14px;
+  height: 100%;
+  padding: 16px;
+  min-height: 0;
+}
+
+.notes-sidebar {
+  flex-shrink: 0;
+  width: 270px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.notes-sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Same look as .field's text inputs -- these sit outside a .field label,
+   so they don't pick that up on their own. */
+.notes-search,
+.notes-title-input,
+.notes-body-input {
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.notes-search:focus,
+.notes-title-input:focus,
+.notes-body-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.notes-search {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.notes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.notes-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.notes-item:hover {
+  background: var(--surface);
+}
+
+.notes-item-active,
+.notes-item-active:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.notes-item-title {
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-item-meta {
+  font-size: 12px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-empty {
+  padding: 8px 10px;
+}
+
+.notes-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.notes-editor-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notes-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.notes-save-state {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.notes-body-input {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  line-height: 1.5;
+}
+
+.notes-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.tab-clock {
+  font-variant-numeric: tabular-nums;
+}
+
+.pomodoro-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 4px 0 0 26px;
+}
+
+.number-field-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.number-field-input input {
+  width: 90px;
+}
+
+.pomodoro-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 16px;
+}
+
+.pomodoro-log {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pomodoro-log h2,
+.pomodoro-log-times {
+  margin: 0;
+}
+
+.pomodoro-sound {
+  grid-column: 1 / -1;
+}
+
+.pomodoro-card {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 28px 24px;
+}
+
+.pomodoro-phase {
+  padding: 4px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.pomodoro-phase-short,
+.pomodoro-phase-long {
+  background: color-mix(in srgb, #2fbf71 18%, transparent);
+  color: #2fbf71;
+}
+
+.pomodoro-clock {
+  font-size: 84px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.pomodoro-progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.pomodoro-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s linear;
+}
+
+.pomodoro-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.pomodoro-dots {
+  display: flex;
+  gap: 8px;
+}
+
+.pomodoro-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+}
+
+.pomodoro-dot-done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pomodoro-hint,
+.pomodoro-footnote {
+  margin: 0;
+  text-align: center;
+}
+
+.pomodoro-footnote {
+  font-size: 12px;
+}
+
+/* Shades the part of a day column outside that weekday's own working hours
+   -- the grid's hour rows are shared by every column, so a day with narrower
+   hours than the widest one gets this instead of its own row range. */
+.calendar-off-hours {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  pointer-events: none;
 }
 
 .calendar-hour-line {
@@ -1126,6 +1475,7 @@ textarea {
 
 .field input[type="text"],
 .field input[type="password"],
+.field input[type="number"],
 .field input[type="date"],
 .field textarea {
   background: var(--field-bg);
@@ -1138,6 +1488,7 @@ textarea {
 
 .field input[type="text"]:focus,
 .field input[type="password"]:focus,
+.field input[type="number"]:focus,
 .field input[type="date"]:focus,
 .field textarea:focus {
   outline: 2px solid var(--accent);
