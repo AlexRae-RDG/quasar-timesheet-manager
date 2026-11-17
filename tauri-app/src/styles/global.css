@@ -1558,6 +1558,10 @@ textarea {
   align-items: center;
   justify-content: center;
   z-index: 50;
+  /* A margin the modal card never grows into, so a tall one (see
+     .upload-jira-card's max-height: 100%) can't touch the window edges. */
+  box-sizing: border-box;
+  padding: 24px;
 }
 
 .modal-card {
@@ -2252,10 +2256,18 @@ textarea {
   width: 480px;
 }
 
+/* Sized as a percentage of .modal-backdrop (which is position:fixed; inset:0,
+   so its own box is exactly the visible window) rather than in vh/vw units:
+   those are evaluated against the viewport independently of the zoom
+   applyWindowsScaleCompensation puts on <html>, so on a scaled Windows
+   display the card could end up taller than the window with its footer
+   (the Upload button) pushed off the bottom. The backdrop's padding keeps a
+   margin around the card; the list inside (.qdm-scroll-area) is the only
+   part that scrolls, so the title and Upload/Cancel stay pinned. */
 .upload-jira-card {
   width: 620px;
-  max-width: 92vw;
-  max-height: 84vh;
+  max-width: 100%;
+  max-height: 100%;
   overflow: hidden;
 }
 
