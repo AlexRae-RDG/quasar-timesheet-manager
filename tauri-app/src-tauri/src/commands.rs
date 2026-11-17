@@ -72,12 +72,11 @@ pub fn clear_jira_token() -> Result<(), String> {
     keychain::delete_token()
 }
 
-/// Searches for QDMs (Jira Sub-tasks in a team's delivery-management
-/// project, assigned to the current user) to import as Activities --
-/// `project_key` is QDM or TISACC depending on the user's department (see
-/// api/settings.ts's projectKeyForDepartment, resolved on the frontend
-/// since that's where the department->key mapping already lives for the UI
-/// copy too) -- see qdm.rs for the JQL and field mapping.
+/// Searches for QDMs (Jira Sub-tasks in the QDM project, assigned to the
+/// current user) to import as Activities -- Quality Assurance only; see
+/// `search_accreditation_tasks` for the Accreditation equivalent. `project_key`
+/// is resolved on the frontend (api/settings.ts's projectKeyForDepartment) --
+/// see qdm.rs for the JQL and field mapping.
 #[tauri::command]
 pub async fn search_qdms(
     site_url: String,
@@ -86,6 +85,18 @@ pub async fn search_qdms(
 ) -> Result<Vec<crate::qdm::QdmResult>, String> {
     let token = keychain::get_token().ok_or_else(|| "Connect Jira in Settings first.".to_string())?;
     crate::qdm::search_qdms(&site_url, &email, &token, &project_key).await
+}
+
+/// Accreditation's equivalent of `search_qdms`: the current user's open and
+/// closed sub-tasks under stories in any "Accreditation Delivery" epic,
+/// across all Jira projects -- see qdm.rs.
+#[tauri::command]
+pub async fn search_accreditation_tasks(
+    site_url: String,
+    email: String,
+) -> Result<Vec<crate::qdm::QdmResult>, String> {
+    let token = keychain::get_token().ok_or_else(|| "Connect Jira in Settings first.".to_string())?;
+    crate::qdm::search_accreditation_tasks(&site_url, &email, &token).await
 }
 
 /// Fetches the raw contents of an Outlook/Google "shared calendar" .ics

@@ -45,6 +45,7 @@ pub fn run() {
             commands::save_jira_token,
             commands::clear_jira_token,
             commands::search_qdms,
+            commands::search_accreditation_tasks,
             commands::fetch_ics_calendar,
             commands::reopen_jira_issue,
             commands::close_jira_issue,

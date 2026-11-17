@@ -10,13 +10,18 @@ export interface QdmResult {
    * status filter. "Closed" is routed to an Archived Project rather than
    * by parent name. */
   status: string;
+  /** Accreditation only: the "Accreditation Delivery" epic above this
+   * sub-task's story (parentSummary is the story's own name). null for QDMs. */
+  epicSummary: string | null;
 }
 
-/** Sub-tasks in the caller's team project (QDM or TISACC -- see
- * projectKeyForDepartment in api/settings.ts), assigned to the current user
- * and in an active status -- see src-tauri/src/qdm.rs for the exact JQL.
- * Uses whatever Jira API token is already saved in the OS keychain
- * (Settings / onboarding's Jira Connection). */
+/** The caller's Jira sub-tasks to import. Quality Assurance searches the QDM
+ * project (`projectKey`, from projectKeyForDepartment in api/settings.ts).
+ * Accreditation has no single project -- an empty `projectKey` searches the
+ * "Accreditation Delivery" epics' stories across every Jira project instead.
+ * See src-tauri/src/qdm.rs for the exact JQL. Uses whatever Jira API token is
+ * already saved in the OS keychain (Settings / onboarding's Jira Connection). */
 export function searchQdms(siteUrl: string, email: string, projectKey: string): Promise<QdmResult[]> {
+  if (!projectKey) return invoke("search_accreditation_tasks", { siteUrl, email });
   return invoke("search_qdms", { siteUrl, email, projectKey });
 }

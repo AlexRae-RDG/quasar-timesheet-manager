@@ -5,7 +5,7 @@ import {
   computeDefaultEmail,
   DEPARTMENTS,
   JIRA_API_TOKEN_URL,
-  projectKeyForDepartment,
+  itemLabelForDepartment,
   resetOnboarding,
   saveJiraToken,
   saveSettings,
@@ -90,7 +90,7 @@ export function SettingsScreen({
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({ kind: "idle" });
   const [jiraTokenInput, setJiraTokenInput] = useState("");
   const [jiraVerify, setJiraVerify] = useState<JiraVerifyState>({ kind: "idle" });
-  const teamKey = projectKeyForDepartment(settings.department);
+  const teamLabel = itemLabelForDepartment(settings.department);
   const { headerRef, bgRef } = useStickyHeader<HTMLElement>();
 
   const resolvedThemeId = resolveThemeId(settings.themeMode);
@@ -372,7 +372,7 @@ export function SettingsScreen({
             </span>
           </div>
           <p className="muted">
-            Used to upload time entries directly to Jira, and to import {teamKey}s by search. Your
+            Used to upload time entries directly to Jira, and to import {teamLabel}s by search. Your
             account email above doubles as your Jira account email. Paste a token below, then hit{" "}
             <strong>Save Settings</strong> above to verify and store it -- your API token is kept
             in this machine's OS keychain, never in the database, and never shown again once

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createActivity, createProject, type Activity, type Project } from "../api/activities";
 import { reopenJiraIssue } from "../api/jira";
 import { searchQdms, type QdmResult } from "../api/qdm";
-import { projectKeyForDepartment, type AppSettings } from "../api/settings";
+import { itemLabelForDepartment, projectKeyForDepartment, type AppSettings } from "../api/settings";
 import { Dropdown, DropdownOption } from "./Dropdown";
 import { EditProjectModal } from "./EditProjectModal";
 
@@ -39,7 +39,30 @@ function deriveProjectCandidateName(parentSummary: string | null): string | null
 // matching (matchProjectForQdm below) applies the same fallback rule
 // against real Projects, so this and that stay in sync.
 function candidateNameFor(q: QdmResult): string | null {
-  return deriveProjectCandidateName(q.parentSummary) ?? (q.status === "Closed" ? ARCHIVED_PROJECT_NAME : null);
+  return candidateNamesFor(q)[0] ?? (q.status === "Closed" ? ARCHIVED_PROJECT_NAME : null);
+}
+
+// Accreditation epics are named "Accreditation Delivery ..." -- what's left
+// once that phrase and its separators are removed is the best guess at the
+// internal Project's name. Falls back to the story's own name (parentSummary)
+// when the epic is nothing but the phrase.
+function stripEpicPhrase(epicSummary: string): string | null {
+  const stripped = epicSummary
+    .replace(/accreditation\s+delivery/gi, " ")
+    .replace(/^[\s\-\u2013\u2014:|/]+|[\s\-\u2013\u2014:|/]+$/g, "")
+    .trim();
+  return stripped || null;
+}
+
+// Names to try matching against internal Projects, best guess first. QDMs
+// have one (their parent's name, QA-suffix stripped); Accreditation tasks try
+// the epic's name first, then the story's.
+function candidateNamesFor(q: QdmResult): string[] {
+  if (q.epicSummary) {
+    return [stripEpicPhrase(q.epicSummary), q.parentSummary?.trim() || null].filter((n): n is string => !!n);
+  }
+  const qdmName = deriveProjectCandidateName(q.parentSummary);
+  return qdmName ? [qdmName] : [];
 }
 
 // Case/whitespace/punctuation-insensitive, and tolerant of a trailing 's'
@@ -94,8 +117,11 @@ function projectsExcludingArchived(projects: Project[]): Project[] {
 // (e.g. "Railcards") lands there directly instead of always defaulting to
 // Archived regardless of where it actually belongs.
 function matchProjectForQdm(q: QdmResult, projects: Project[]): Project | undefined {
-  const epicMatch = matchProjectByName(deriveProjectCandidateName(q.parentSummary), projectsExcludingArchived(projects));
-  if (epicMatch) return epicMatch;
+  const pool = projectsExcludingArchived(projects);
+  for (const name of candidateNamesFor(q)) {
+    const match = matchProjectByName(name, pool);
+    if (match) return match;
+  }
   if (q.status === "Closed") {
     return projects.find((p) => normalizeForMatch(p.name) === normalizeForMatch(ARCHIVED_PROJECT_NAME));
   }
@@ -143,10 +169,12 @@ export function ImportQdmModal({
   const [newProjectFor, setNewProjectFor] = useState<{ jiraKey: string; suggestedName: string } | null>(null);
   const [importWarning, setImportWarning] = useState<string | null>(null);
   const [reopenConfirm, setReopenConfirm] = useState<QdmResult[] | null>(null);
-  // QDM for Quality Assurance, TISACC for Accreditation -- both the search
-  // itself (runSearch below) and every "QDM" mention in this screen's copy
-  // follow whichever project the signed-in user's department actually uses.
+  // Quality Assurance searches the one QDM project (teamKey); Accreditation
+  // has no single project (teamKey is "") and searches its "Accreditation
+  // Delivery" epics instead -- see searchQdms. teamLabel is what this
+  // screen's copy calls one result ("QDM" / "task").
   const teamKey = projectKeyForDepartment(settings.department);
+  const teamLabel = itemLabelForDepartment(settings.department);
   // Closed QDMs vastly outnumber open ones in practice (see the "Archived"
   // routing above) -- splitting them into their own tab keeps the default
   // view usable instead of burying the few rows that actually need a human
@@ -349,11 +377,14 @@ export function ImportQdmModal({
   return (
     <div className="modal-backdrop">
       <div className="modal-card import-qdm-card">
-        <h2>Import {teamKey}s from Jira</h2>
+        <h2>Import {teamLabel}s from Jira</h2>
         <p className="muted">
-          Sub-tasks in the {teamKey} project assigned to you. Each one needs a Project to sort into --
+          {teamKey
+            ? `Sub-tasks in the ${teamKey} project assigned to you.`
+            : `Sub-tasks assigned to you under stories in any "Accreditation Delivery" epic, across all Jira projects.`}{" "}
+          Each one needs a Project to sort into --
           use the <strong>Project</strong> dropdown on its row (already guessed where possible from
-          its parent issue's name, falling back to "Archived" for a Closed one with no match).
+          {teamKey ? " its parent issue's name" : " its epic's or story's name"}, falling back to "Archived" for a Closed one with no match).
           Uncheck a row to leave it for next time.
         </p>
 
@@ -372,7 +403,7 @@ export function ImportQdmModal({
           {status === "loaded" && (
             <>
               {results.length === 0 ? (
-                <p className="muted">No matching {teamKey}s found.</p>
+                <p className="muted">No matching {teamLabel}s found.</p>
               ) : (
                 <>
                   {projects.length === 0 && (
@@ -399,13 +430,13 @@ export function ImportQdmModal({
                   </div>
 
                   {visibleQdms.length === 0 && visibleAlreadyImported.length === 0 ? (
-                    <p className="muted">No {showArchived ? "archived" : "active"} {teamKey}s here.</p>
+                    <p className="muted">No {showArchived ? "archived" : "active"} {teamLabel}s here.</p>
                   ) : (
                     <>
                       {visibleQdms.length > 0 && (
                         <div className="qdm-column-headers">
                           <span className="qdm-select-controls">
-                            {teamKey}
+                            {teamLabel === "QDM" ? "QDM" : "Task"}
                             <button type="button" className="link-button" onClick={selectAll}>
                               Select All
                             </button>
@@ -526,11 +557,11 @@ export function ImportQdmModal({
         <div className="modal-backdrop" onClick={() => setReopenConfirm(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <h2>
-              Reopen {reopenConfirm.length} {teamKey}
+              Reopen {reopenConfirm.length} {teamLabel}
               {reopenConfirm.length === 1 ? "" : "s"} in Jira?
             </h2>
             <p className="muted">
-              {reopenConfirm.length === 1 ? `This ${teamKey} is` : `These ${teamKey}s are`} Closed in Jira. Sorting{" "}
+              {reopenConfirm.length === 1 ? `This ${teamLabel} is` : `These ${teamLabel}s are`} Closed in Jira. Sorting{" "}
               {reopenConfirm.length === 1 ? "it" : "them"} into an active Project will also transition{" "}
               {reopenConfirm.length === 1 ? "it" : "them"} back to "In Progress" in Jira. Continue?
             </p>

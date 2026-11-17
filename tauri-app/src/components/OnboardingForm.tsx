@@ -4,7 +4,7 @@ import {
   computeDefaultEmail,
   DEPARTMENTS,
   JIRA_API_TOKEN_URL,
-  projectKeyForDepartment,
+  itemLabelForDepartment,
   saveJiraToken,
   saveSettings,
   verifyJiraCredentials,
@@ -42,7 +42,7 @@ export function OnboardingForm({
   // started with, kept as local state (not settings.outlookIcsUrl, which no
   // longer exists) and turned into a real outlook_calendars row on Continue.
   const [outlookIcsUrl, setOutlookIcsUrl] = useState("");
-  const teamKey = projectKeyForDepartment(settings.department);
+  const teamLabel = itemLabelForDepartment(settings.department);
 
   const jiraSatisfied = settings.hasJiraToken || jiraVerify.kind === "success";
   const canContinue =
@@ -182,7 +182,7 @@ export function OnboardingForm({
         <div className="card-subsection">
           <h2>Jira Connection *</h2>
           <p className="muted">
-            Needed to upload time entries and look up {teamKey}s, using your email above as the Jira
+            Needed to upload time entries and look up {teamLabel}s, using your email above as the Jira
             account email. Your API token is stored in this machine's OS keychain, never in the
             database.
           </p>

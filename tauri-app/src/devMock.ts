@@ -23,7 +23,8 @@ export function installDevMockIfRequested() {
     firstName: "",
     lastName: "",
     email: "",
-    department: "",
+    // ?dept=accreditation previews the Accreditation department.
+    department: new URLSearchParams(window.location.search).get("dept") ?? "",
     themeMode: "dark",
     customTheme: { appBg: "#05070F", panelBg: "#0B1020", textPrimary: "#EAF0FF", accent: "#2F6FED" },
     workHours: Array.from({ length: 7 }, () => ({ start: 9, end: 17 })),
@@ -41,7 +42,8 @@ export function installDevMockIfRequested() {
     jiraSiteUrl: "raildeliverygroup.atlassian.net",
     jiraEmail: "",
     sidebarWidth: 210,
-    hasJiraToken: false,
+    // ?jira=1 starts with Jira "connected" so the import buttons are enabled.
+    hasJiraToken: new URLSearchParams(window.location.search).get("jira") === "1",
     onboardingCompleted: onboarded,
   };
 
@@ -203,6 +205,39 @@ export function installDevMockIfRequested() {
       case "clear_jira_token":
         settings.hasJiraToken = false;
         return null;
+      case "search_accreditation_tasks": {
+        if (!settings.hasJiraToken) throw "Connect Jira in Settings first.";
+        return [
+          {
+            jiraKey: "ACRX-41",
+            summary: "Prepare evidence pack for scheme audit",
+            parentSummary: "Audit preparation",
+            status: "In Progress",
+            epicSummary: "Accreditation Delivery - Project Alpha",
+          },
+          {
+            jiraKey: "ACRX-42",
+            summary: "Review submitted assessments",
+            parentSummary: "Audit preparation",
+            status: "Pipeline",
+            epicSummary: "Accreditation Delivery - Project Alpha",
+          },
+          {
+            jiraKey: "RAILSEC-310",
+            summary: "Assessor interview scheduling",
+            parentSummary: "Assessor onboarding",
+            status: "In Progress",
+            epicSummary: "Accreditation Delivery - Newco Rollout",
+          },
+          {
+            jiraKey: "ACRX-9",
+            summary: "Old scheme close-out",
+            parentSummary: "Wrap up",
+            status: "Closed",
+            epicSummary: "Accreditation Delivery",
+          },
+        ];
+      }
       case "search_qdms": {
         if (!settings.hasJiraToken) throw "Connect Jira in Settings first.";
         return [

@@ -11,7 +11,7 @@ import {
   type Activity,
   type Project,
 } from "../api/activities";
-import { projectKeyForDepartment, type AppSettings } from "../api/settings";
+import { itemLabelForDepartment, type AppSettings } from "../api/settings";
 import { EditActivityModal, type ActivityFormValues } from "../components/EditActivityModal";
 import { EditProjectModal } from "../components/EditProjectModal";
 import { ImportQdmModal } from "../components/ImportQdmModal";
@@ -41,7 +41,7 @@ export function ActivitiesScreen({
    * changes, so the effect below only ever runs its no-op initial pass. */
   tourOpenImportModal?: boolean;
 }) {
-  const teamKey = projectKeyForDepartment(settings.department);
+  const teamLabel = itemLabelForDepartment(settings.department);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +165,7 @@ export function ActivitiesScreen({
             onClick={() => setImportModalOpen(true)}
             data-tour="activities-import"
           >
-            Import {teamKey}s from Jira
+            Import {teamLabel}s from Jira
           </button>
           <button
             className="btn btn-accent"

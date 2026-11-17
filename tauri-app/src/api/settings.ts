@@ -3,30 +3,51 @@ import type { PaletteSeeds } from "../theme/palettes";
 
 export type Department = "quality_assurance" | "accreditation" | "";
 
-/** Each department's sub-tasks live under a different Jira project -- QA
- * uses QDM, Accreditation uses TISACC. Searching/importing has to use the
- * right one or it silently finds nothing for whichever team isn't QDM.
- * `projectName` is that same project's full Jira display name, used to fill
- * an Activity's Jira Project automatically -- see jiraProjectNameForDepartment. */
-export const DEPARTMENTS: Array<{ id: Exclude<Department, "">; label: string; projectKey: string; projectName: string }> = [
-  { id: "quality_assurance", label: "Quality Assurance", projectKey: "QDM", projectName: "QUASAR Delivery Management" },
-  { id: "accreditation", label: "Accreditation", projectKey: "TISACC", projectName: "TISACC RDG Admin" },
+/** Quality Assurance's sub-tasks all live in one Jira project (QDM), so
+ * `projectKey` is fixed and searching/importing filters on it. Accreditation's
+ * are spread across many Jira projects with different names and keys, so it
+ * has no single key (`projectKey` is "") -- its tasks are found through the
+ * "Accreditation Delivery" epics instead (see searchQdms in api/qdm.ts and
+ * src-tauri/src/qdm.rs), and a Jira key is typed in full rather than as a
+ * number after a fixed prefix. `itemLabel` is what the UI calls one of these
+ * sub-tasks. `projectName` is the single project's Jira display name, used to
+ * fill an Activity's Jira Project automatically -- see
+ * jiraProjectNameForDepartment. */
+export const DEPARTMENTS: Array<{
+  id: Exclude<Department, "">;
+  label: string;
+  projectKey: string;
+  projectName: string;
+  itemLabel: string;
+}> = [
+  { id: "quality_assurance", label: "Quality Assurance", projectKey: "QDM", projectName: "QUASAR Delivery Management", itemLabel: "QDM" },
+  { id: "accreditation", label: "Accreditation", projectKey: "", projectName: "", itemLabel: "task" },
 ];
 
 const DEFAULT_PROJECT_KEY = "QDM";
 const DEFAULT_PROJECT_NAME = "QUASAR Delivery Management";
+const DEFAULT_ITEM_LABEL = "QDM";
 
 /** Falls back to QDM (the original, pre-department behavior) when
  * department is unset, so existing users who never picked one keep
- * searching/importing exactly as before. */
+ * searching/importing exactly as before. "" for Accreditation, which has no
+ * single project -- see DEPARTMENTS. */
 export function projectKeyForDepartment(department: Department): string {
   return DEPARTMENTS.find((d) => d.id === department)?.projectKey ?? DEFAULT_PROJECT_KEY;
 }
 
-/** An Activity's Jira Project is no longer user-editable -- it's always
- * whichever project the signed-in user's department uses, computed here
+/** What the UI calls one imported/linked Jira sub-task: "QDM" for Quality
+ * Assurance, "task" for Accreditation (which has no single project key to
+ * name them after). */
+export function itemLabelForDepartment(department: Department): string {
+  return DEPARTMENTS.find((d) => d.id === department)?.itemLabel ?? DEFAULT_ITEM_LABEL;
+}
+
+/** An Activity's Jira Project is no longer user-editable -- for Quality
+ * Assurance it's always the one project that department uses, computed here
  * rather than stored as a per-Activity override, so it can never drift out
- * of sync with a later department change. */
+ * of sync with a later department change. "" for Accreditation, whose
+ * Activities span many Jira projects. */
 export function jiraProjectNameForDepartment(department: Department): string {
   return DEPARTMENTS.find((d) => d.id === department)?.projectName ?? DEFAULT_PROJECT_NAME;
 }

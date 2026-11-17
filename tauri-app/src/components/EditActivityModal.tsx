@@ -12,13 +12,25 @@ export interface ActivityFormValues {
   jiraProject: string;
 }
 
-/** Pulls just the numeric part out of an existing "QDM-1234"/"TISACC-99"
- * style key, for the number-only input -- tolerant of whatever prefix an
- * older entry happened to be saved under, since only the digits are ever
- * user-editable now. */
+/** Pulls just the numeric part out of an existing "QDM-1234" style key, for
+ * the number-only input used when a department has one fixed project key --
+ * tolerant of whatever prefix an older entry happened to be saved under,
+ * since only the digits are user-editable there. */
 function jiraKeyDigits(jiraKey: string | null | undefined): string {
   return (jiraKey ?? "").replace(/\D/g, "");
 }
+
+/** Accreditation's keys come from many different Jira projects, so there's
+ * no fixed prefix to show -- the whole key is typed (or pasted) instead.
+ * Accepts a pasted Jira URL too ("…/browse/ABC-123"), and uppercases, so the
+ * only thing left to get wrong is the ticket itself. */
+function normalizeFullJiraKey(raw: string): string {
+  const trimmed = raw.trim();
+  const fromUrl = trimmed.match(/\/browse\/([A-Za-z][A-Za-z0-9_]*-\d+)/);
+  return (fromUrl ? fromUrl[1] : trimmed).toUpperCase().replace(/\s+/g, "");
+}
+
+const FULL_JIRA_KEY_PATTERN = /^[A-Z][A-Z0-9_]*-\d+$/;
 
 type ReopenState = { kind: "idle" } | { kind: "loading" } | { kind: "success" } | { kind: "error"; message: string };
 
@@ -42,13 +54,18 @@ export function EditActivityModal({
 }) {
   const [name, setName] = useState(activity?.name ?? "");
   const [projectId, setProjectId] = useState(activity?.projectId ?? defaultProjectId ?? projects[0]?.id ?? 0);
+  // Quality Assurance has one fixed project key (a number-only input after a
+  // "QDM-" prefix); Accreditation's span many projects (a full-key input).
+  const teamKey = projectKeyForDepartment(settings.department);
   const [jiraKeyNumber, setJiraKeyNumber] = useState(jiraKeyDigits(activity?.jiraKey));
+  const [jiraKeyFull, setJiraKeyFull] = useState((activity?.jiraKey ?? "").toUpperCase());
   const [defaultDurationMinutes, setDefaultDurationMinutes] = useState(
     activity?.defaultDurationMinutes != null ? String(activity.defaultDurationMinutes) : "",
   );
   const [reopenState, setReopenState] = useState<ReopenState>({ kind: "idle" });
   const [archiving, setArchiving] = useState(false);
-  const teamKey = projectKeyForDepartment(settings.department);
+  const fullJiraKey = normalizeFullJiraKey(jiraKeyFull);
+  const jiraKeyValid = teamKey ? !!jiraKeyNumber.trim() : FULL_JIRA_KEY_PATTERN.test(fullJiraKey);
 
   // Archive and Reopen are two sides of the same action -- whichever one
   // applies to this Activity's current state gets the one slot, rather than
@@ -104,17 +121,29 @@ export function EditActivityModal({
 
         <label className="field">
           <span>Jira Key *</span>
-          <div className="jira-key-input">
-            <span className="jira-key-prefix">{teamKey}-</span>
+          {teamKey ? (
+            <div className="jira-key-input">
+              <span className="jira-key-prefix">{teamKey}-</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={jiraKeyNumber}
+                onChange={(e) => setJiraKeyNumber(e.target.value.replace(/[^0-9]/g, ""))}
+                placeholder="1234"
+              />
+            </div>
+          ) : (
             <input
               type="text"
-              inputMode="numeric"
-              value={jiraKeyNumber}
-              onChange={(e) => setJiraKeyNumber(e.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="1234"
+              value={jiraKeyFull}
+              onChange={(e) => setJiraKeyFull(e.target.value)}
+              placeholder="e.g. ABC-123 (or paste the ticket's link)"
             />
-          </div>
-          <span className="muted">Required -- needed to upload this Activity's time to Jira.</span>
+          )}
+          <span className="muted">
+            Required -- needed to upload this Activity's time to Jira.
+            {!teamKey && jiraKeyFull.trim() && !jiraKeyValid && " Enter the full key, like ABC-123."}
+          </span>
         </label>
 
         <label className="field">
@@ -172,12 +201,12 @@ export function EditActivityModal({
             <button
               type="button"
               className="btn btn-accent"
-              disabled={!name.trim() || !projectId || !jiraKeyNumber.trim()}
+              disabled={!name.trim() || !projectId || !jiraKeyValid}
               onClick={() =>
                 onSave({
                   name: name.trim(),
                   projectId,
-                  jiraKey: `${teamKey}-${jiraKeyNumber.trim()}`,
+                  jiraKey: teamKey ? `${teamKey}-${jiraKeyNumber.trim()}` : fullJiraKey,
                   defaultDurationMinutes,
                   jiraProject: jiraProjectNameForDepartment(settings.department),
                 })

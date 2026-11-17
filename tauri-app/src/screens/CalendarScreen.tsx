@@ -25,7 +25,7 @@ import { UploadToJiraModal } from "../components/UploadToJiraModal";
 import { addDays, minutesToTime, timeToMinutes, toISODate, weekStart } from "../lib/date";
 import { gridHourRange, hoursForDate } from "../lib/workHours";
 import { useResizableSidebar } from "../lib/useResizableSidebar";
-import { projectKeyForDepartment, setSidebarWidth, type AppSettings } from "../api/settings";
+import { itemLabelForDepartment, setSidebarWidth, type AppSettings } from "../api/settings";
 
 type ActivityModalState = { mode: "new"; projectId: number } | { mode: "edit"; activity: Activity } | null;
 
@@ -64,7 +64,7 @@ export function CalendarScreen({
   onChange: (patch: Partial<AppSettings>) => void;
 }) {
   const navActionsSlot = useNavActionsSlot();
-  const teamKey = projectKeyForDepartment(settings.department);
+  const teamLabel = itemLabelForDepartment(settings.department);
   const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -767,10 +767,10 @@ export function CalendarScreen({
       {archivedBlock && (
         <div className="modal-backdrop" onClick={() => setArchivedBlock(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h2>Can't upload -- {teamKey} is closed</h2>
+            <h2>Can't upload -- {teamLabel} is closed</h2>
             <p className="muted">
               {archivedBlock.length} block{archivedBlock.length === 1 ? "" : "s"} this week{" "}
-              {archivedBlock.length === 1 ? "is" : "are"} linked to a {teamKey} that's Closed in Jira (filed under
+              {archivedBlock.length === 1 ? "is" : "are"} linked to a {teamLabel} that's Closed in Jira (filed under
               "Archived"):
             </p>
             <ul className="qdm-list">

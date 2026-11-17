@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { TimeEntry } from "../api/calendar";
 import { uploadWorklogs, type WorklogUploadOutcome } from "../api/jira";
-import { projectKeyForDepartment, type AppSettings } from "../api/settings";
+import { itemLabelForDepartment, type AppSettings } from "../api/settings";
 import { timeToMinutes, toJiraStarted } from "../lib/date";
 
 type Phase = "review" | "uploading" | "done";
@@ -33,7 +33,7 @@ export function UploadToJiraModal({
   onUploaded: () => void;
   onClose: () => void;
 }) {
-  const teamKey = projectKeyForDepartment(settings.department);
+  const teamLabel = itemLabelForDepartment(settings.department);
   const uploadable = entries.filter((e) => e.jiraKey && !e.jiraUploadedAt);
   const alreadyUploaded = entries.filter((e) => e.jiraKey && e.jiraUploadedAt);
   const unlinked = entries.filter((e) => !e.jiraKey);
@@ -88,14 +88,14 @@ export function UploadToJiraModal({
         {phase !== "done" && (
           <>
             <p className="muted">
-              Logs this week's time as Jira worklogs, one per block. Only blocks linked to a {teamKey}
+              Logs this week's time as Jira worklogs, one per block. Only blocks linked to a {teamLabel}
               can be uploaded.
               {unlinked.length > 0 &&
-                ` ${unlinked.length} block${unlinked.length === 1 ? "" : "s"} this week aren't linked to a ${teamKey} and won't be included.`}
+                ` ${unlinked.length} block${unlinked.length === 1 ? "" : "s"} this week aren't linked to a ${teamLabel} and won't be included.`}
             </p>
 
             {uploadable.length === 0 && alreadyUploaded.length === 0 ? (
-              <p className="muted">No {teamKey}-linked time this week.</p>
+              <p className="muted">No {teamLabel}-linked time this week.</p>
             ) : (
               <div className="qdm-scroll-area">
                 {uploadable.length > 0 && (
