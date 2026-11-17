@@ -6,13 +6,18 @@ export interface QdmResult {
   /** The QDM's parent issue's own summary (e.g. "Railcards QA Delivery") --
    * used to guess which internal Project this QDM belongs to. */
   parentSummary: string | null;
-  /** "In Progress" | "Pipeline" | "Closed" -- constrained by the JQL's own
-   * status filter. "Closed" is routed to an Archived Project rather than
-   * by parent name. */
+  /** "In Progress" | "Pipeline" | "Closed" (| "Open" | "Archive" for
+   * Accreditation) -- constrained by the JQL's own status filter. "Closed"
+   * and "Archive" are routed to the Archived tab / Project rather than by
+   * parent name. */
   status: string;
   /** Accreditation only: the "Accreditation Delivery" epic above this
    * sub-task's story (parentSummary is the story's own name). null for QDMs. */
   epicSummary: string | null;
+  /** Accreditation's whole-project sub-tasks (the TISACC RDG Admin project)
+   * only: the Jira project's display name, used as the Project-name guess
+   * since they have no epic. null otherwise. */
+  jiraProjectName: string | null;
 }
 
 /** The caller's Jira sub-tasks to import. Quality Assurance searches the QDM

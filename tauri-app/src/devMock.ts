@@ -236,6 +236,28 @@ export function installDevMockIfRequested() {
             status: "Closed",
             epicSummary: "Accreditation Delivery",
           },
+          {
+            jiraKey: "RAILSEC-12",
+            summary: "Superseded assessor checklist",
+            parentSummary: "Assessor onboarding",
+            status: "Archive",
+            epicSummary: "Accreditation Delivery - Newco Rollout",
+          },
+          {
+            jiraKey: "ACRX-60",
+            summary: "Not started yet",
+            parentSummary: "Audit preparation",
+            status: "Open",
+            epicSummary: "Accreditation Delivery - Project Alpha",
+          },
+          {
+            jiraKey: "TISACC-143",
+            summary: "Renew team tooling licences",
+            parentSummary: null,
+            status: "In Progress",
+            epicSummary: null,
+            jiraProjectName: "TISACC RDG Admin",
+          },
         ];
       }
       case "search_qdms": {

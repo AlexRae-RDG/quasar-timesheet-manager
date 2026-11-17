@@ -11,7 +11,7 @@
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::jira::{normalize_site_url, truncate};
@@ -32,9 +32,17 @@ const MAX_TOTAL_RESULTS: usize = 500;
 // Accreditation: epics are found by name (Jira's `~` is a word match, so the
 // results are re-checked against this exact phrase afterwards), then their
 // stories, then the current user's sub-tasks under those stories. Statuses
-// match the QDM query's.
+// are the QDM query's plus "Open" (Accreditation's projects have tasks that
+// haven't been started yet) and "Archive" (finished work, shown on the
+// import dialog's Archived tab alongside Closed); QDM's workflow has neither.
 const ACCREDITATION_EPIC_NAME: &str = "Accreditation Delivery";
-const ACCREDITATION_STATUSES: &str = r#"("In Progress", Pipeline, Closed)"#;
+const ACCREDITATION_STATUSES: &str = r#"(Open, "In Progress", Pipeline, Closed, Archive)"#;
+// Accreditation also works from one whole Jira project, "TISACC RDG Admin",
+// where every Sub-task assigned to the user counts (no "Accreditation
+// Delivery" epic involved -- its work items hang off a single "TISACC Team
+// Admin and RDG Delivery" epic, one per team member, and time is logged on
+// the sub-tasks under those).
+const EXTRA_PROJECT_KEYS: [&str; 1] = ["TISACC"];
 // Stories can't be filtered by assignee (the user is assigned the sub-task,
 // not necessarily the story), so this has to allow for every story in every
 // matching epic -- far above any expected count.
@@ -52,7 +60,8 @@ pub struct QdmResult {
     /// so its name is what the frontend uses to guess which internal
     /// Project this QDM belongs to. None on the rare issue with no parent.
     pub parent_summary: Option<String>,
-    /// One of "In Progress", "Pipeline", or "Closed" -- constrained by
+    /// One of "In Progress", "Pipeline", or "Closed" (plus "Open" and
+    /// "Archive" for Accreditation tasks) -- constrained by
     /// QDM_JQL's own status filter above. The frontend treats "Closed"
     /// specially (routes to an Archived Project) rather than by parent name.
     pub status: String,
@@ -60,6 +69,10 @@ pub struct QdmResult {
     /// this sub-task's story belongs to (parent_summary is the story's).
     /// None for QDMs, whose parent is the top of the hierarchy.
     pub epic_summary: Option<String>,
+    /// Accreditation's whole-project tickets only: the display name of the
+    /// Jira project the ticket is in, used as the Project-name guess since
+    /// there's no epic. None for everything else.
+    pub jira_project_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -80,6 +93,12 @@ struct IssueFields {
     summary: Option<String>,
     parent: Option<ParentRef>,
     status: StatusRef,
+    project: Option<ProjectRef>,
+}
+
+#[derive(Deserialize)]
+struct ProjectRef {
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -136,7 +155,7 @@ async fn jql_search(conn: &Conn<'_>, jql: &str, max_total: usize) -> Result<Vec<
         let mut body = serde_json::json!({
             "jql": jql,
             "maxResults": MAX_RESULTS_PER_PAGE,
-            "fields": ["summary", "parent", "status"],
+            "fields": ["summary", "parent", "status", "project"],
         });
         if let Some(t) = &page_token {
             body["nextPageToken"] = serde_json::Value::String(t.clone());
@@ -222,6 +241,7 @@ pub async fn search_qdms(
             parent_summary: issue.fields.parent.and_then(|p| p.fields.summary),
             status: issue.fields.status.name,
             epic_summary: None,
+            jira_project_name: None,
         })
         .collect();
 
@@ -301,8 +321,30 @@ pub async fn search_accreditation_tasks(
                 parent_summary: story_summary.or(map_summary),
                 status: issue.fields.status.name,
                 epic_summary: epics.get(epic_key).cloned(),
+                jira_project_name: None,
             });
         }
+    }
+
+    // 4. Sub-tasks assigned to the user in the extra whole project(s).
+    let jql = format!(
+        "project in ({}) AND assignee = currentUser() AND type = Sub-task AND status IN {ACCREDITATION_STATUSES}",
+        EXTRA_PROJECT_KEYS.join(", ")
+    );
+    let seen: HashSet<String> = results.iter().map(|r| r.jira_key.clone()).collect();
+    for issue in jql_search(&conn, &jql, MAX_TOTAL_RESULTS).await? {
+        // Already found through an epic (it has the better Project guess).
+        if seen.contains(&issue.key) {
+            continue;
+        }
+        results.push(QdmResult {
+            jira_key: issue.key,
+            summary: issue.fields.summary.unwrap_or_default(),
+            parent_summary: issue.fields.parent.and_then(|p| p.fields.summary),
+            status: issue.fields.status.name,
+            epic_summary: None,
+            jira_project_name: issue.fields.project.map(|p| p.name),
+        });
     }
 
     eprintln!("[qdm] total accreditation results: {}", results.len());

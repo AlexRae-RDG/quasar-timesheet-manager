@@ -18,6 +18,13 @@ const UNSORTED = -1;
 const NEW_PROJECT_OPTION = "__new__";
 const ARCHIVED_PROJECT_NAME = "Archived";
 
+// Jira statuses that count as finished work: they go on the Archived tab,
+// default to unchecked, and fall back to the "Archived" Project. Accreditation
+// has both "Closed" and "Archive"; QDM only ever returns "Closed".
+function isArchivedStatus(status: string): boolean {
+  return status === "Closed" || status === "Archive";
+}
+
 // Real QDM parent issues turn out to use many different "QA <phase>"
 // suffixes -- Delivery, Execution, Prep, Analysis & Design, Requirement
 // Traceability, CI CD/DevOps Set Up, and probably more -- not just
@@ -39,7 +46,7 @@ function deriveProjectCandidateName(parentSummary: string | null): string | null
 // matching (matchProjectForQdm below) applies the same fallback rule
 // against real Projects, so this and that stay in sync.
 function candidateNameFor(q: QdmResult): string | null {
-  return candidateNamesFor(q)[0] ?? (q.status === "Closed" ? ARCHIVED_PROJECT_NAME : null);
+  return candidateNamesFor(q)[0] ?? (isArchivedStatus(q.status) ? ARCHIVED_PROJECT_NAME : null);
 }
 
 // Accreditation epics are named "Accreditation Delivery ..." -- what's left
@@ -61,6 +68,7 @@ function candidateNamesFor(q: QdmResult): string[] {
   if (q.epicSummary) {
     return [stripEpicPhrase(q.epicSummary), q.parentSummary?.trim() || null].filter((n): n is string => !!n);
   }
+  if (q.jiraProjectName) return [q.jiraProjectName];
   const qdmName = deriveProjectCandidateName(q.parentSummary);
   return qdmName ? [qdmName] : [];
 }
@@ -122,7 +130,7 @@ function matchProjectForQdm(q: QdmResult, projects: Project[]): Project | undefi
     const match = matchProjectByName(name, pool);
     if (match) return match;
   }
-  if (q.status === "Closed") {
+  if (isArchivedStatus(q.status)) {
     return projects.find((p) => normalizeForMatch(p.name) === normalizeForMatch(ARCHIVED_PROJECT_NAME));
   }
   return undefined;
@@ -206,7 +214,7 @@ export function ImportQdmModal({
         // to be wanted on a first import, and defaulting them on made it
         // easy to import a pile of already-finished work by accident. Open
         // ones still default to checked, same as before.
-        setSelected(new Set(importableQdms.filter((q) => q.status !== "Closed").map((q) => q.jiraKey)));
+        setSelected(new Set(importableQdms.filter((q) => !isArchivedStatus(q.status)).map((q) => q.jiraKey)));
         setProjectAssignments(autoMatchAll(importableQdms, projects));
         setStatus("loaded");
       })
@@ -273,10 +281,10 @@ export function ImportQdmModal({
   const importable = results.filter((q) => !existingKeys.has(q.jiraKey));
   const alreadyImported = results.filter((q) => existingKeys.has(q.jiraKey));
 
-  const activeQdms = importable.filter((q) => q.status !== "Closed");
-  const archivedQdms = importable.filter((q) => q.status === "Closed");
+  const activeQdms = importable.filter((q) => !isArchivedStatus(q.status));
+  const archivedQdms = importable.filter((q) => isArchivedStatus(q.status));
   const visibleQdms = showArchived ? archivedQdms : activeQdms;
-  const visibleAlreadyImported = alreadyImported.filter((q) => (q.status === "Closed") === showArchived);
+  const visibleAlreadyImported = alreadyImported.filter((q) => isArchivedStatus(q.status) === showArchived);
 
   // Scoped to the visible tab, not every selected row across both --
   // Import Selected while on Active should only ever act on Active rows,
@@ -309,7 +317,7 @@ export function ImportQdmModal({
   // Activity.
   function qdmsPendingReopen(): QdmResult[] {
     return visibleQdms.filter((q) => {
-      if (!selected.has(q.jiraKey) || q.status !== "Closed") return false;
+      if (!selected.has(q.jiraKey) || !isArchivedStatus(q.status)) return false;
       const projectId = projectAssignments[q.jiraKey];
       if (projectId == null || projectId === UNSORTED) return false;
       const project = projects.find((p) => p.id === projectId);
@@ -344,7 +352,7 @@ export function ImportQdmModal({
         if (projectId == null || projectId === UNSORTED) continue;
         await createActivity({ name: q.summary || q.jiraKey, projectId, jiraKey: q.jiraKey });
 
-        if (q.status === "Closed") {
+        if (isArchivedStatus(q.status)) {
           const project = projects.find((p) => p.id === projectId);
           const stillArchived =
             project && normalizeForMatch(project.name) === normalizeForMatch(ARCHIVED_PROJECT_NAME);
@@ -381,7 +389,7 @@ export function ImportQdmModal({
         <p className="muted">
           {teamKey
             ? `Sub-tasks in the ${teamKey} project assigned to you.`
-            : `Sub-tasks assigned to you under stories in any "Accreditation Delivery" epic, across all Jira projects.`}{" "}
+            : `Sub-tasks assigned to you under stories in any "Accreditation Delivery" epic across all Jira projects, plus sub-tasks assigned to you in the TISACC RDG Admin project.`}{" "}
           Each one needs a Project to sort into --
           use the <strong>Project</strong> dropdown on its row (already guessed where possible from
           {teamKey ? " its parent issue's name" : " its epic's or story's name"}, falling back to "Archived" for a Closed one with no match).
@@ -561,7 +569,7 @@ export function ImportQdmModal({
               {reopenConfirm.length === 1 ? "" : "s"} in Jira?
             </h2>
             <p className="muted">
-              {reopenConfirm.length === 1 ? `This ${teamLabel} is` : `These ${teamLabel}s are`} Closed in Jira. Sorting{" "}
+              {reopenConfirm.length === 1 ? `This ${teamLabel} is` : `These ${teamLabel}s are`} Closed or archived in Jira. Sorting{" "}
               {reopenConfirm.length === 1 ? "it" : "them"} into an active Project will also transition{" "}
               {reopenConfirm.length === 1 ? "it" : "them"} back to "In Progress" in Jira. Continue?
             </p>
