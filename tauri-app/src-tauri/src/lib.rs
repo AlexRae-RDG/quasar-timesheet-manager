@@ -23,6 +23,8 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let conn = db::connect().expect("failed to open the local SQLite database");
+    // Before the line below, which is what records last_run_version.
+    settings::seed_fresh_install_defaults(&conn).expect("failed to seed first-run defaults");
     settings::ensure_onboarding_for_pre_v2(&conn, env!("CARGO_PKG_VERSION"))
         .expect("failed to check onboarding version gate");
     outlook_calendars::migrate_from_legacy_url(&conn)

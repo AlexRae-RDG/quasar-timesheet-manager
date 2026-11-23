@@ -345,6 +345,27 @@ pub fn set_sidebar_width(conn: &Connection, width: i32) -> rusqlite::Result<()> 
     set(conn, "sidebar_width", &width.clamp(100, 600).to_string())
 }
 
+/// The optional features (Notes, Tasks, Pomodoro, Timer bar) start switched
+/// off on a fresh install, so a new user gets a clean interface and opts in
+/// from Settings. Tasks and the Timer bar can't simply default to false when
+/// unset, though: they were always on before they became optional, so an
+/// existing install that never saved them must keep them -- their absence
+/// means "keep the old behaviour", not "off". A database with no recorded
+/// last_run_version has never run this app (or is the old Python app's file,
+/// or a pre-tracking early v2 build -- the same population
+/// ensure_onboarding_for_pre_v2 treats as new), so this writes the "off"
+/// values explicitly for those only. Must run BEFORE
+/// ensure_onboarding_for_pre_v2, which records last_run_version.
+pub fn seed_fresh_install_defaults(conn: &Connection) -> rusqlite::Result<()> {
+    if get(conn, "last_run_version")?.is_some() {
+        return Ok(());
+    }
+    for key in ["notes_enabled", "tasks_enabled", "pomodoro_enabled", "show_timer_bar"] {
+        set(conn, key, "0")?;
+    }
+    Ok(())
+}
+
 /// This app's database is the SAME file the old Python/Tkinter app used
 /// (see db.rs) -- versions v1.0.0 through v1.9.3 were that app, which had
 /// no onboarding concept at all, so a colleague migrating straight from
@@ -452,5 +473,26 @@ mod tests {
         assert_eq!(loaded.len(), 7);
         assert_eq!((loaded[0].start, loaded[0].end), (7, 15));
         assert_eq!((loaded[6].start, loaded[6].end), (9, 17));
+    }
+
+    #[test]
+    fn a_fresh_install_starts_with_every_optional_feature_off() {
+        let conn = conn();
+        seed_fresh_install_defaults(&conn).unwrap();
+        ensure_onboarding_for_pre_v2(&conn, "2.7.0").unwrap();
+        let s = load(&conn).unwrap();
+        assert!(!s.notes_enabled && !s.tasks_enabled && !s.pomodoro_enabled && !s.show_timer_bar);
+    }
+
+    #[test]
+    fn an_existing_install_keeps_tasks_and_the_timer_bar_it_always_had() {
+        let conn = conn();
+        // An install that has run before: last_run_version recorded, and
+        // Tasks / the Timer bar were never saved because they were always on.
+        set(&conn, "last_run_version", "2.6.1").unwrap();
+        seed_fresh_install_defaults(&conn).unwrap();
+        let s = load(&conn).unwrap();
+        assert!(s.tasks_enabled && s.show_timer_bar);
+        assert!(!s.notes_enabled && !s.pomodoro_enabled);
     }
 }
