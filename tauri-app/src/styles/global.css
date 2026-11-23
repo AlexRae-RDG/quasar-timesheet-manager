@@ -1216,6 +1216,13 @@ textarea {
   text-overflow: ellipsis;
 }
 
+/* A small tick after the time on a block already uploaded to Jira -- the app
+   never updates or deletes a worklog once sent, so this is the cue that
+   later edits to the block won't reach Jira. */
+.calendar-entry-uploaded {
+  font-weight: 700;
+}
+
 .calendar-entry-time {
   opacity: 0.85;
   white-space: nowrap;
@@ -1965,6 +1972,10 @@ textarea {
 
 .status-success {
   color: #4ade80;
+}
+
+.status-warning {
+  color: var(--warning, #f59f00);
 }
 
 .status-error {

@@ -39,7 +39,7 @@ pub fn db_path() -> PathBuf {
     app_dir().join("timesheet.db")
 }
 
-const SCHEMA: &str = r#"
+pub(crate) const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS projects (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,

@@ -756,6 +756,12 @@ export function CalendarGrid({
                       <div className="calendar-entry-label">{entry.activityName}</div>
                       <div className="calendar-entry-time">
                         {entry.startTime}–{entry.endTime}
+                        {entry.jiraUploadedAt && (
+                          <span className="calendar-entry-uploaded" title="Uploaded to Jira">
+                            {" "}
+                            ✓
+                          </span>
+                        )}
                       </div>
                       {entry.notes && <div className="calendar-entry-notes">{entry.notes}</div>}
                       <div

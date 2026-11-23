@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { createTimeEntry, deleteTimeEntry, listTimeEntries, updateTimeEntry, type TimeEntry } from "../api/calendar";
+import {
+  createTimeEntry,
+  deleteTimeEntry,
+  isBlankEntry,
+  listTimeEntries,
+  updateTimeEntry,
+  type TimeEntry,
+} from "../api/calendar";
 import {
   archiveActivity,
   createActivity,
@@ -45,10 +52,34 @@ interface EntryFields {
   // forces an activity_id onto an entry that's genuinely unassigned
   // (activities.ON DELETE SET NULL means this happens in real data).
   activityId: number | null;
+  // true = this snapshot is a block with no Activity (see isBlankEntry), so
+  // undo/redo into it must clear the Activity rather than "leave it alone".
+  clearActivity?: boolean;
   date: string;
   startTime: string;
   endTime: string;
   notes: string;
+}
+
+// What to pass createTimeEntry to recreate an entry (undo of a delete, redo
+// of an add, duplicate): its Activity if it still has one, otherwise the
+// snapshot it carried -- so a block with no Activity (or whose Activity was
+// since deleted) can be recreated too, instead of being silently skipped.
+//
+// keepUploaded is for undo/redo, which restore the SAME block: it must stay
+// marked as uploaded to Jira, or the next upload would log it again. A
+// duplicate is new work, so it never carries the mark.
+function recreateFields(entry: TimeEntry, keepUploaded = false) {
+  const base =
+    entry.activityId != null
+      ? { activityId: entry.activityId }
+      : {
+          activityId: null,
+          activityName: entry.activityName,
+          color: entry.color,
+          jiraKey: entry.jiraKey ?? undefined,
+        };
+  return keepUploaded && entry.jiraUploadedAt ? { ...base, jiraUploadedAt: entry.jiraUploadedAt } : base;
 }
 
 type Command =
@@ -78,6 +109,13 @@ export function CalendarScreen({
   const [zoom, setZoom] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
+  // Set when the user deletes or changes a block that's already been uploaded
+  // to Jira -- the app only ever adds worklogs, never updates or deletes
+  // them, so Jira won't reflect the change. Delete asks first
+  // (confirmDeleteUploaded); a move/resize just shows a notice
+  // (uploadedChangeNotice) since those are quick, undoable adjustments.
+  const [confirmDeleteUploaded, setConfirmDeleteUploaded] = useState<TimeEntry | null>(null);
+  const [uploadedChangeNotice, setUploadedChangeNotice] = useState<string | null>(null);
   const sidebar = useResizableSidebar({
     defaultWidth: settings.sidebarWidth,
     minWidth: MIN_SIDEBAR_WIDTH,
@@ -278,6 +316,18 @@ export function CalendarScreen({
     }
   }
 
+  async function handleCreateBlank(notes: string) {
+    if (!creatingEntry) return;
+    try {
+      const created = await createTimeEntry({ activityId: null, notes, ...creatingEntry });
+      pushCommand({ kind: "add", entry: created });
+      setCreatingEntry(null);
+      refreshEntries();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function handleCreateWithNewActivity(name: string, projectId: number, notes: string) {
     if (!creatingEntry) return;
     try {
@@ -311,6 +361,11 @@ export function CalendarScreen({
     try {
       await updateTimeEntry({ id, ...after });
       pushCommand({ kind: "update", id, before, after });
+      if (entry.jiraUploadedAt) {
+        setUploadedChangeNotice(
+          "That block was already uploaded to Jira -- its Jira worklog hasn't been changed, so move or edit it in Jira too if the time differs.",
+        );
+      }
       refreshEntries();
     } catch (e) {
       setError(String(e));
@@ -321,10 +376,9 @@ export function CalendarScreen({
     entry: TimeEntry,
     options?: { openEdit?: boolean; date?: string; startTime?: string; endTime?: string },
   ) {
-    if (entry.activityId == null) return;
     try {
       const created = await createTimeEntry({
-        activityId: entry.activityId,
+        ...recreateFields(entry),
         date: options?.date ?? entry.date,
         startTime: options?.startTime ?? entry.startTime,
         endTime: options?.endTime ?? entry.endTime,
@@ -341,7 +395,19 @@ export function CalendarScreen({
     }
   }
 
-  async function handleDelete(id: number) {
+  // Every delete path (trash button, Delete key, toolbar, Edit dialog) goes
+  // through here: an already-uploaded block needs confirming first, since
+  // deleting it here leaves its Jira worklog behind.
+  function handleDelete(id: number) {
+    const entry = entriesRef.current.find((e) => e.id === id);
+    if (entry?.jiraUploadedAt) {
+      setConfirmDeleteUploaded(entry);
+      return Promise.resolve();
+    }
+    return performDelete(id);
+  }
+
+  async function performDelete(id: number) {
     const entry = entriesRef.current.find((e) => e.id === id);
     try {
       await deleteTimeEntry(id);
@@ -353,7 +419,7 @@ export function CalendarScreen({
     }
   }
 
-  async function handleEditSave(activityId: number, notes: string) {
+  async function handleEditSave(activityId: number | null, notes: string) {
     if (!editingEntry) return;
     // Unlike handleMove, this command's `before.activityId` is a real
     // snapshot (possibly null for a genuinely unassigned entry) rather
@@ -364,15 +430,23 @@ export function CalendarScreen({
     // worth a third API mode for.
     const before: EntryFields = {
       activityId: editingEntry.activityId,
+      clearActivity: isBlankEntry(editingEntry),
       date: editingEntry.date,
       startTime: editingEntry.startTime,
       endTime: editingEntry.endTime,
       notes: editingEntry.notes,
     };
-    const after: EntryFields = { ...before, activityId, notes };
+    // activityId null here means "No activity" was chosen (the only way the
+    // dropdown yields null), so clear the Activity rather than leave it.
+    const after: EntryFields = { ...before, activityId, clearActivity: activityId == null, notes };
     try {
       await updateTimeEntry({ id: editingEntry.id, ...after });
       pushCommand({ kind: "update", id: editingEntry.id, before, after });
+      if (editingEntry.jiraUploadedAt) {
+        setUploadedChangeNotice(
+          "That block was already uploaded to Jira -- your changes are saved here only; its Jira worklog hasn't been changed.",
+        );
+      }
       setEditingEntry(null);
       refreshEntries();
     } catch (e) {
@@ -446,9 +520,8 @@ export function CalendarScreen({
       if (cmd.kind === "add") {
         await deleteTimeEntry(cmd.entry.id);
       } else if (cmd.kind === "remove") {
-        if (cmd.entry.activityId == null) return;
         const recreated = await createTimeEntry({
-          activityId: cmd.entry.activityId,
+          ...recreateFields(cmd.entry, true),
           date: cmd.entry.date,
           startTime: cmd.entry.startTime,
           endTime: cmd.entry.endTime,
@@ -470,9 +543,8 @@ export function CalendarScreen({
     if (!cmd) return;
     try {
       if (cmd.kind === "add") {
-        if (cmd.entry.activityId == null) return;
         const recreated = await createTimeEntry({
-          activityId: cmd.entry.activityId,
+          ...recreateFields(cmd.entry, true),
           date: cmd.entry.date,
           startTime: cmd.entry.startTime,
           endTime: cmd.entry.endTime,
@@ -682,6 +754,14 @@ export function CalendarScreen({
 
           {error && <p className="status status-error">{error}</p>}
           {applyStatus && <p className="status status-success">{applyStatus}</p>}
+          {uploadedChangeNotice && (
+            <p className="status status-warning">
+              {uploadedChangeNotice}{" "}
+              <button type="button" className="link-button" onClick={() => setUploadedChangeNotice(null)}>
+                Dismiss
+              </button>
+            </p>
+          )}
 
           <CalendarGrid
             days={days}
@@ -716,6 +796,7 @@ export function CalendarScreen({
           onSave={handleEditSave}
           onDelete={handleEditDelete}
           onClose={() => setEditingEntry(null)}
+          allowNoActivity
         />
       )}
 
@@ -740,6 +821,7 @@ export function CalendarScreen({
           projects={projects}
           onCreate={handleCreateFromModal}
           onCreateWithNewActivity={handleCreateWithNewActivity}
+          onCreateBlank={handleCreateBlank}
           onClose={() => setCreatingEntry(null)}
         />
       )}
@@ -762,6 +844,39 @@ export function CalendarScreen({
           onUploaded={refreshEntries}
           onClose={() => setUploadModalOpen(false)}
         />
+      )}
+
+      {confirmDeleteUploaded && (
+        <div className="modal-backdrop" onClick={() => setConfirmDeleteUploaded(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2>Delete a block that's already uploaded?</h2>
+            <p className="muted">
+              <strong>{confirmDeleteUploaded.activityName}</strong> on {confirmDeleteUploaded.date},{" "}
+              {confirmDeleteUploaded.startTime}–{confirmDeleteUploaded.endTime} has already been uploaded to Jira.
+              Deleting it here won't remove that worklog -- the time will stay logged in Jira until you delete it
+              there too.
+            </p>
+            <div className="modal-actions">
+              <div />
+              <div className="row">
+                <button type="button" className="btn btn-secondary" onClick={() => setConfirmDeleteUploaded(null)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={() => {
+                    const id = confirmDeleteUploaded.id;
+                    setConfirmDeleteUploaded(null);
+                    void performDelete(id);
+                  }}
+                >
+                  Delete anyway
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {archivedBlock && (

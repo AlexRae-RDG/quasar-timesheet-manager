@@ -280,7 +280,9 @@ export function TemplateScreen({
     }
   }
 
-  async function handleEditSave(activityId: number, notes: string) {
+  async function handleEditSave(activityId: number | null, notes: string) {
+    // The Template tab never offers "No activity", so null can't happen here.
+    if (activityId == null) return;
     if (!editingEntry) return;
     try {
       await updateTemplateEntry({

@@ -515,19 +515,20 @@ END:VCALENDAR`;
       case "create_time_entry": {
         const input = args.input as Record<string, unknown>;
         const activity = activities.find((a) => a.id === input.activityId);
+        const blank = input.activityId == null;
         const e = {
           id: nextId++,
-          activityId: input.activityId,
-          activityName: activity?.name ?? "Unknown",
-          jiraKey: activity?.jiraKey ?? null,
-          color: activity?.color ?? "#4C6EF5",
+          activityId: input.activityId ?? null,
+          activityName: blank ? ((input.activityName as string) ?? "No activity") : (activity?.name ?? "Unknown"),
+          jiraKey: blank ? ((input.jiraKey as string) ?? null) : (activity?.jiraKey ?? null),
+          color: blank ? ((input.color as string) ?? "#868E96") : (activity?.color ?? "#4C6EF5"),
           date: input.date,
           startTime: input.startTime,
           endTime: input.endTime,
           notes: input.notes ?? "",
           jiraProject: null,
           issueType: null,
-          jiraUploadedAt: null,
+          jiraUploadedAt: (input.jiraUploadedAt as string) ?? null,
         };
         entries.push(e);
         return e;
@@ -540,10 +541,16 @@ END:VCALENDAR`;
           e.startTime = input.startTime;
           e.endTime = input.endTime;
           e.notes = input.notes;
-          if (input.activityId != null) {
+          if (input.clearActivity) {
+            e.activityId = null;
+            e.activityName = "No activity";
+            e.jiraKey = null;
+            e.color = "#868E96";
+          } else if (input.activityId != null) {
             const activity = activities.find((a) => a.id === input.activityId);
             e.activityId = input.activityId;
             e.activityName = activity?.name ?? e.activityName;
+            e.jiraKey = activity?.jiraKey ?? null;
             e.color = activity?.color ?? e.color;
           }
         }

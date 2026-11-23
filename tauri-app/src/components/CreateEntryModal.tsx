@@ -4,6 +4,7 @@ import type { Activity, Project } from "../api/activities";
 import { Dropdown, DropdownOption } from "./Dropdown";
 
 const NEW_ACTIVITY_SENTINEL = -1;
+const NO_ACTIVITY_SENTINEL = -2;
 
 export function CreateEntryModal({
   date,
@@ -13,6 +14,7 @@ export function CreateEntryModal({
   projects,
   onCreate,
   onCreateWithNewActivity,
+  onCreateBlank,
   onClose,
 }: {
   date: string;
@@ -22,6 +24,9 @@ export function CreateEntryModal({
   projects: Project[];
   onCreate: (activityId: number, notes: string) => void;
   onCreateWithNewActivity: (name: string, projectId: number, notes: string) => void;
+  /** When provided, the Activity dropdown gains a "No activity" choice that
+   * creates a block with no Activity or Jira key -- just a description. */
+  onCreateBlank?: (notes: string) => void;
   onClose: () => void;
 }) {
   const [activityId, setActivityId] = useState(activities[0]?.id ?? NEW_ACTIVITY_SENTINEL);
@@ -31,7 +36,12 @@ export function CreateEntryModal({
   const [notesError, setNotesError] = useState(false);
 
   const creatingNew = activityId === NEW_ACTIVITY_SENTINEL;
-  const canSubmit = creatingNew ? newActivityName.trim().length > 0 && newActivityProjectId : activityId > 0;
+  const noActivity = activityId === NO_ACTIVITY_SENTINEL;
+  const canSubmit = noActivity
+    ? true
+    : creatingNew
+      ? newActivityName.trim().length > 0 && newActivityProjectId
+      : activityId > 0;
 
   function handleNotesChange(value: string) {
     setNotes(value);
@@ -44,7 +54,9 @@ export function CreateEntryModal({
       setNotesError(true);
       return;
     }
-    if (creatingNew) {
+    if (noActivity) {
+      onCreateBlank?.(notes);
+    } else if (creatingNew) {
       onCreateWithNewActivity(newActivityName.trim(), newActivityProjectId, notes);
     } else {
       onCreate(activityId, notes);
@@ -74,7 +86,11 @@ export function CreateEntryModal({
               </DropdownOption>
             ))}
             <DropdownOption value={NEW_ACTIVITY_SENTINEL}>+ New Activity…</DropdownOption>
+            {onCreateBlank && <DropdownOption value={NO_ACTIVITY_SENTINEL}>No activity (just a note)</DropdownOption>}
           </Dropdown>
+          {noActivity && (
+            <span className="muted">Not linked to an Activity or Jira key, so it won't be uploaded to Jira.</span>
+          )}
         </label>
 
         {creatingNew && (
@@ -109,7 +125,7 @@ export function CreateEntryModal({
             value={notes}
             onChange={(e) => handleNotesChange(e.target.value)}
             rows={4}
-            placeholder="Work description for this block"
+            placeholder={noActivity ? "What was this time spent on?" : "Work description for this block"}
           />
           {notesError && <p className="status status-error">Enter a work description before creating this block.</p>}
         </label>
