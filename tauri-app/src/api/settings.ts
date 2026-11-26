@@ -73,6 +73,12 @@ export interface AppSettings {
   /** Seven entries, Monday first -- see lib/workHours.ts for the weekday
    * indexing helpers every consumer should go through. */
   workHours: DayHours[];
+  /** Earliest / latest hour the Timesheet grid always shows (e.g. 6 and 20
+   * for an hour either side of a 7-19 day), or -1 for no override, which
+   * follows the working hours. The grid still widens to cover working
+   * hours and any block outside the range. */
+  calendarStartHour: number;
+  calendarEndHour: number;
   showWeekends: boolean;
   headerStyle: "standard" | "compact" | "hidden";
   showTimerBar: boolean;

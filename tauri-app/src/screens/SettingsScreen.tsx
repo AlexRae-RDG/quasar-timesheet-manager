@@ -48,6 +48,7 @@ const HEADER_STYLES: Array<{ id: AppSettings["headerStyle"]; label: string }> = 
 ];
 
 const START_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i);
+const END_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i + 1);
 const DAY_LABELS = [...WEEKDAY_LABELS, ...WEEKEND_LABELS];
 
 const SHORTCUTS: Array<{ keys: string; description: string }> = [
@@ -222,6 +223,8 @@ export function SettingsScreen({
         themeMode: settings.themeMode,
         customTheme: settings.customTheme,
         workHours: settings.workHours,
+        calendarStartHour: settings.calendarStartHour,
+        calendarEndHour: settings.calendarEndHour,
         showWeekends: settings.showWeekends,
         headerStyle: settings.headerStyle,
         showTimerBar: settings.showTimerBar,
@@ -615,6 +618,36 @@ export function SettingsScreen({
           />
           <span>Show weekends on the calendar</span>
         </label>
+
+        <h3>Visible hours on the Timesheet</h3>
+        <p className="muted">
+          By default the Timesheet shows just your working hours. Pick an earlier start and/or later end to
+          show extra time either side (for example 08:00 to 18:00 around a 09:00 to 17:00 day). The grid
+          always still covers your working hours and any block outside this range.
+        </p>
+        <div className="work-hours-range">
+          <span className="muted">Show from</span>
+          <Dropdown
+            value={settings.calendarStartHour}
+            onChange={(v) => onChange({ calendarStartHour: Number(v) })}
+          >
+            <DropdownOption value={-1}>Working hours</DropdownOption>
+            {START_HOUR_OPTIONS.map((h) => (
+              <DropdownOption key={h} value={h}>
+                {h.toString().padStart(2, "0")}:00
+              </DropdownOption>
+            ))}
+          </Dropdown>
+          <span className="muted">to</span>
+          <Dropdown value={settings.calendarEndHour} onChange={(v) => onChange({ calendarEndHour: Number(v) })}>
+            <DropdownOption value={-1}>Working hours</DropdownOption>
+            {END_HOUR_OPTIONS.map((h) => (
+              <DropdownOption key={h} value={h}>
+                {h.toString().padStart(2, "0")}:00
+              </DropdownOption>
+            ))}
+          </Dropdown>
+        </div>
       </section>
 
       <section className="card">

@@ -107,6 +107,7 @@ export function CalendarScreen({
     null,
   );
   const [zoom, setZoom] = useState(1);
+
   const [error, setError] = useState<string | null>(null);
   const [applyStatus, setApplyStatus] = useState<string | null>(null);
   // Set when the user deletes or changes a block that's already been uploaded
@@ -170,16 +171,20 @@ export function CalendarScreen({
     for (const e of entries) {
       hour = Math.min(hour, Math.floor(timeToMinutes(e.startTime) / 60));
     }
+    // Settings → Visible hours: an earlier start extends the grid, but it
+    // never cuts into working hours or an existing block.
+    if (settings.calendarStartHour >= 0) hour = Math.min(hour, settings.calendarStartHour);
     return Math.max(0, hour);
-  }, [entries, days, settings.workHours]);
+  }, [entries, days, settings.workHours, settings.calendarStartHour]);
 
   const gridEndHour = useMemo(() => {
     let hour = gridHourRange(settings.workHours, days).end;
     for (const e of entries) {
       hour = Math.max(hour, Math.ceil(timeToMinutes(e.endTime) / 60));
     }
+    if (settings.calendarEndHour >= 0) hour = Math.max(hour, settings.calendarEndHour);
     return Math.min(24, hour);
-  }, [entries, days, settings.workHours]);
+  }, [entries, days, settings.workHours, settings.calendarEndHour]);
 
   const refreshActivities = useCallback(() => {
     listProjects().then(setProjects).catch((e) => setError(String(e)));

@@ -766,6 +766,10 @@ textarea {
   border-left: 1px solid var(--border);
 }
 
+.calendar-day-header-today {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .calendar-day-header-today .calendar-day-date {
   color: var(--accent);
 }
@@ -791,6 +795,11 @@ textarea {
 
 .calendar-day-total-met {
   color: #2fbf71;
+  font-weight: 600;
+}
+
+.calendar-day-total-under {
+  color: #e0a526;
   font-weight: 600;
 }
 
@@ -829,6 +838,23 @@ textarea {
 .calendar-days {
   display: flex;
   position: relative;
+}
+
+.calendar-day-col-today {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+/* Dashed inner border on blocks that run outside the day's working hours.
+   currentColor is the block's own computed text colour, so it stays visible
+   on light and dark blocks alike. */
+.calendar-entry-outside-hours::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 1.5px dashed currentColor;
+  border-radius: 5px;
+  opacity: 0.65;
+  pointer-events: none;
 }
 
 .calendar-day-col {
@@ -1167,8 +1193,73 @@ textarea {
   position: absolute;
   left: 0;
   right: 0;
-  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  /* Resting state is just a quiet tint -- the start/end lines already mark
+     the boundary. Stripes fade in while the pointer is over the grid (see
+     ::before), so the "not working time" cue is there when looked for
+     without making the whole week busy. */
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  transition: background-color 0.15s;
   pointer-events: none;
+}
+
+.calendar-off-hours::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* The stripes are an SVG tile used as a mask over a solid colour rather
+     than a repeating-linear-gradient: gradient stops on a diagonal aren't
+     anti-aliased and render as jagged stair-steps, whereas a stroked SVG
+     line is drawn smooth. The extra corner segments make the tile wrap
+     seamlessly. */
+  background: color-mix(in srgb, var(--text-muted) 38%, transparent);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M-1 11L11 -1M-1 1L1 -1M9 11L11 9' stroke='black' stroke-width='1' stroke-linecap='square' fill='none'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M-1 11L11 -1M-1 1L1 -1M9 11L11 9' stroke='black' stroke-width='1' stroke-linecap='square' fill='none'/%3E%3C/svg%3E");
+  -webkit-mask-size: 10px 10px;
+  mask-size: 10px 10px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.calendar-scroll:hover .calendar-off-hours {
+  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+}
+
+.calendar-scroll:hover .calendar-off-hours::before {
+  opacity: 1;
+}
+
+/* Solid accent line where a day's working hours start / end, with a small
+   time tag so the exact boundary is readable without opening Settings. */
+.calendar-work-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.calendar-work-edge-label {
+  position: absolute;
+  left: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: #fff;
+  background: var(--accent);
+  opacity: 0.9;
+}
+
+/* Tag sits inside the working window: just below the start line, just
+   above the end line. */
+.calendar-work-edge-start .calendar-work-edge-label {
+  top: 2px;
+}
+
+.calendar-work-edge-end .calendar-work-edge-label {
+  bottom: 2px;
 }
 
 .calendar-hour-line {

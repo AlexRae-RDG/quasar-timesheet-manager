@@ -28,6 +28,8 @@ export function installDevMockIfRequested() {
     themeMode: "dark",
     customTheme: { appBg: "#05070F", panelBg: "#0B1020", textPrimary: "#EAF0FF", accent: "#2F6FED" },
     workHours: Array.from({ length: 7 }, () => ({ start: 9, end: 17 })),
+    calendarStartHour: -1,
+    calendarEndHour: -1,
     showWeekends: false,
     headerStyle: "compact",
     showTimerBar: false,

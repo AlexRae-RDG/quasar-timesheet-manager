@@ -96,6 +96,8 @@ export function OnboardingForm({
         themeMode: settings.themeMode,
         customTheme: settings.customTheme,
         workHours: settings.workHours,
+        calendarStartHour: settings.calendarStartHour,
+        calendarEndHour: settings.calendarEndHour,
         showWeekends: settings.showWeekends,
         headerStyle: settings.headerStyle,
         showTimerBar: settings.showTimerBar,

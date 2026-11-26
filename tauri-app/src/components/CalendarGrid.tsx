@@ -54,8 +54,8 @@ function formatHours(minutes: number): string {
   return `${Math.round((minutes / 60) * 10) / 10}`;
 }
 
-/** "6.5 / 8h" under a day's date -- turns green once the day's own target is
- * met. A day off just says so (or shows what was logged anyway). */
+/** "6.5 / 8h" under a day's date -- grey while nothing's logged, amber while
+ * partly logged, green once the day's own target is met. A day off just says so (or shows what was logged anyway). */
 function DayTotal({ logged, target }: { logged: number; target: number }) {
   if (target === 0) {
     return (
@@ -65,7 +65,12 @@ function DayTotal({ logged, target }: { logged: number; target: number }) {
     );
   }
   return (
-    <div className={"calendar-day-total" + (logged >= target ? " calendar-day-total-met" : "")}>
+    <div
+      className={
+        "calendar-day-total" +
+        (logged >= target ? " calendar-day-total-met" : logged > 0 ? " calendar-day-total-under" : "")
+      }
+    >
       {formatHours(logged)} / {formatHours(target)}h
     </div>
   );
@@ -548,6 +553,13 @@ export function CalendarGrid({
             key={i}
             className={"calendar-day-header" + (dayIso[i] === todayIso ? " calendar-day-header-today" : "")}
             style={{ width: DAY_WIDTH_PX }}
+            title={
+              dayHours?.[i]
+                ? dayHours[i].end > dayHours[i].start
+                  ? `Working ${formatHour(dayHours[i].start)}–${formatHour(dayHours[i].end)} (${formatHours((dayHours[i].end - dayHours[i].start) * 60)}h)`
+                  : "Day off"
+                : undefined
+            }
           >
             <div className="calendar-day-name">{d.toLocaleDateString(undefined, { weekday: "short" })}</div>
             <div className="calendar-day-date">{d.getDate()}</div>
@@ -610,24 +622,24 @@ export function CalendarGrid({
             return (
               <div
                 key={dayIndex}
-                className="calendar-day-col"
+                className={"calendar-day-col" + (iso === todayIso ? " calendar-day-col-today" : "")}
                 style={{ width: DAY_WIDTH_PX, height: gridHeight }}
               >
                 {dayHours?.[dayIndex] &&
                   (dayHours[dayIndex].end > dayHours[dayIndex].start ? (
                     <>
-                      {dayHours[dayIndex].start > startHour && (
-                        <div
-                          className="calendar-off-hours"
-                          style={{ top: 0, height: minutesToPx((dayHours[dayIndex].start - startHour) * 60) }}
-                        />
-                      )}
-                      {dayHours[dayIndex].end < endHour && (
-                        <div
-                          className="calendar-off-hours"
-                          style={{ top: minutesToPx((dayHours[dayIndex].end - startHour) * 60), bottom: 0 }}
-                        />
-                      )}
+                      {/* Always drawn, even when this day's hours match
+                          the grid's edge: minutesToPx includes the small
+                          padding above the first hour and below the last,
+                          which would otherwise be left blank. */}
+                      <div
+                        className="calendar-off-hours"
+                        style={{ top: 0, height: minutesToPx((dayHours[dayIndex].start - startHour) * 60) }}
+                      />
+                      <div
+                        className="calendar-off-hours"
+                        style={{ top: minutesToPx((dayHours[dayIndex].end - startHour) * 60), bottom: 0 }}
+                      />
                     </>
                   ) : (
                     <div className="calendar-off-hours" style={{ top: 0, bottom: 0 }} />
@@ -636,6 +648,26 @@ export function CalendarGrid({
                 {hourMarks.map((h) => (
                   <div key={h} className="calendar-hour-line" style={{ top: minutesToPx((h - startHour) * 60) }} />
                 ))}
+
+                {/* Solid markers where this day's working hours begin and
+                    end, so a day with different hours from its neighbours
+                    (Monday 8-4 next to Tuesday 9-5) reads at a glance. */}
+                {dayHours?.[dayIndex] && dayHours[dayIndex].end > dayHours[dayIndex].start && (
+                  <>
+                    <div
+                      className="calendar-work-edge calendar-work-edge-start"
+                      style={{ top: Math.max(0, minutesToPx((dayHours[dayIndex].start - startHour) * 60) - 1) }}
+                    >
+                      <span className="calendar-work-edge-label">{formatHour(dayHours[dayIndex].start)}</span>
+                    </div>
+                    <div
+                      className="calendar-work-edge calendar-work-edge-end"
+                      style={{ top: Math.min(gridHeight - 2, minutesToPx((dayHours[dayIndex].end - startHour) * 60) - 1) }}
+                    >
+                      <span className="calendar-work-edge-label">{formatHour(dayHours[dayIndex].end)}</span>
+                    </div>
+                  </>
+                )}
 
                 {dayEntries.map((entry) => {
                   // While this entry is actively being moved/resized (past
@@ -659,6 +691,15 @@ export function CalendarGrid({
                     iso === todayIso && showNowLine && nowMinutesSinceStart >= startMin && nowMinutesSinceStart < endMin;
                   const isMissingNotes = !!missingNotesEntryIds?.has(entry.id) && !entry.notes.trim();
                   const isSelected = selectedEntryId === entry.id;
+                  // Any part of the block outside this day's working hours
+                  // (or on a day off) -- flagged so overtime and meetings
+                  // outside the day are easy to spot before uploading.
+                  const dh = dayHours?.[dayIndex];
+                  const isOutsideHours =
+                    !!dh &&
+                    (dh.end <= dh.start ||
+                      startMin < (dh.start - startHour) * 60 ||
+                      endMin > (dh.end - startHour) * 60);
 
                   return (
                     <div
@@ -667,14 +708,16 @@ export function CalendarGrid({
                         "calendar-entry" +
                         (isSelected ? " calendar-entry-selected" : "") +
                         (isActiveNow ? " calendar-entry-active" : "") +
-                        (isMissingNotes ? " calendar-entry-missing-notes" : "")
+                        (isMissingNotes ? " calendar-entry-missing-notes" : "") +
+                        (isOutsideHours ? " calendar-entry-outside-hours" : "")
                       }
                       title={
-                        entry.notes
+                        (entry.notes
                           ? `${entry.activityName} · ${entry.startTime}–${entry.endTime}\n${entry.notes}`
                           : isMissingNotes
                             ? `${entry.activityName} · ${entry.startTime}–${entry.endTime}\nMissing Notes -- required before uploading to Jira`
-                            : `${entry.activityName} · ${entry.startTime}–${entry.endTime}`
+                            : `${entry.activityName} · ${entry.startTime}–${entry.endTime}`) +
+                        (isOutsideHours ? "\nOutside working hours" : "")
                       }
                       style={{
                         left,

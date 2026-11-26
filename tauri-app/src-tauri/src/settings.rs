@@ -54,6 +54,12 @@ pub struct AppSettings {
     pub theme_mode: String,
     pub custom_theme: CustomThemeSeeds,
     pub work_hours: Vec<DayHours>,
+    /// Earliest / latest hour the Timesheet grid always shows, regardless of
+    /// working hours (e.g. 6 and 20 to see an hour either side of a 7-19
+    /// day). -1 = no override: follow the working hours. The grid still
+    /// widens to cover working hours and any block outside the range.
+    pub calendar_start_hour: i32,
+    pub calendar_end_hour: i32,
     pub show_weekends: bool,
     pub header_style: String,
     pub show_timer_bar: bool,
@@ -103,6 +109,8 @@ pub struct SaveSettingsInput {
     pub theme_mode: String,
     pub custom_theme: CustomThemeSeeds,
     pub work_hours: Vec<DayHours>,
+    pub calendar_start_hour: i32,
+    pub calendar_end_hour: i32,
     pub show_weekends: bool,
     pub header_style: String,
     pub show_timer_bar: bool,
@@ -193,6 +201,24 @@ fn save_work_hours(conn: &Connection, hours: &[DayHours]) -> rusqlite::Result<()
     Ok(())
 }
 
+/// -1 ("no override") passes through; anything else is clamped into range
+/// so a hand-edited DB value can't produce an unusable grid.
+fn clamp_calendar_hour(value: i32, min: i32, max: i32) -> i32 {
+    if value < 0 {
+        -1
+    } else {
+        value.clamp(min, max)
+    }
+}
+
+fn get_calendar_hour(conn: &Connection, key: &str, min: i32, max: i32) -> rusqlite::Result<i32> {
+    Ok(clamp_calendar_hour(
+        get(conn, key)?.and_then(|v| v.parse().ok()).unwrap_or(-1),
+        min,
+        max,
+    ))
+}
+
 pub fn load(conn: &Connection) -> rusqlite::Result<AppSettings> {
     let defaults = CustomThemeSeeds::default();
     let custom_theme = CustomThemeSeeds {
@@ -218,6 +244,8 @@ pub fn load(conn: &Connection) -> rusqlite::Result<AppSettings> {
         theme_mode: get(conn, "theme_mode")?.unwrap_or_else(|| "dark".to_string()),
         custom_theme,
         work_hours: load_work_hours(conn)?,
+        calendar_start_hour: get_calendar_hour(conn, "calendar_start_hour", 0, 23)?,
+        calendar_end_hour: get_calendar_hour(conn, "calendar_end_hour", 1, 24)?,
         show_weekends: get(conn, "show_weekends")?
             .map(|v| v == "1")
             .unwrap_or(false),
@@ -270,6 +298,8 @@ pub fn save(conn: &Connection, input: &SaveSettingsInput) -> rusqlite::Result<()
     set(conn, "custom_theme_text", &input.custom_theme.text_primary)?;
     set(conn, "custom_theme_accent", &input.custom_theme.accent)?;
     save_work_hours(conn, &input.work_hours)?;
+    set(conn, "calendar_start_hour", &clamp_calendar_hour(input.calendar_start_hour, 0, 23).to_string())?;
+    set(conn, "calendar_end_hour", &clamp_calendar_hour(input.calendar_end_hour, 1, 24).to_string())?;
     set(
         conn,
         "show_weekends",
@@ -399,6 +429,24 @@ pub fn ensure_onboarding_for_pre_v2(conn: &Connection, current_version: &str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn calendar_hour_clamps_and_keeps_no_override() {
+        assert_eq!(clamp_calendar_hour(-1, 0, 23), -1);
+        assert_eq!(clamp_calendar_hour(-50, 0, 23), -1);
+        assert_eq!(clamp_calendar_hour(6, 0, 23), 6);
+        assert_eq!(clamp_calendar_hour(99, 0, 23), 23);
+        assert_eq!(clamp_calendar_hour(0, 1, 24), 1);
+        assert_eq!(clamp_calendar_hour(24, 1, 24), 24);
+    }
+
+    #[test]
+    fn calendar_hours_default_to_no_override() {
+        let conn = conn();
+        assert_eq!(get_calendar_hour(&conn, "calendar_start_hour", 0, 23).unwrap(), -1);
+        set(&conn, "calendar_start_hour", "6").unwrap();
+        assert_eq!(get_calendar_hour(&conn, "calendar_start_hour", 0, 23).unwrap(), 6);
+    }
 
     fn conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
